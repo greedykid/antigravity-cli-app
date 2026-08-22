@@ -12,6 +12,15 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.method.LinkMovementMethod;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
+import android.text.style.TypefaceSpan;
+import android.text.style.URLSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -36,6 +45,8 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     // Google Material Design 3 (M3) Dark Theme Color Tokens
@@ -865,14 +876,11 @@ public class MainActivity extends Activity {
         head.addView(tView);
         turnCard.addView(head);
 
-        TextView body = new TextView(this);
-        body.setText(content);
-        body.setTextSize(13.5f);
-        body.setTextColor(M3_ON_SURFACE);
-        body.setLineSpacing(0, 1.15f);
-        body.setTextIsSelectable(true);
-        body.setPadding(0, dp(4), 0, 0);
-        turnCard.addView(body);
+        LinearLayout markdownBody = new LinearLayout(this);
+        markdownBody.setOrientation(LinearLayout.VERTICAL);
+        markdownBody.setPadding(0, dp(4), 0, 0);
+        renderMarkdownBlocks(markdownBody, content, M3_ON_SURFACE);
+        turnCard.addView(markdownBody);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, 0, 0, dp(8));
@@ -1097,13 +1105,11 @@ public class MainActivity extends Activity {
                     TextView authorV = m3Text(label + "  •  " + (time.length() >= 16 ? time.substring(11, 16) : time), 11.5f, color, true);
                     card.addView(authorV);
 
-                    TextView bodyV = new TextView(this);
-                    bodyV.setText(content);
-                    bodyV.setTextSize(13.5f);
-                    bodyV.setTextColor(M3_ON_SURFACE);
-                    bodyV.setTextIsSelectable(true);
-                    bodyV.setPadding(0, dp(4), 0, 0);
-                    card.addView(bodyV);
+                    LinearLayout mdBody = new LinearLayout(this);
+                    mdBody.setOrientation(LinearLayout.VERTICAL);
+                    mdBody.setPadding(0, dp(4), 0, 0);
+                    renderMarkdownBlocks(mdBody, content, isUser ? M3_ON_PRIMARY_CONTAINER : M3_ON_SURFACE);
+                    card.addView(mdBody);
 
                     LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
                     lp.setMargins(0, 0, 0, dp(8));
@@ -1131,6 +1137,265 @@ public class MainActivity extends Activity {
             Toast.makeText(MainActivity.this, "Switched to session: " + convId.substring(0, 8), Toast.LENGTH_SHORT).show();
         }));
         dialog.show();
+    }
+
+    // ==========================================
+    // MARKDOWN RENDERING ENGINE (MATERIAL 3)
+    // ==========================================
+    private SpannableStringBuilder formatInlineSpans(String input, int defaultTextColor) {
+        if (input == null) return new SpannableStringBuilder("");
+        SpannableStringBuilder ssb = new SpannableStringBuilder(input);
+
+        // 1. Links [label](url)
+        Pattern linkPattern = Pattern.compile("\\[([^\\]]+)\\]\\(([^\\)]+)\\)");
+        Matcher linkMatcher = linkPattern.matcher(ssb.toString());
+        while (linkMatcher.find()) {
+            int start = linkMatcher.start();
+            int end = linkMatcher.end();
+            String label = linkMatcher.group(1);
+            String url = linkMatcher.group(2);
+            ssb.replace(start, end, label);
+            ssb.setSpan(new URLSpan(url), start, start + label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ssb.setSpan(new ForegroundColorSpan(M3_PRIMARY), start, start + label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            linkMatcher = linkPattern.matcher(ssb.toString());
+        }
+
+        // 2. Inline Code `code`
+        Pattern codePattern = Pattern.compile("`([^`]+)`");
+        Matcher codeMatcher = codePattern.matcher(ssb.toString());
+        while (codeMatcher.find()) {
+            int start = codeMatcher.start();
+            int end = codeMatcher.end();
+            String codeText = codeMatcher.group(1);
+            ssb.replace(start, end, " " + codeText + " ");
+            int newEnd = start + codeText.length() + 2;
+            ssb.setSpan(new TypefaceSpan("monospace"), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ssb.setSpan(new BackgroundColorSpan(M3_SURFACE_CONTAINER_HIGH), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ssb.setSpan(new ForegroundColorSpan(M3_PRIMARY), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ssb.setSpan(new RelativeSizeSpan(0.92f), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            codeMatcher = codePattern.matcher(ssb.toString());
+        }
+
+        // 3. Bold **bold**
+        Pattern boldPattern = Pattern.compile("\\*\\*([^\\*]+)\\*\\*");
+        Matcher boldMatcher = boldPattern.matcher(ssb.toString());
+        while (boldMatcher.find()) {
+            int start = boldMatcher.start();
+            int end = boldMatcher.end();
+            String boldText = boldMatcher.group(1);
+            ssb.replace(start, end, boldText);
+            ssb.setSpan(new StyleSpan(Typeface.BOLD), start, start + boldText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            boldMatcher = boldPattern.matcher(ssb.toString());
+        }
+
+        // 4. Italic *italic*
+        Pattern italicPattern = Pattern.compile("(?<!\\*)\\*([^\\*]+)\\*(?!\\*)");
+        Matcher italicMatcher = italicPattern.matcher(ssb.toString());
+        while (italicMatcher.find()) {
+            int start = italicMatcher.start();
+            int end = italicMatcher.end();
+            String italicText = italicMatcher.group(1);
+            ssb.replace(start, end, italicText);
+            ssb.setSpan(new StyleSpan(Typeface.ITALIC), start, start + italicText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            italicMatcher = italicPattern.matcher(ssb.toString());
+        }
+
+        return ssb;
+    }
+
+    private void renderMarkdownBlocks(LinearLayout targetLayout, String rawMarkdown, int defaultTextColor) {
+        if (rawMarkdown == null || rawMarkdown.isEmpty()) return;
+
+        String[] lines = rawMarkdown.split("\n");
+        boolean inCode = false;
+        String codeLang = "";
+        StringBuilder codeBuffer = new StringBuilder();
+
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+
+            if (line.trim().startsWith("```")) {
+                if (inCode) {
+                    addCodeBlockView(targetLayout, codeLang, codeBuffer.toString().trim());
+                    inCode = false;
+                    codeLang = "";
+                    codeBuffer.setLength(0);
+                } else {
+                    inCode = true;
+                    codeLang = line.trim().length() > 3 ? line.trim().substring(3).trim() : "CODE";
+                    codeBuffer.setLength(0);
+                }
+                continue;
+            }
+
+            if (inCode) {
+                codeBuffer.append(line).append("\n");
+                continue;
+            }
+
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+
+            if (trimmed.startsWith("#")) {
+                if (trimmed.startsWith("### ")) {
+                    TextView h3 = new TextView(this);
+                    h3.setText(formatInlineSpans(trimmed.substring(4), defaultTextColor));
+                    h3.setTextSize(14.5f);
+                    h3.setTextColor(M3_ON_SURFACE);
+                    h3.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                    LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
+                    lpH.setMargins(0, dp(6), 0, dp(2));
+                    targetLayout.addView(h3, lpH);
+                    continue;
+                } else if (trimmed.startsWith("## ")) {
+                    TextView h2 = new TextView(this);
+                    h2.setText(formatInlineSpans(trimmed.substring(3), defaultTextColor));
+                    h2.setTextSize(15.5f);
+                    h2.setTextColor(M3_PRIMARY);
+                    h2.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                    LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
+                    lpH.setMargins(0, dp(8), 0, dp(4));
+                    targetLayout.addView(h2, lpH);
+                    continue;
+                } else if (trimmed.startsWith("# ")) {
+                    TextView h1 = new TextView(this);
+                    h1.setText(formatInlineSpans(trimmed.substring(2), defaultTextColor));
+                    h1.setTextSize(17f);
+                    h1.setTextColor(M3_PRIMARY);
+                    h1.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                    LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
+                    lpH.setMargins(0, dp(10), 0, dp(4));
+                    targetLayout.addView(h1, lpH);
+                    continue;
+                }
+            }
+
+            if (trimmed.equals("---") || trimmed.equals("***") || trimmed.equals("___")) {
+                View divider = new View(this);
+                divider.setBackgroundColor(M3_OUTLINE_VARIANT);
+                LinearLayout.LayoutParams lpDiv = new LinearLayout.LayoutParams(-1, dp(1));
+                lpDiv.setMargins(0, dp(8), 0, dp(8));
+                targetLayout.addView(divider, lpDiv);
+                continue;
+            }
+
+            if (trimmed.startsWith(">")) {
+                LinearLayout quoteBox = new LinearLayout(this);
+                quoteBox.setOrientation(LinearLayout.HORIZONTAL);
+                quoteBox.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, 0, 0, 8));
+                quoteBox.setPadding(dp(10), dp(6), dp(10), dp(6));
+
+                View bar = new View(this);
+                bar.setBackgroundColor(M3_PRIMARY);
+                quoteBox.addView(bar, new LinearLayout.LayoutParams(dp(3), -1));
+
+                TextView qText = new TextView(this);
+                qText.setText(formatInlineSpans(trimmed.substring(1).trim(), M3_ON_SURFACE_VARIANT));
+                qText.setTextSize(13.5f);
+                qText.setTextColor(M3_ON_SURFACE_VARIANT);
+                qText.setTypeface(Typeface.DEFAULT, Typeface.ITALIC);
+                qText.setPadding(dp(8), 0, 0, 0);
+                qText.setTextIsSelectable(true);
+                quoteBox.addView(qText, new LinearLayout.LayoutParams(0, -2, 1));
+
+                LinearLayout.LayoutParams lpQ = new LinearLayout.LayoutParams(-1, -2);
+                lpQ.setMargins(0, dp(4), 0, dp(4));
+                targetLayout.addView(quoteBox, lpQ);
+                continue;
+            }
+
+            if (trimmed.startsWith("* ") || trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+                LinearLayout bulletRow = new LinearLayout(this);
+                bulletRow.setOrientation(LinearLayout.HORIZONTAL);
+
+                TextView dot = m3Text("•", 14, M3_PRIMARY, true);
+                bulletRow.addView(dot, new LinearLayout.LayoutParams(dp(14), -2));
+
+                TextView itemText = new TextView(this);
+                itemText.setText(formatInlineSpans(trimmed.substring(2).trim(), defaultTextColor));
+                itemText.setTextSize(14);
+                itemText.setTextColor(defaultTextColor);
+                itemText.setLineSpacing(0, 1.2f);
+                itemText.setTextIsSelectable(true);
+                itemText.setMovementMethod(LinkMovementMethod.getInstance());
+                bulletRow.addView(itemText, new LinearLayout.LayoutParams(0, -2, 1));
+
+                LinearLayout.LayoutParams lpB = new LinearLayout.LayoutParams(-1, -2);
+                lpB.setMargins(dp(6), dp(2), 0, dp(2));
+                targetLayout.addView(bulletRow, lpB);
+                continue;
+            }
+
+            TextView para = new TextView(this);
+            para.setText(formatInlineSpans(line, defaultTextColor));
+            para.setTextSize(14);
+            para.setTextColor(defaultTextColor);
+            para.setLineSpacing(0, 1.2f);
+            para.setTextIsSelectable(true);
+            para.setMovementMethod(LinkMovementMethod.getInstance());
+
+            LinearLayout.LayoutParams lpP = new LinearLayout.LayoutParams(-1, -2);
+            lpP.setMargins(0, dp(2), 0, dp(4));
+            targetLayout.addView(para, lpP);
+        }
+
+        if (inCode && codeBuffer.length() > 0) {
+            addCodeBlockView(targetLayout, codeLang, codeBuffer.toString().trim());
+        }
+    }
+
+    private void addCodeBlockView(LinearLayout parent, String lang, final String code) {
+        LinearLayout codeCard = new LinearLayout(this);
+        codeCard.setOrientation(LinearLayout.VERTICAL);
+        codeCard.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_OUTLINE_VARIANT, 1, 12));
+        codeCard.setPadding(0, 0, 0, 0);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, 0, 0, 12));
+        header.setPadding(dp(12), dp(4), dp(8), dp(4));
+
+        String displayLang = lang.isEmpty() ? "CODE" : lang.toUpperCase();
+        TextView langLabel = m3Text(displayLang, 11, M3_ON_SURFACE_VARIANT, true);
+        header.addView(langLabel, new LinearLayout.LayoutParams(0, -2, 1));
+
+        Button copyBtn = new Button(this);
+        copyBtn.setText("📋 Copy");
+        copyBtn.setTextSize(11);
+        copyBtn.setAllCaps(false);
+        copyBtn.setTextColor(M3_PRIMARY);
+        copyBtn.setBackground(null);
+        copyBtn.setPadding(dp(6), 0, dp(6), 0);
+        copyBtn.setOnClickListener(v -> {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData cd = ClipData.newPlainText("Code", code);
+            cm.setPrimaryClip(cd);
+            Toast.makeText(MainActivity.this, "Code copied to clipboard", Toast.LENGTH_SHORT).show();
+        });
+        header.addView(copyBtn, new LinearLayout.LayoutParams(-2, dp(30)));
+        codeCard.addView(header);
+
+        HorizontalScrollView hScroll = new HorizontalScrollView(this);
+        hScroll.setPadding(dp(12), dp(8), dp(12), dp(10));
+        hScroll.setHorizontalScrollBarEnabled(false);
+
+        TextView codeView = new TextView(this);
+        codeView.setText(code);
+        codeView.setTextSize(12.5f);
+        codeView.setTextColor(M3_PRIMARY);
+        codeView.setTypeface(Typeface.MONOSPACE);
+        codeView.setLineSpacing(0, 1.15f);
+        codeView.setTextIsSelectable(true);
+        hScroll.addView(codeView);
+
+        codeCard.addView(hScroll);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(6), 0, dp(6));
+        parent.addView(codeCard, lp);
     }
 
     // ==========================================
@@ -1369,24 +1634,11 @@ public class MainActivity extends Activity {
 
         bubbleCard.addView(headerRow);
 
-        TextView bodyView = new TextView(this);
-        bodyView.setText(message);
-        bodyView.setTextSize(14);
-        bodyView.setTextColor(author.contains("Error") ? M3_RED : M3_ON_SURFACE);
-        bodyView.setLineSpacing(0, 1.2f);
-        bodyView.setTextIsSelectable(true);
-        bodyView.setTypeface(message.contains("\n") && (message.contains("    ") || message.contains("	") || message.contains("{")) ? Typeface.MONOSPACE : Typeface.DEFAULT);
-        bodyView.setPadding(0, dp(6), 0, 0);
-
-        bodyView.setOnLongClickListener(v -> {
-            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            ClipData cd = ClipData.newPlainText("CLI Response", message);
-            cm.setPrimaryClip(cd);
-            Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show();
-            return true;
-        });
-
-        bubbleCard.addView(bodyView);
+        LinearLayout markdownContent = new LinearLayout(this);
+        markdownContent.setOrientation(LinearLayout.VERTICAL);
+        markdownContent.setPadding(0, dp(4), 0, 0);
+        renderMarkdownBlocks(markdownContent, message, isUser ? M3_ON_PRIMARY_CONTAINER : (author.contains("Error") ? M3_RED : M3_ON_SURFACE));
+        bubbleCard.addView(markdownContent);
 
         LinearLayout.LayoutParams lpBubble = new LinearLayout.LayoutParams(-1, -2);
         lpBubble.setMargins(0, 0, 0, dp(10));
