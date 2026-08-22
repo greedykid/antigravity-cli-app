@@ -103,6 +103,8 @@ public class MainActivity extends Activity {
     private static final int CLAUDE_TERRACOTTA_LIGHT = Color.rgb(250, 235, 229); // #FAECE5 Light Peach
     private static final int CLAUDE_GREEN = Color.rgb(46, 125, 50);            // #2E7D32 Emerald Green
     private static final int CLAUDE_GREEN_BG = Color.rgb(234, 247, 237);       // #EAF7ED Light Mint
+    private static final int CLAUDE_AMBER = Color.rgb(230, 124, 0);            // #E67C00 Amber
+    private static final int CLAUDE_AMBER_BG = Color.rgb(254, 243, 224);       // #FEF3E0 Light Amber
     private static final int CLAUDE_RED = Color.rgb(198, 40, 40);              // #C62828 Ruby Red
 
     private static final int REQ_PICK_FILE = 1001;
@@ -147,7 +149,6 @@ public class MainActivity extends Activity {
     private TextView repoTagLabel;
     private LinearLayout attachmentChip;
     private TextView attachmentText;
-    private LinearLayout liveTaskPill;
 
     // Active Session State
     private String activeConversationId = null;
@@ -168,7 +169,7 @@ public class MainActivity extends Activity {
         public void run() {
             if (currentScreen == 1 && (isLiveTaskRunning || isAutoRefreshActive)) {
                 syncLiveExecution();
-                int delay = isLiveTaskRunning ? 1200 : 3000;
+                int delay = isLiveTaskRunning ? 1000 : 3000;
                 mainHandler.postDelayed(this, delay);
             }
         }
@@ -241,9 +242,25 @@ public class MainActivity extends Activity {
         return v;
     }
 
+    // Properly sized icon view with generous finger touch target
+    private ImageView cIconButton(int resId, int iconSizeDp, int touchTargetDp, int tintColor) {
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(resId);
+        iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        if (tintColor != 0) {
+            iv.setColorFilter(tintColor);
+        }
+        int padding = dp(Math.max(0, (touchTargetDp - iconSizeDp) / 2f));
+        iv.setPadding(padding, padding, padding, padding);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(touchTargetDp), dp(touchTargetDp));
+        iv.setLayoutParams(lp);
+        return iv;
+    }
+
     private ImageView cIcon(int resId, int sizeDp, int tintColor) {
         ImageView iv = new ImageView(this);
         iv.setImageResource(resId);
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
         if (tintColor != 0) {
             iv.setColorFilter(tintColor);
         }
@@ -403,7 +420,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.8.0 • Real-time Live Sync", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.9.0 • Enhanced UI & Live Spinner", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -416,7 +433,7 @@ public class MainActivity extends Activity {
         row.setPadding(dp(8), dp(11), dp(8), dp(11));
         row.setBackground(cBox(Color.TRANSPARENT, 0, 0, 10));
 
-        ImageView ic = cIcon(iconRes, 20, CLAUDE_TEXT_MAIN);
+        ImageView ic = cIcon(iconRes, 22, CLAUDE_TEXT_MAIN);
         row.addView(ic);
 
         TextView label = cText(title, 14, CLAUDE_TEXT_MAIN, false, false);
@@ -529,17 +546,17 @@ public class MainActivity extends Activity {
     // SCREEN 1: "Code" SESSIONS HUB (Exact Claude Code Style)
     // ============================================================
     private void buildHubScreen(LinearLayout parent) {
-        parent.setPadding(dp(20), dp(16), dp(20), dp(16));
+        parent.setPadding(dp(18), dp(14), dp(18), dp(16));
 
         // Top Navigation Bar (Menu, QR Scan, and New Session Button)
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(0, dp(4), 0, dp(14));
+        topBar.setPadding(0, dp(4), 0, dp(12));
 
-        ImageView menuIcon = cIcon(R.drawable.ic_menu, 24, CLAUDE_TEXT_MAIN);
+        ImageView menuIcon = cIconButton(R.drawable.ic_menu, 24, 40, CLAUDE_TEXT_MAIN);
         menuIcon.setOnClickListener(v -> openSidebar());
-        topBar.addView(menuIcon, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        topBar.addView(menuIcon);
 
         View spacer = new View(this);
         topBar.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
@@ -548,23 +565,23 @@ public class MainActivity extends Activity {
         LinearLayout qrBtn = new LinearLayout(this);
         qrBtn.setOrientation(LinearLayout.HORIZONTAL);
         qrBtn.setGravity(Gravity.CENTER_VERTICAL);
-        qrBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 16));
-        qrBtn.setPadding(dp(10), dp(6), dp(12), dp(6));
-        qrBtn.addView(cIcon(R.drawable.ic_qr_code, 16, CLAUDE_TEXT_MAIN));
-        TextView qrLabel = cText(" QR", 13f, CLAUDE_TEXT_MAIN, true, false);
+        qrBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 18));
+        qrBtn.setPadding(dp(12), dp(8), dp(14), dp(8));
+        qrBtn.addView(cIcon(R.drawable.ic_qr_code, 18, CLAUDE_TEXT_MAIN));
+        TextView qrLabel = cText(" QR", 13.5f, CLAUDE_TEXT_MAIN, true, false);
         qrBtn.addView(qrLabel);
         qrBtn.setOnClickListener(v -> startQrScanner());
         LinearLayout.LayoutParams lpQr = new LinearLayout.LayoutParams(-2, -2);
-        lpQr.setMargins(0, 0, dp(8), 0);
+        lpQr.setMargins(0, 0, dp(10), 0);
         topBar.addView(qrBtn, lpQr);
 
         // New Session Button
         LinearLayout newBtnTop = new LinearLayout(this);
         newBtnTop.setOrientation(LinearLayout.HORIZONTAL);
         newBtnTop.setGravity(Gravity.CENTER_VERTICAL);
-        newBtnTop.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, 0, 0, 16));
-        newBtnTop.setPadding(dp(10), dp(6), dp(12), dp(6));
-        newBtnTop.addView(cIcon(R.drawable.ic_add, 16, CLAUDE_TERRACOTTA));
+        newBtnTop.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, 0, 0, 18));
+        newBtnTop.setPadding(dp(12), dp(8), dp(14), dp(8));
+        newBtnTop.addView(cIcon(R.drawable.ic_add, 18, CLAUDE_TERRACOTTA));
         TextView newLabel = cText(" New", 13.5f, CLAUDE_TERRACOTTA, true, false);
         newBtnTop.addView(newLabel);
         newBtnTop.setOnClickListener(v -> startNewSession());
@@ -747,19 +764,18 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SCREEN 2: "New session" / CHAT VIEW (Material Icons & Dropdown Menu)
+    // SCREEN 2: "New session" / CHAT VIEW (Sleek Sized Icons & Controls)
     // ============================================================
     private void buildChatScreen(LinearLayout parent) {
-        parent.setPadding(dp(16), dp(10), dp(16), dp(12));
+        parent.setPadding(dp(16), dp(8), dp(16), dp(12));
 
         // Top App Bar (Menu / Back Icon, Title, QR Icon, 3-dots Dropdown Anchor)
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(0, dp(4), 0, dp(10));
+        topBar.setPadding(0, dp(2), 0, dp(8));
 
-        chatNavIcon = cIcon(R.drawable.ic_menu, 22, CLAUDE_TEXT_MAIN);
-        chatNavIcon.setPadding(dp(4), dp(4), dp(8), dp(4));
+        chatNavIcon = cIconButton(R.drawable.ic_menu, 24, 40, CLAUDE_TEXT_MAIN);
         chatNavIcon.setOnClickListener(v -> {
             if (navigatedFromHub) {
                 navigatedFromHub = false;
@@ -770,18 +786,16 @@ public class MainActivity extends Activity {
         });
         topBar.addView(chatNavIcon);
 
-        chatTopTitle = cText("New session", 15.5f, CLAUDE_TEXT_MAIN, true, false);
+        chatTopTitle = cText("New session", 16f, CLAUDE_TEXT_MAIN, true, false);
         chatTopTitle.setGravity(Gravity.CENTER);
         chatTopTitle.setSingleLine(true);
         topBar.addView(chatTopTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView qrTopBtn = cIcon(R.drawable.ic_qr_code, 22, CLAUDE_TEXT_MUTED);
-        qrTopBtn.setPadding(dp(6), dp(4), dp(6), dp(4));
+        ImageView qrTopBtn = cIconButton(R.drawable.ic_qr_code, 22, 40, CLAUDE_TEXT_MAIN);
         qrTopBtn.setOnClickListener(v -> startQrScanner());
         topBar.addView(qrTopBtn);
 
-        final ImageView moreBtn = cIcon(R.drawable.ic_more_vert, 22, CLAUDE_TEXT_MUTED);
-        moreBtn.setPadding(dp(6), dp(4), dp(2), dp(4));
+        final ImageView moreBtn = cIconButton(R.drawable.ic_more_vert, 24, 40, CLAUDE_TEXT_MAIN);
         moreBtn.setOnClickListener(v -> showMoreDropdownMenu(moreBtn));
         topBar.addView(moreBtn);
         parent.addView(topBar);
@@ -809,7 +823,7 @@ public class MainActivity extends Activity {
         LinearLayout composerCard = new LinearLayout(this);
         composerCard.setOrientation(LinearLayout.VERTICAL);
         composerCard.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 22));
-        composerCard.setPadding(dp(16), dp(14), dp(14), dp(12));
+        composerCard.setPadding(dp(16), dp(12), dp(12), dp(10));
         composerCard.setElevation(dp(4));
 
         promptInput = new EditText(this);
@@ -821,7 +835,7 @@ public class MainActivity extends Activity {
         promptInput.setMinLines(1);
         promptInput.setMaxLines(5);
         promptInput.setSingleLine(false);
-        promptInput.setPadding(0, 0, 0, dp(10));
+        promptInput.setPadding(0, 0, 0, dp(8));
         composerCard.addView(promptInput, new LinearLayout.LayoutParams(-1, -2));
 
         // Bottom Controls Row: [Repo Pill] ... [+] [Cloud] [Mic] [Send]
@@ -840,33 +854,30 @@ public class MainActivity extends Activity {
         bottomRow.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
 
         // Plus (+) Attachment Button
-        btnAttach = cIcon(R.drawable.ic_add, 22, CLAUDE_TEXT_MAIN);
-        btnAttach.setPadding(dp(6), dp(6), dp(6), dp(6));
+        btnAttach = cIconButton(R.drawable.ic_add, 22, 38, CLAUDE_TEXT_MAIN);
         btnAttach.setOnClickListener(v -> openFilePicker());
         bottomRow.addView(btnAttach);
 
         // Cloud Gateway Status Button
-        btnEnginePill = cIcon(R.drawable.ic_cloud, 22, CLAUDE_TEXT_MAIN);
-        btnEnginePill.setPadding(dp(6), dp(6), dp(6), dp(6));
+        btnEnginePill = cIconButton(R.drawable.ic_cloud, 22, 38, CLAUDE_TEXT_MAIN);
         btnEnginePill.setOnClickListener(v -> checkHealth());
         bottomRow.addView(btnEnginePill);
 
         // Voice Microphone Button
-        btnVoice = cIcon(R.drawable.ic_mic, 22, CLAUDE_TEXT_MAIN);
-        btnVoice.setPadding(dp(6), dp(6), dp(6), dp(6));
+        btnVoice = cIconButton(R.drawable.ic_mic, 22, 38, CLAUDE_TEXT_MAIN);
         btnVoice.setOnClickListener(v -> startVoiceRecognition());
         bottomRow.addView(btnVoice);
 
         // Terracotta Circle Arrow Send Button
         btnSend = new FrameLayout(this);
-        btnSend.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 20));
-        ImageView sendIcon = cIcon(R.drawable.ic_send, 18, Color.WHITE);
-        FrameLayout.LayoutParams lpSendIcon = new FrameLayout.LayoutParams(dp(18), dp(18));
+        btnSend.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 21));
+        ImageView sendIcon = cIcon(R.drawable.ic_send, 20, Color.WHITE);
+        FrameLayout.LayoutParams lpSendIcon = new FrameLayout.LayoutParams(dp(20), dp(20));
         lpSendIcon.gravity = Gravity.CENTER;
         btnSend.addView(sendIcon, lpSendIcon);
         btnSend.setOnClickListener(v -> sendClaudePrompt());
 
-        LinearLayout.LayoutParams lpSend = new LinearLayout.LayoutParams(dp(38), dp(38));
+        LinearLayout.LayoutParams lpSend = new LinearLayout.LayoutParams(dp(42), dp(42));
         lpSend.setMargins(dp(6), 0, 0, 0);
         bottomRow.addView(btnSend, lpSend);
 
@@ -879,17 +890,16 @@ public class MainActivity extends Activity {
         chip.setOrientation(LinearLayout.HORIZONTAL);
         chip.setGravity(Gravity.CENTER_VERTICAL);
         chip.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_TERRACOTTA, 1, 14));
-        chip.setPadding(dp(10), dp(6), dp(10), dp(6));
+        chip.setPadding(dp(12), dp(6), dp(8), dp(6));
         chip.setVisibility(View.GONE);
 
-        ImageView clipIcon = cIcon(R.drawable.ic_attach_file, 16, CLAUDE_TERRACOTTA);
+        ImageView clipIcon = cIcon(R.drawable.ic_attach_file, 18, CLAUDE_TERRACOTTA);
         chip.addView(clipIcon);
 
         attachmentText = cText(" Attached File", 12.5f, CLAUDE_TERRACOTTA, true, false);
         chip.addView(attachmentText, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView close = cIcon(R.drawable.ic_close, 16, CLAUDE_RED);
-        close.setPadding(dp(4), 0, 0, 0);
+        ImageView close = cIconButton(R.drawable.ic_close, 18, 28, CLAUDE_RED);
         close.setOnClickListener(v -> {
             chip.setVisibility(View.GONE);
             attachedServerPath = null;
@@ -1005,14 +1015,13 @@ public class MainActivity extends Activity {
             head.setOrientation(LinearLayout.HORIZONTAL);
             head.setGravity(Gravity.CENTER_VERTICAL);
 
-            ImageView qrIcon = cIcon(R.drawable.ic_qr_code, 20, CLAUDE_TERRACOTTA);
+            ImageView qrIcon = cIcon(R.drawable.ic_qr_code, 22, CLAUDE_TERRACOTTA);
             head.addView(qrIcon);
 
             TextView title = cText(" Scan QR Pairing", 17, CLAUDE_TEXT_MAIN, true, true);
             head.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
-            ImageView close = cIcon(R.drawable.ic_close, 20, CLAUDE_TEXT_MUTED);
-            close.setPadding(dp(4), dp(4), dp(4), dp(4));
+            ImageView close = cIconButton(R.drawable.ic_close, 20, 36, CLAUDE_TEXT_MUTED);
             close.setOnClickListener(v -> dialog.dismiss());
             head.addView(close);
             root.addView(head);
@@ -1416,9 +1425,6 @@ public class MainActivity extends Activity {
         addMessageCard("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
         promptInput.setText("");
 
-        // Show Real-time Agent Working Banner
-        showLiveWorkingPill("Agent is processing instructions...");
-
         // Scroll to bottom immediately
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
 
@@ -1449,7 +1455,6 @@ public class MainActivity extends Activity {
 
                 mainHandler.post(() -> {
                     isLiveTaskRunning = false;
-                    removeLiveWorkingPill();
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
@@ -1459,7 +1464,6 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 mainHandler.post(() -> {
                     isLiveTaskRunning = false;
-                    removeLiveWorkingPill();
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
@@ -1470,40 +1474,12 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void showLiveWorkingPill(String status) {
-        removeLiveWorkingPill();
-        liveTaskPill = new LinearLayout(this);
-        liveTaskPill.setOrientation(LinearLayout.HORIZONTAL);
-        liveTaskPill.setGravity(Gravity.CENTER_VERTICAL);
-        liveTaskPill.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, CLAUDE_TERRACOTTA, 1, 14));
-        liveTaskPill.setPadding(dp(12), dp(8), dp(12), dp(8));
-
-        ProgressBar pb = new ProgressBar(this);
-        LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(16), dp(16));
-        liveTaskPill.addView(pb, lpPb);
-
-        TextView tv = cText("  " + status, 12.5f, CLAUDE_TERRACOTTA, true, false);
-        liveTaskPill.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(4), 0, dp(8));
-        chatMessagesList.addView(liveTaskPill, lp);
-    }
-
-    private void removeLiveWorkingPill() {
-        if (liveTaskPill != null) {
-            chatMessagesList.removeView(liveTaskPill);
-            liveTaskPill = null;
-        }
-    }
-
     private void syncLiveExecution() {
         String endpoint = prefs.getString("url", "").trim();
         if (endpoint.isEmpty()) return;
 
         executor.execute(() -> {
             try {
-                // If in active session, query directly; if in new session, query /api/session/live
                 String targetConvId = activeConversationId;
                 String queryUrl;
                 if (targetConvId != null && !targetConvId.isEmpty()) {
@@ -1622,7 +1598,8 @@ public class MainActivity extends Activity {
                     } else {
                         // Flush any pending tool & thinking executions as one compact modal pill
                         if (!pendingTools.isEmpty()) {
-                            addCompactToolsGroupPill(new ArrayList<>(pendingTools));
+                            boolean isGroupActive = (i == turns.length() && isLiveTaskRunning);
+                            addCompactToolsGroupPill(new ArrayList<>(pendingTools), isGroupActive);
                             pendingTools.clear();
                         }
                         addMessageCard(role, content, time);
@@ -1630,12 +1607,16 @@ public class MainActivity extends Activity {
                 }
 
                 if (!pendingTools.isEmpty()) {
-                    addCompactToolsGroupPill(pendingTools);
-                }
-
-                // If currently running, keep the active working pill at the bottom
-                if (isLiveTaskRunning) {
-                    showLiveWorkingPill("Agent is processing step " + (newTurnCount + 1) + "...");
+                    addCompactToolsGroupPill(pendingTools, isLiveTaskRunning);
+                } else if (isLiveTaskRunning) {
+                    // Show initial working pill while first step is starting
+                    ArrayList<JSONObject> dummy = new ArrayList<>();
+                    JSONObject o = new JSONObject();
+                    o.put("role", "thinking");
+                    o.put("title", "Processing prompt...");
+                    o.put("content", "Starting CLI process and planning response...");
+                    dummy.add(o);
+                    addCompactToolsGroupPill(dummy, true);
                 }
 
                 // Smooth scroll down
@@ -1664,7 +1645,7 @@ public class MainActivity extends Activity {
     // ============================================================
     // COMPACT TEXT PILL & FULLY SWIPEABLE / EXPANDABLE FULLSCREEN BOTTOM SHEET
     // ============================================================
-    private void addCompactToolsGroupPill(final ArrayList<JSONObject> toolTurns) {
+    private void addCompactToolsGroupPill(final ArrayList<JSONObject> toolTurns, final boolean isCurrentlyWorking) {
         int toolCount = 0;
         int thinkCount = 0;
         String latestToolName = "";
@@ -1680,65 +1661,65 @@ public class MainActivity extends Activity {
 
         String labelText;
         if (toolCount > 0 && thinkCount > 0) {
-            labelText = "Worked on " + (toolCount + thinkCount) + " steps (" + toolCount + " tools, " + thinkCount + " thinking)";
+            labelText = (isCurrentlyWorking ? "Working on " : "Worked on ") + (toolCount + thinkCount) + " steps (" + toolCount + " tools, " + thinkCount + " thinking)";
         } else if (toolCount > 0) {
-            labelText = "Executed " + toolCount + " tool" + (toolCount > 1 ? "s" : "") + (latestToolName.isEmpty() ? "" : ": " + latestToolName);
+            labelText = (isCurrentlyWorking ? "Executing " : "Executed ") + toolCount + " tool" + (toolCount > 1 ? "s" : "") + (latestToolName.isEmpty() ? "" : ": " + latestToolName);
         } else {
-            labelText = "Viewed thought process (" + thinkCount + " step" + (thinkCount > 1 ? "s" : "") + ")";
+            labelText = (isCurrentlyWorking ? "Thinking..." : "Viewed thought process (" + thinkCount + " step" + (thinkCount > 1 ? "s" : "") + ")");
         }
 
         LinearLayout pill = new LinearLayout(this);
         pill.setOrientation(LinearLayout.HORIZONTAL);
         pill.setGravity(Gravity.CENTER_VERTICAL);
-        pill.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
-        pill.setPadding(dp(12), dp(8), dp(12), dp(8));
+        pill.setBackground(cBox(isCurrentlyWorking ? CLAUDE_AMBER_BG : CLAUDE_SURFACE_MUTED, isCurrentlyWorking ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 14));
+        pill.setPadding(dp(12), dp(9), dp(12), dp(9));
 
-        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 16, CLAUDE_TERRACOTTA);
+        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isCurrentlyWorking ? CLAUDE_AMBER : CLAUDE_TERRACOTTA);
         pill.addView(actionIcon);
 
-        TextView tv = cText("  " + labelText, 12.5f, CLAUDE_TEXT_MAIN, true, false);
+        TextView tv = cText("  " + labelText, 13f, CLAUDE_TEXT_MAIN, true, false);
         pill.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
 
-        LinearLayout doneBadge = new LinearLayout(this);
-        doneBadge.setOrientation(LinearLayout.HORIZONTAL);
-        doneBadge.setGravity(Gravity.CENTER_VERTICAL);
-        doneBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
-        doneBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
-        doneBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
-        TextView doneText = cText(" Done", 10.5f, CLAUDE_GREEN, true, false);
-        doneBadge.addView(doneText);
-        pill.addView(doneBadge);
+        // State Badge: If working, show Spinner + "Running..."; if done, show "✓ Done"
+        LinearLayout stateBadge = new LinearLayout(this);
+        stateBadge.setOrientation(LinearLayout.HORIZONTAL);
+        stateBadge.setGravity(Gravity.CENTER_VERTICAL);
 
-        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 18, CLAUDE_TEXT_MUTED);
+        if (isCurrentlyWorking) {
+            stateBadge.setBackground(cBox(CLAUDE_AMBER_BG, CLAUDE_AMBER, 1, 6));
+            stateBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+            ProgressBar pb = new ProgressBar(this);
+            LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(12), dp(12));
+            stateBadge.addView(pb, lpPb);
+            TextView runText = cText(" Running", 11f, CLAUDE_AMBER, true, false);
+            stateBadge.addView(runText);
+        } else {
+            stateBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
+            stateBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+            stateBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
+            TextView doneText = cText(" Done", 11f, CLAUDE_GREEN, true, false);
+            stateBadge.addView(doneText);
+        }
+        pill.addView(stateBadge);
+
+        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
         chevron.setPadding(dp(4), 0, 0, 0);
         pill.addView(chevron);
 
-        pill.setOnClickListener(v -> openExecutionBottomModal(toolTurns));
+        pill.setOnClickListener(v -> openExecutionBottomModal(toolTurns, isCurrentlyWorking));
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(4), 0, dp(8));
         chatMessagesList.addView(pill, lp);
     }
 
-    private void addCompactExecutionPill(String detail, String title) {
-        ArrayList<JSONObject> list = new ArrayList<>();
-        try {
-            JSONObject o = new JSONObject();
-            o.put("role", "tool");
-            o.put("title", title);
-            o.put("content", detail);
-            list.add(o);
-        } catch (Exception e) {}
-        addCompactToolsGroupPill(list);
-    }
-
-    private void openExecutionBottomModal(final ArrayList<JSONObject> items) {
+    private void openExecutionBottomModal(final ArrayList<JSONObject> items, final boolean isCurrentlyWorking) {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
         DisplayMetrics dm = getResources().getDisplayMetrics();
         final int screenHeight = dm.heightPixels;
-        final int peekHeight = (int) (screenHeight * 0.58f);
+        final int peekHeight = (int) (screenHeight * 0.60f);
         final int fullHeight = (int) (screenHeight * 0.94f);
 
         final LinearLayout modalRoot = new LinearLayout(this);
@@ -1746,7 +1727,7 @@ public class MainActivity extends Activity {
         modalRoot.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 24));
         modalRoot.setPadding(dp(20), dp(10), dp(20), dp(16));
 
-        // Top Drag Handle Pill (Touchable to swipe up/down)
+        // Top Drag Handle Pill (Comfortable 52dp width x 6dp height)
         final LinearLayout dragArea = new LinearLayout(this);
         dragArea.setOrientation(LinearLayout.VERTICAL);
         dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -1754,24 +1735,22 @@ public class MainActivity extends Activity {
 
         View dragHandle = new View(this);
         dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
-        LinearLayout.LayoutParams lpHandle = new LinearLayout.LayoutParams(dp(44), dp(5));
+        LinearLayout.LayoutParams lpHandle = new LinearLayout.LayoutParams(dp(52), dp(6));
         dragArea.addView(dragHandle, lpHandle);
         modalRoot.addView(dragArea);
 
-        // Header Title Row (Title, Fullscreen Toggle, Close)
+        // Header Title Row (Title, Fullscreen Toggle, Close with comfortable touch targets)
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView title = cText("Execution & Thoughts", 18, CLAUDE_TEXT_MAIN, true, true);
+        TextView title = cText("Execution & Thoughts", 18.5f, CLAUDE_TEXT_MAIN, true, true);
         headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
-        final ImageView fullscreenBtn = cIcon(R.drawable.ic_fullscreen, 22, CLAUDE_TEXT_MUTED);
-        fullscreenBtn.setPadding(dp(6), dp(4), dp(6), dp(4));
+        final ImageView fullscreenBtn = cIconButton(R.drawable.ic_fullscreen, 24, 40, CLAUDE_TEXT_MAIN);
         headerRow.addView(fullscreenBtn);
 
-        ImageView closeBtn = cIcon(R.drawable.ic_close, 20, CLAUDE_TEXT_MUTED);
-        closeBtn.setPadding(dp(6), dp(4), dp(2), dp(4));
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 22, 40, CLAUDE_TEXT_MAIN);
         closeBtn.setOnClickListener(v -> dialog.dismiss());
         headerRow.addView(closeBtn);
         modalRoot.addView(headerRow);
@@ -1780,7 +1759,7 @@ public class MainActivity extends Activity {
         LinearLayout subRow = new LinearLayout(this);
         subRow.setOrientation(LinearLayout.HORIZONTAL);
         subRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView sub = cText(items.size() + " actions executed • tap to expand/collapse", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView sub = cText(items.size() + " actions • tap item to expand/collapse", 13f, CLAUDE_TEXT_MUTED, false, false);
         subRow.addView(sub, new LinearLayout.LayoutParams(0, -2, 1));
         modalRoot.addView(subRow);
 
@@ -1793,19 +1772,17 @@ public class MainActivity extends Activity {
         list.setOrientation(LinearLayout.VERTICAL);
         list.setPadding(0, dp(12), 0, dp(12));
 
-        final ArrayList<TextView> allBodies = new ArrayList<>();
-        final ArrayList<ImageView> allChevrons = new ArrayList<>();
-
         for (int i = 0; i < items.size(); i++) {
             JSONObject it = items.get(i);
             String role = it.optString("role", "tool");
             String itTitle = it.optString("title", "tool".equalsIgnoreCase(role) ? "Executed Tool" : "Thinking Process");
             String content = it.optString("content", "");
             boolean isTool = "tool".equalsIgnoreCase(role);
+            boolean isThisItemRunning = (isCurrentlyWorking && i == items.size() - 1);
 
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+            card.setBackground(cBox(isThisItemRunning ? CLAUDE_AMBER_BG : CLAUDE_SURFACE_MUTED, isThisItemRunning ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 12));
             card.setPadding(dp(12), dp(10), dp(12), dp(10));
 
             // Header Clickable Row (Tap to expand/collapse)
@@ -1813,41 +1790,51 @@ public class MainActivity extends Activity {
             cHead.setOrientation(LinearLayout.HORIZONTAL);
             cHead.setGravity(Gravity.CENTER_VERTICAL);
 
-            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 16, isTool ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED);
+            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isThisItemRunning ? CLAUDE_AMBER : (isTool ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
             cHead.addView(ic);
 
-            TextView tView = cText("  " + itTitle, 13, CLAUDE_TEXT_MAIN, true, false);
+            TextView tView = cText("  " + itTitle, 13.5f, CLAUDE_TEXT_MAIN, true, false);
             cHead.addView(tView, new LinearLayout.LayoutParams(0, -2, 1));
 
+            // State Badge: Running spinner vs Done checkmark
             LinearLayout bBadge = new LinearLayout(this);
             bBadge.setOrientation(LinearLayout.HORIZONTAL);
             bBadge.setGravity(Gravity.CENTER_VERTICAL);
-            bBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
-            bBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
-            bBadge.addView(cIcon(R.drawable.ic_check, 10, CLAUDE_GREEN));
-            TextView bText = cText(" Done", 10.5f, CLAUDE_GREEN, true, false);
-            bBadge.addView(bText);
+
+            if (isThisItemRunning) {
+                bBadge.setBackground(cBox(CLAUDE_AMBER_BG, CLAUDE_AMBER, 1, 6));
+                bBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+                ProgressBar pb = new ProgressBar(this);
+                LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(12), dp(12));
+                bBadge.addView(pb, lpPb);
+                TextView bText = cText(" Running", 11f, CLAUDE_AMBER, true, false);
+                bBadge.addView(bText);
+            } else {
+                bBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
+                bBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+                bBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
+                TextView bText = cText(" Done", 11f, CLAUDE_GREEN, true, false);
+                bBadge.addView(bText);
+            }
             cHead.addView(bBadge);
 
             // Expand/Collapse Chevron Indicator
-            final ImageView expandChevron = cIcon(R.drawable.ic_chevron_right, 18, CLAUDE_TEXT_MUTED);
+            final ImageView expandChevron = cIcon(isThisItemRunning ? R.drawable.ic_expand_more : R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
             expandChevron.setPadding(dp(4), 0, 0, 0);
             cHead.addView(expandChevron);
-            allChevrons.add(expandChevron);
 
             card.addView(cHead);
 
-            // Detail Content Body (Default is COLLAPSED / GONE as requested!)
+            // Detail Content Body
             final TextView body = new TextView(this);
             body.setText(content);
-            body.setTextSize(12);
+            body.setTextSize(12.5f);
             body.setTextColor(CLAUDE_TEXT_MUTED);
             body.setTypeface(Typeface.MONOSPACE);
             body.setTextIsSelectable(true);
             body.setPadding(0, dp(8), 0, dp(4));
-            body.setVisibility(View.GONE); // DEFAULT COLLAPSE
+            body.setVisibility(isThisItemRunning ? View.VISIBLE : View.GONE);
             card.addView(body);
-            allBodies.add(body);
 
             // Toggle Expand / Collapse on Click
             cHead.setOnClickListener(v -> {
