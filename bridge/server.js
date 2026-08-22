@@ -208,6 +208,30 @@ const server = http.createServer((req, res) => {
     });
   }
 
+  // POST /api/session/control (Remote Control Stop / Interrupt)
+  if (req.method === 'POST' && pathname === '/api/session/control') {
+    let raw = '';
+    req.on('data', chunk => { raw += chunk; });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(raw || '{}');
+        const action = payload.action;
+        if (action === 'stop' || action === 'kill') {
+          try {
+            execSync('pkill -f "agy -p" || true');
+            return send(res, 200, { ok: true, message: 'Process interrupted' });
+          } catch(e) {
+            return send(res, 200, { ok: true, message: 'No running process found' });
+          }
+        }
+        send(res, 400, { error: 'Unknown action' });
+      } catch (err) {
+        send(res, 500, { error: err.message });
+      }
+    });
+    return;
+  }
+
   // POST /api/chat
   if (req.method === 'POST' && pathname === '/api/chat') {
     let raw = '';

@@ -62,10 +62,10 @@ public class MainActivity extends Activity {
     private static final int M3_OUTLINE_VARIANT = Color.rgb(68, 71, 78);        // #44474E
     private static final int M3_ON_SURFACE = Color.rgb(226, 226, 233);          // #E2E2E9
     private static final int M3_ON_SURFACE_VARIANT = Color.rgb(196, 199, 208);  // #C4C7D0
+    private static final int M3_TEXT_MUTED = Color.rgb(142, 145, 153);        // #8E9199
 
     private static final int M3_GREEN = Color.rgb(109, 213, 140);               // #6DD58C
     private static final int M3_RED = Color.rgb(242, 184, 181);                 // #F2B8B5
-    private static final int M3_TEXT_MUTED = Color.rgb(142, 145, 153);        // #8E9199
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -102,6 +102,7 @@ public class MainActivity extends Activity {
     private TextView monitorSessionId;
     private LinearLayout monitorTurnsList;
     private Button monitorAutoRefreshBtn;
+    private Button monitorStopBtn;
     private boolean isAutoRefreshActive = false;
     private final Runnable autoRefreshRunnable = new Runnable() {
         @Override
@@ -178,7 +179,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(M3_SURFACE);
         root.setPadding(dp(16), dp(10), dp(16), dp(10));
 
-        // 1. M3 Top App Bar
+        // 1. M3 Top App Bar (Remote Control Header)
         LinearLayout topAppBar = new LinearLayout(this);
         topAppBar.setOrientation(LinearLayout.HORIZONTAL);
         topAppBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -194,7 +195,7 @@ public class MainActivity extends Activity {
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
         statusDot = m3Text("●", 10, M3_GREEN, false);
         statusRow.addView(statusDot);
-        statusText = m3Text(" Live Gateway", 11, M3_ON_SURFACE_VARIANT, false);
+        statusText = m3Text(" Live Remote Control", 11, M3_ON_SURFACE_VARIANT, false);
         statusRow.addView(statusText);
         brandCol.addView(statusRow);
         topAppBar.addView(brandCol, new LinearLayout.LayoutParams(0, -2, 1));
@@ -425,7 +426,7 @@ public class MainActivity extends Activity {
     }
 
     // ==========================================
-    // TAB 2: LIVE MONITOR & TELEMETRY
+    // TAB 2: LIVE MONITOR & REMOTE CONTROL
     // ==========================================
     private void buildMonitorTab(LinearLayout parent) {
         ScrollView scroll = new ScrollView(this);
@@ -476,7 +477,7 @@ public class MainActivity extends Activity {
         procCard.addView(metricsRow, lpMet);
         content.addView(procCard);
 
-        // 2. Active Conversation Session Card
+        // 2. Active Conversation Session Card with Remote Control Actions
         LinearLayout sessionCard = new LinearLayout(this);
         sessionCard.setOrientation(LinearLayout.VERTICAL);
         sessionCard.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_OUTLINE_VARIANT, 1, 16));
@@ -484,9 +485,25 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpSess = new LinearLayout.LayoutParams(-1, -2);
         lpSess.setMargins(0, dp(10), 0, dp(10));
 
+        LinearLayout sessTop = new LinearLayout(this);
+        sessTop.setOrientation(LinearLayout.HORIZONTAL);
+        sessTop.setGravity(Gravity.CENTER_VERTICAL);
+
         TextView sessHeader = m3Text("CURRENT SESSION CONTEXT", 11.5f, M3_PRIMARY, true);
         sessHeader.setLetterSpacing(0.04f);
-        sessionCard.addView(sessHeader);
+        sessTop.addView(sessHeader, new LinearLayout.LayoutParams(0, -2, 1));
+
+        monitorStopBtn = new Button(this);
+        monitorStopBtn.setText("🛑 Stop CLI");
+        monitorStopBtn.setTextSize(11);
+        monitorStopBtn.setAllCaps(false);
+        monitorStopBtn.setTextColor(M3_RED);
+        monitorStopBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_RED, 1, 10));
+        monitorStopBtn.setPadding(dp(6), 0, dp(6), 0);
+        monitorStopBtn.setOnClickListener(v -> stopRunningCliProcess());
+        sessTop.addView(monitorStopBtn, new LinearLayout.LayoutParams(-2, dp(28)));
+
+        sessionCard.addView(sessTop);
 
         monitorSessionTitle = m3Text("Loading latest session...", 14, M3_ON_SURFACE, true);
         LinearLayout.LayoutParams lpST = new LinearLayout.LayoutParams(-1, -2);
@@ -566,6 +583,39 @@ public class MainActivity extends Activity {
             monitorAutoRefreshBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 12));
         }
         mainHandler.removeCallbacks(autoRefreshRunnable);
+    }
+
+    private void stopRunningCliProcess() {
+        String endpoint = prefs.getString("url", "").trim();
+        if (endpoint.isEmpty()) return;
+
+        executor.execute(() -> {
+            try {
+                String ctrlUrl = endpoint.replace("/api/chat", "/api/session/control");
+                HttpURLConnection c = (HttpURLConnection) new URL(ctrlUrl).openConnection();
+                c.setRequestMethod("POST");
+                c.setConnectTimeout(5000);
+                c.setReadTimeout(5000);
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json");
+                String token = prefs.getString("token", "");
+                if (!token.isEmpty()) {
+                    c.setRequestProperty("Authorization", "Bearer " + token);
+                }
+
+                JSONObject req = new JSONObject();
+                req.put("action", "stop");
+                c.getOutputStream().write(req.toString().getBytes(StandardCharsets.UTF_8));
+                int code = c.getResponseCode();
+
+                mainHandler.post(() -> {
+                    Toast.makeText(MainActivity.this, code == 200 ? "Stop signal sent" : "HTTP " + code, Toast.LENGTH_SHORT).show();
+                    fetchLiveMonitorData(false);
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Error stopping: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
     }
 
     private void fetchLiveMonitorData(final boolean showFeedback) {
@@ -1140,7 +1190,8 @@ public class MainActivity extends Activity {
         StringBuilder out = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) {
-            out.append(line).append("\n");
+            out.append(line).append("
+");
         }
 
         if (code >= 400) {
@@ -1216,7 +1267,8 @@ public class MainActivity extends Activity {
         bodyView.setTextColor(author.contains("Error") ? M3_RED : M3_ON_SURFACE);
         bodyView.setLineSpacing(0, 1.2f);
         bodyView.setTextIsSelectable(true);
-        bodyView.setTypeface(message.contains("\n") && (message.contains("    ") || message.contains("\t") || message.contains("{")) ? Typeface.MONOSPACE : Typeface.DEFAULT);
+        bodyView.setTypeface(message.contains("
+") && (message.contains("    ") || message.contains("	") || message.contains("{")) ? Typeface.MONOSPACE : Typeface.DEFAULT);
         bodyView.setPadding(0, dp(6), 0, 0);
 
         bodyView.setOnLongClickListener(v -> {
@@ -1235,5 +1287,4 @@ public class MainActivity extends Activity {
 
         scrollChat.post(() -> scrollChat.fullScroll(View.FOCUS_DOWN));
     }
-}
 }
