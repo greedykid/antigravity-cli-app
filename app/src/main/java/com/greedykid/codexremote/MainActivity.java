@@ -101,8 +101,14 @@ public class MainActivity extends Activity {
     private TextView monitorSessionTitle;
     private TextView monitorSessionId;
     private LinearLayout monitorTurnsList;
+    private ScrollView monitorScroll;
     private Button monitorAutoRefreshBtn;
     private Button monitorStopBtn;
+    private EditText monitorPromptInput;
+    private Button monitorSendBtn;
+    private ProgressBar monitorSendProgress;
+    private String activeConversationId = null;
+
     private boolean isAutoRefreshActive = false;
     private final Runnable autoRefreshRunnable = new Runnable() {
         @Override
@@ -218,7 +224,7 @@ public class MainActivity extends Activity {
         navBar.setPadding(dp(4), dp(4), dp(4), dp(4));
 
         navBtnChat = createM3NavTab("💬 Chat", 0);
-        navBtnMonitor = createM3NavTab("⚡ Monitor", 1);
+        navBtnMonitor = createM3NavTab("⚡ Monitor & Control", 1);
         navBtnHistory = createM3NavTab("📜 History", 2);
 
         navBar.addView(navBtnChat, new LinearLayout.LayoutParams(0, dp(38), 1));
@@ -419,19 +425,19 @@ public class MainActivity extends Activity {
         lpT.setMargins(0, dp(8), 0, dp(4));
         emptyStateView.addView(title, lpT);
 
-        TextView desc = m3Text("Send instructions to your remote CLI agent, or open the Live Monitor tab to inspect active execution.", 13, M3_ON_SURFACE_VARIANT, false);
+        TextView desc = m3Text("Send instructions to your remote CLI agent, or open the Live Monitor tab to inspect active execution and continue chatting.", 13, M3_ON_SURFACE_VARIANT, false);
         desc.setGravity(Gravity.CENTER);
         desc.setLineSpacing(0, 1.15f);
         emptyStateView.addView(desc);
     }
 
     // ==========================================
-    // TAB 2: LIVE MONITOR & REMOTE CONTROL
+    // TAB 2: LIVE MONITOR & ACTIVE REMOTE CONTROL
     // ==========================================
     private void buildMonitorTab(LinearLayout parent) {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.setVerticalScrollBarEnabled(false);
+        monitorScroll = new ScrollView(this);
+        monitorScroll.setFillViewport(true);
+        monitorScroll.setVerticalScrollBarEnabled(false);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -529,11 +535,40 @@ public class MainActivity extends Activity {
         monitorTurnsList = new LinearLayout(this);
         monitorTurnsList.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams lpTL = new LinearLayout.LayoutParams(-1, -2);
-        lpTL.setMargins(0, dp(8), 0, dp(16));
+        lpTL.setMargins(0, dp(8), 0, dp(12));
         content.addView(monitorTurnsList, lpTL);
 
-        scroll.addView(content);
-        parent.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
+        monitorScroll.addView(content);
+        parent.addView(monitorScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        // 5. Active Session Remote Chat Bar (Continue Chat in Active Session)
+        LinearLayout activeComposer = new LinearLayout(this);
+        activeComposer.setOrientation(LinearLayout.HORIZONTAL);
+        activeComposer.setGravity(Gravity.CENTER_VERTICAL);
+        activeComposer.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_PRIMARY, 1, 28));
+        activeComposer.setPadding(dp(14), dp(4), dp(6), dp(4));
+
+        monitorPromptInput = new EditText(this);
+        monitorPromptInput.setHint("Reply to active Antigravity session...");
+        monitorPromptInput.setHintTextColor(M3_TEXT_MUTED);
+        monitorPromptInput.setTextColor(M3_ON_SURFACE);
+        monitorPromptInput.setTextSize(14);
+        monitorPromptInput.setBackground(null);
+        monitorPromptInput.setMinLines(1);
+        monitorPromptInput.setMaxLines(4);
+        monitorPromptInput.setSingleLine(false);
+        activeComposer.addView(monitorPromptInput, new LinearLayout.LayoutParams(0, -2, 1));
+
+        monitorSendBtn = new Button(this);
+        monitorSendBtn.setText("➔");
+        monitorSendBtn.setTextSize(18);
+        monitorSendBtn.setTextColor(M3_ON_PRIMARY);
+        monitorSendBtn.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        monitorSendBtn.setBackground(m3Box(M3_PRIMARY, 0, 0, 22));
+        monitorSendBtn.setOnClickListener(v -> sendActiveSessionPrompt());
+        activeComposer.addView(monitorSendBtn, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+        parent.addView(activeComposer);
     }
 
     private TextView addMetricPill(LinearLayout row, String label, String value) {
@@ -618,6 +653,96 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void sendActiveSessionPrompt() {
+        String text = monitorPromptInput.getText().toString().trim();
+        String endpoint = prefs.getString("url", "").trim();
+        if (endpoint.isEmpty()) {
+            showConnectionDialog();
+            return;
+        }
+        if (text.isEmpty() || monitorSendBtn.getTag() != null) return;
+
+        monitorSendBtn.setTag("busy");
+        monitorSendBtn.setEnabled(false);
+        monitorPromptInput.setEnabled(false);
+
+        addTurnItemToMonitor("user", text, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
+        monitorPromptInput.setText("");
+
+        monitorSendProgress = new ProgressBar(this);
+        LinearLayout.LayoutParams lpProg = new LinearLayout.LayoutParams(dp(24), dp(24));
+        lpProg.setMargins(dp(14), dp(4), 0, dp(10));
+        monitorTurnsList.addView(monitorSendProgress, lpProg);
+        monitorScroll.post(() -> monitorScroll.fullScroll(View.FOCUS_DOWN));
+
+        executor.execute(() -> {
+            try {
+                JSONObject req = new JSONObject();
+                req.put("prompt", text);
+                req.put("engine", "antigravity");
+                req.put("resume", true);
+                if (activeConversationId != null && !activeConversationId.isEmpty()) {
+                    req.put("conversationId", activeConversationId);
+                }
+
+                JSONObject res = executePost(endpoint, prefs.getString("token", ""), req);
+                String responseText = res.optString("response", "No output returned.");
+
+                mainHandler.post(() -> {
+                    if (monitorSendProgress != null) {
+                        monitorTurnsList.removeView(monitorSendProgress);
+                        monitorSendProgress = null;
+                    }
+                    addTurnItemToMonitor("assistant", responseText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
+                    monitorSendBtn.setTag(null);
+                    monitorSendBtn.setEnabled(true);
+                    monitorPromptInput.setEnabled(true);
+                    fetchLiveMonitorData(false);
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (monitorSendProgress != null) {
+                        monitorTurnsList.removeView(monitorSendProgress);
+                        monitorSendProgress = null;
+                    }
+                    addTurnItemToMonitor("tool", "Error: " + e.getMessage(), "");
+                    monitorSendBtn.setTag(null);
+                    monitorSendBtn.setEnabled(true);
+                    monitorPromptInput.setEnabled(true);
+                });
+            }
+        });
+    }
+
+    private JSONObject executePost(String endpoint, String token, JSONObject req) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(endpoint).openConnection();
+        c.setRequestMethod("POST");
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(300000);
+        c.setDoOutput(true);
+        c.setRequestProperty("Content-Type", "application/json");
+        if (!token.isEmpty()) {
+            c.setRequestProperty("Authorization", "Bearer " + token);
+        }
+
+        byte[] body = req.toString().getBytes(StandardCharsets.UTF_8);
+        c.getOutputStream().write(body);
+
+        int code = c.getResponseCode();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(
+                code >= 400 ? c.getErrorStream() : c.getInputStream(), StandardCharsets.UTF_8));
+        StringBuilder out = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            out.append(line).append("\n");
+        }
+
+        if (code >= 400) {
+            throw new Exception(out.toString().isEmpty() ? "HTTP " + code : out.toString().trim());
+        }
+        return new JSONObject(out.toString());
+    }
+
     private void fetchLiveMonitorData(final boolean showFeedback) {
         String endpoint = prefs.getString("url", "").trim();
         if (endpoint.isEmpty()) return;
@@ -674,12 +799,13 @@ public class MainActivity extends Activity {
 
             JSONObject session = json.optJSONObject("session");
             if (session != null) {
+                activeConversationId = session.optString("conversationId", "");
                 monitorSessionTitle.setText(session.optString("title", "Active Task"));
-                monitorSessionId.setText("ID: " + session.optString("conversationId", "unknown") + "  •  " + session.optString("workspace", "/home/ubuntu"));
+                monitorSessionId.setText("ID: " + activeConversationId + "  •  " + session.optString("workspace", "/home/ubuntu"));
             }
 
             JSONArray turns = json.optJSONArray("turns");
-            if (turns != null) {
+            if (turns != null && monitorSendBtn.getTag() == null) {
                 monitorTurnsList.removeAllViews();
                 for (int i = 0; i < turns.length(); i++) {
                     JSONObject turn = turns.getJSONObject(i);
@@ -711,7 +837,7 @@ public class MainActivity extends Activity {
             bgColor = M3_PRIMARY_CONTAINER;
             borderColor = M3_PRIMARY;
             accentColor = M3_ON_PRIMARY_CONTAINER;
-            roleLabel = "👤 User Request";
+            roleLabel = "👤 You (Live Session)";
         } else if ("tool".equalsIgnoreCase(role)) {
             bgColor = M3_SURFACE_CONTAINER;
             borderColor = M3_OUTLINE_VARIANT;
@@ -918,7 +1044,7 @@ public class MainActivity extends Activity {
 
                     mainHandler.post(() -> {
                         loadingDialog.dismiss();
-                        showTranscriptViewerModal(sessionTitle, msgs);
+                        showTranscriptViewerModal(convId, sessionTitle, msgs);
                     });
                 } else {
                     mainHandler.post(() -> {
@@ -935,7 +1061,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void showTranscriptViewerModal(String title, JSONArray msgs) {
+    private void showTranscriptViewerModal(final String convId, String title, JSONArray msgs) {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setPadding(dp(16), dp(10), dp(16), dp(10));
@@ -990,11 +1116,21 @@ public class MainActivity extends Activity {
 
         scroll.addView(container);
 
-        new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setView(scroll)
-                .setPositiveButton("Close", null)
-                .show();
+                .setNegativeButton("Close", null)
+                .setPositiveButton("💬 Continue Session ➔", null)
+                .create();
+
+        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x -> {
+            activeConversationId = convId;
+            dialog.dismiss();
+            switchTab(1);
+            fetchLiveMonitorData(true);
+            Toast.makeText(MainActivity.this, "Switched to session: " + convId.substring(0, 8), Toast.LENGTH_SHORT).show();
+        }));
+        dialog.show();
     }
 
     // ==========================================
@@ -1156,7 +1292,12 @@ public class MainActivity extends Activity {
 
         executor.execute(() -> {
             try {
-                JSONObject res = request(endpoint, prefs.getString("token", ""), text, engine);
+                JSONObject req = new JSONObject();
+                req.put("prompt", text);
+                req.put("engine", engine);
+                req.put("resume", true);
+
+                JSONObject res = executePost(endpoint, prefs.getString("token", ""), req);
                 String responseText = res.optString("response", "No output returned.");
                 String resEngine = res.optString("engine", engine);
                 mainHandler.post(() -> finishResponse(responseText, false, resEngine));
@@ -1165,38 +1306,6 @@ public class MainActivity extends Activity {
                 mainHandler.post(() -> finishResponse(errMsg, true, engine));
             }
         });
-    }
-
-    private JSONObject request(String endpoint, String token, String promptText, String engine) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(endpoint).openConnection();
-        c.setRequestMethod("POST");
-        c.setConnectTimeout(15000);
-        c.setReadTimeout(300000);
-        c.setDoOutput(true);
-        c.setRequestProperty("Content-Type", "application/json");
-        if (!token.isEmpty()) {
-            c.setRequestProperty("Authorization", "Bearer " + token);
-        }
-
-        JSONObject req = new JSONObject();
-        req.put("prompt", promptText);
-        req.put("engine", engine);
-        byte[] body = req.toString().getBytes(StandardCharsets.UTF_8);
-        c.getOutputStream().write(body);
-
-        int code = c.getResponseCode();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(
-                code >= 400 ? c.getErrorStream() : c.getInputStream(), StandardCharsets.UTF_8));
-        StringBuilder out = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) {
-            out.append(line).append("\n");
-        }
-
-        if (code >= 400) {
-            throw new Exception(out.toString().isEmpty() ? "HTTP " + code : out.toString().trim());
-        }
-        return new JSONObject(out.toString());
     }
 
     private void finishResponse(String response, boolean error, String engine) {

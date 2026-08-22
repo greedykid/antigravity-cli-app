@@ -119,13 +119,21 @@ function runCodex(prompt) {
   });
 }
 
-function runAgy(prompt) {
+function runAgy(prompt, conversationId, resume = true) {
   return new Promise((resolve, reject) => {
     const extraPath = ':/home/ubuntu/.local/bin:/usr/local/bin';
     const env = Object.assign({}, process.env, {
       PATH: (process.env.PATH || '') + extraPath
     });
-    const child = spawn(AGY_BIN, ['-p', prompt, '--dangerously-skip-permissions'], {
+    const args = [];
+    if (conversationId) {
+      args.push('--conversation', conversationId);
+    } else if (resume) {
+      args.push('-c');
+    }
+    args.push('-p', prompt, '--dangerously-skip-permissions');
+
+    const child = spawn(AGY_BIN, args, {
       cwd: WORKDIR,
       env
     });
@@ -163,7 +171,7 @@ const server = http.createServer((req, res) => {
     return send(res, 200, {
       ok: true,
       engines: ['antigravity', 'codex'],
-      features: ['chat', 'live_monitor', 'session_history']
+      features: ['chat', 'live_monitor', 'session_history', 'remote_control']
     });
   }
 
@@ -245,6 +253,8 @@ const server = http.createServer((req, res) => {
         const payload = JSON.parse(raw);
         const prompt = payload.prompt;
         const engine = (payload.engine || payload.cli || 'antigravity').toLowerCase();
+        const conversationId = payload.conversationId || payload.session_id || null;
+        const resume = payload.resume !== false;
 
         if (typeof prompt !== 'string' || !prompt.trim()) {
           return send(res, 400, { error: 'prompt is required' });
@@ -254,7 +264,7 @@ const server = http.createServer((req, res) => {
         if (engine === 'codex') {
           response = await runCodex(prompt.trim());
         } else {
-          response = await runAgy(prompt.trim());
+          response = await runAgy(prompt.trim(), conversationId, resume);
         }
 
         send(res, 200, { response, engine: engine === 'codex' ? 'codex' : 'antigravity' });
