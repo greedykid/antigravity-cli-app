@@ -22,9 +22,17 @@ import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
+import android.transition.AutoTransition;
+import android.transition.TransitionManager;
 import android.util.Base64;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
@@ -203,11 +211,39 @@ public class MainActivity extends Activity {
         return v;
     }
 
+    private void applyTouchAnimation(final View view) {
+        view.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(80).start();
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(120).setInterpolator(new OvershootInterpolator()).start();
+                    break;
+            }
+            return false;
+        });
+    }
+
+    private void animateItemEntry(View view) {
+        view.setAlpha(0f);
+        view.setTranslationY(dp(16));
+        view.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(240)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
+    }
+
+    private LinearLayout rootLayout;
+
     private void buildM3Layout() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(M3_SURFACE);
-        root.setPadding(dp(16), dp(10), dp(16), dp(10));
+        rootLayout = new LinearLayout(this);
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setBackgroundColor(M3_SURFACE);
+        rootLayout.setPadding(dp(16), dp(10), dp(16), dp(10));
 
         // 1. M3 Top App Bar (Remote Control Header)
         LinearLayout topAppBar = new LinearLayout(this);
@@ -217,13 +253,20 @@ public class MainActivity extends Activity {
 
         LinearLayout brandCol = new LinearLayout(this);
         brandCol.setOrientation(LinearLayout.VERTICAL);
-        TextView title = m3Text("Antigravity Remote", 17, M3_ON_SURFACE, true);
+        TextView title = m3Text("Antigravity Remote", 17.5f, M3_ON_SURFACE, true);
         brandCol.addView(title);
 
         LinearLayout statusRow = new LinearLayout(this);
         statusRow.setOrientation(LinearLayout.HORIZONTAL);
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
         statusDot = m3Text("●", 10, M3_GREEN, false);
+
+        AlphaAnimation pulse = new AlphaAnimation(0.3f, 1.0f);
+        pulse.setDuration(900);
+        pulse.setRepeatMode(Animation.REVERSE);
+        pulse.setRepeatCount(Animation.INFINITE);
+        statusDot.startAnimation(pulse);
+
         statusRow.addView(statusDot);
         statusText = m3Text(" Live Remote Control", 11, M3_ON_SURFACE_VARIANT, false);
         statusRow.addView(statusText);
@@ -239,7 +282,7 @@ public class MainActivity extends Activity {
         Button settingsBtn = createM3IconBtn("⚙");
         settingsBtn.setOnClickListener(v -> showConnectionDialog());
         topAppBar.addView(settingsBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        root.addView(topAppBar);
+        rootLayout.addView(topAppBar);
 
         // 2. M3 Segmented Navigation Bar (Tabs: Chat | Live Monitor | History)
         LinearLayout navBar = new LinearLayout(this);
@@ -252,29 +295,29 @@ public class MainActivity extends Activity {
         navBtnHistory = createM3NavTab("📜 History", 2);
 
         navBar.addView(navBtnChat, new LinearLayout.LayoutParams(0, dp(38), 1));
-        navBar.addView(navBtnMonitor, new LinearLayout.LayoutParams(0, dp(38), 1));
+        navBar.addView(navBtnMonitor, new LinearLayout.LayoutParams(0, dp(38), 1.25f));
         navBar.addView(navBtnHistory, new LinearLayout.LayoutParams(0, dp(38), 1));
-        root.addView(navBar);
+        rootLayout.addView(navBar);
 
         // 3. Tab Containers (Chat, Monitor, History)
         tabChatContainer = new LinearLayout(this);
         tabChatContainer.setOrientation(LinearLayout.VERTICAL);
         buildChatTab(tabChatContainer);
-        root.addView(tabChatContainer, new LinearLayout.LayoutParams(-1, 0, 1));
+        rootLayout.addView(tabChatContainer, new LinearLayout.LayoutParams(-1, 0, 1));
 
         tabMonitorContainer = new LinearLayout(this);
         tabMonitorContainer.setOrientation(LinearLayout.VERTICAL);
         tabMonitorContainer.setVisibility(View.GONE);
         buildMonitorTab(tabMonitorContainer);
-        root.addView(tabMonitorContainer, new LinearLayout.LayoutParams(-1, 0, 1));
+        rootLayout.addView(tabMonitorContainer, new LinearLayout.LayoutParams(-1, 0, 1));
 
         tabHistoryContainer = new LinearLayout(this);
         tabHistoryContainer.setOrientation(LinearLayout.VERTICAL);
         tabHistoryContainer.setVisibility(View.GONE);
         buildHistoryTab(tabHistoryContainer);
-        root.addView(tabHistoryContainer, new LinearLayout.LayoutParams(-1, 0, 1));
+        rootLayout.addView(tabHistoryContainer, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        setContentView(root);
+        setContentView(rootLayout);
         switchTab(0);
         updateEngineUi();
     }
@@ -287,21 +330,24 @@ public class MainActivity extends Activity {
         b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         b.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 20));
         b.setPadding(0, 0, 0, 0);
+        applyTouchAnimation(b);
         return b;
     }
 
     private Button createM3NavTab(String title, final int index) {
         Button b = new Button(this);
         b.setText(title);
-        b.setTextSize(12.5f);
+        b.setTextSize(12);
         b.setAllCaps(false);
         b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         b.setOnClickListener(v -> switchTab(index));
         b.setPadding(0, 0, 0, 0);
+        applyTouchAnimation(b);
         return b;
     }
 
     private void switchTab(int index) {
+        TransitionManager.beginDelayedTransition(rootLayout, new AutoTransition().setDuration(160));
         currentTabIndex = index;
         navBtnChat.setBackground(m3Box(index == 0 ? M3_PRIMARY_CONTAINER : Color.TRANSPARENT, 0, 0, 20));
         navBtnChat.setTextColor(index == 0 ? M3_ON_PRIMARY_CONTAINER : M3_ON_SURFACE_VARIANT);
@@ -1042,7 +1088,7 @@ public class MainActivity extends Activity {
 
         if (isTool || isThinking) {
             // Render as Collapsible Claude Dropdown Accordion
-            LinearLayout accordion = new LinearLayout(this);
+            final LinearLayout accordion = new LinearLayout(this);
             accordion.setOrientation(LinearLayout.VERTICAL);
             accordion.setBackground(m3Box(M3_SURFACE_CONTAINER, M3_OUTLINE_VARIANT, 1, 12));
             accordion.setPadding(dp(12), dp(8), dp(12), dp(8));
@@ -1086,14 +1132,17 @@ public class MainActivity extends Activity {
             accordion.addView(bodyContainer, lpBody);
 
             header.setOnClickListener(v -> {
+                TransitionManager.beginDelayedTransition(accordion, new AutoTransition().setDuration(180));
                 boolean isOpen = (bodyContainer.getVisibility() == View.VISIBLE);
                 bodyContainer.setVisibility(isOpen ? View.GONE : View.VISIBLE);
                 chevron.setText(isOpen ? "▶ " : "▼ ");
             });
+            applyTouchAnimation(header);
 
             LinearLayout.LayoutParams lpAcc = new LinearLayout.LayoutParams(-1, -2);
             lpAcc.setMargins(0, 0, 0, dp(8));
             monitorTurnsList.addView(accordion, lpAcc);
+            animateItemEntry(accordion);
             return;
         }
 
@@ -1127,6 +1176,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, 0, 0, dp(8));
         monitorTurnsList.addView(turnCard, lp);
+        animateItemEntry(turnCard);
     }
 
     // ==========================================
@@ -1244,17 +1294,54 @@ public class MainActivity extends Activity {
 
                 TextView titleV = m3Text(title, 14, M3_ON_SURFACE, true);
                 LinearLayout.LayoutParams lpT = new LinearLayout.LayoutParams(-1, -2);
-                lpT.setMargins(0, dp(4), 0, dp(6));
+                lpT.setMargins(0, dp(4), 0, dp(4));
                 card.addView(titleV, lpT);
 
                 TextView idV = m3Text("ID: " + convId.substring(0, Math.min(16, convId.length())) + "...", 11.5f, M3_ON_SURFACE_VARIANT, false);
                 card.addView(idV);
 
-                card.setOnClickListener(v -> openSessionTranscriptDialog(convId, title));
+                // Direct Action Buttons on each Card
+                LinearLayout cardActions = new LinearLayout(this);
+                cardActions.setOrientation(LinearLayout.HORIZONTAL);
+                cardActions.setGravity(Gravity.CENTER_VERTICAL);
+                LinearLayout.LayoutParams lpAct = new LinearLayout.LayoutParams(-1, -2);
+                lpAct.setMargins(0, dp(8), 0, 0);
+
+                Button viewBtn = new Button(this);
+                viewBtn.setText("👁 Transkrip");
+                viewBtn.setTextSize(11.5f);
+                viewBtn.setAllCaps(false);
+                viewBtn.setTextColor(M3_ON_SURFACE);
+                viewBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 10));
+                viewBtn.setPadding(dp(8), 0, dp(8), 0);
+                viewBtn.setOnClickListener(v -> openSessionTranscriptDialog(convId, title));
+                applyTouchAnimation(viewBtn);
+                cardActions.addView(viewBtn, new LinearLayout.LayoutParams(0, dp(32), 1));
+
+                Button contBtn = new Button(this);
+                contBtn.setText("💬 Lanjut Sesi ➔");
+                contBtn.setTextSize(11.5f);
+                contBtn.setAllCaps(false);
+                contBtn.setTextColor(M3_ON_PRIMARY_CONTAINER);
+                contBtn.setBackground(m3Box(M3_PRIMARY_CONTAINER, 0, 0, 10));
+                contBtn.setPadding(dp(8), 0, dp(8), 0);
+                contBtn.setOnClickListener(v -> {
+                    activeConversationId = convId;
+                    switchTab(1);
+                    fetchLiveMonitorData(true);
+                    Toast.makeText(MainActivity.this, "Tersambung ke sesi: " + title, Toast.LENGTH_SHORT).show();
+                });
+                applyTouchAnimation(contBtn);
+                LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(0, dp(32), 1.2f);
+                lpC.setMargins(dp(8), 0, 0, 0);
+                cardActions.addView(contBtn, lpC);
+
+                card.addView(cardActions, lpAct);
 
                 LinearLayout.LayoutParams lpCard = new LinearLayout.LayoutParams(-1, -2);
                 lpCard.setMargins(0, 0, 0, dp(10));
                 historyListContainer.addView(card, lpCard);
+                animateItemEntry(card);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -1336,13 +1423,14 @@ public class MainActivity extends Activity {
                     boolean isThinking = "thinking".equalsIgnoreCase(role);
 
                     if (isTool || isThinking) {
-                        LinearLayout accordion = new LinearLayout(this);
+                        final LinearLayout accordion = new LinearLayout(this);
                         accordion.setOrientation(LinearLayout.VERTICAL);
                         accordion.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_OUTLINE_VARIANT, 1, 10));
                         accordion.setPadding(dp(10), dp(6), dp(10), dp(6));
 
                         LinearLayout h = new LinearLayout(this);
                         h.setOrientation(LinearLayout.HORIZONTAL);
+                        h.setGravity(Gravity.CENTER_VERTICAL);
                         final TextView chev = m3Text("▶ ", 11, M3_SECONDARY, true);
                         h.addView(chev);
                         TextView t = m3Text((isTool ? "🛠 " : "💭 ") + (mTitle.isEmpty() ? "Tool Action" : mTitle), 12, M3_SECONDARY, true);
@@ -1359,10 +1447,12 @@ public class MainActivity extends Activity {
                         accordion.addView(body);
 
                         h.setOnClickListener(v -> {
+                            TransitionManager.beginDelayedTransition(accordion, new AutoTransition().setDuration(160));
                             boolean open = (body.getVisibility() == View.VISIBLE);
                             body.setVisibility(open ? View.GONE : View.VISIBLE);
                             chev.setText(open ? "▶ " : "▼ ");
                         });
+                        applyTouchAnimation(h);
 
                         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
                         lp.setMargins(0, 0, 0, dp(6));
@@ -1662,6 +1752,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpBubble = new LinearLayout.LayoutParams(-1, -2);
         lpBubble.setMargins(0, 0, 0, dp(10));
         transcript.addView(bubbleCard, lpBubble);
+        animateItemEntry(bubbleCard);
 
         scrollChat.post(() -> scrollChat.fullScroll(View.FOCUS_DOWN));
     }
@@ -1719,22 +1810,52 @@ public class MainActivity extends Activity {
                 // Normal markdown text lines (Headings, bullet lists, bold, inline code)
                 String text = sections[s];
                 String[] lines = text.split("\n");
+                Pattern headPattern = Pattern.compile("^(#{1,6})\\s+(.*?)(?:\\s+#+)?$");
                 for (String line : lines) {
                     if (line.trim().isEmpty()) continue;
 
                     String trimmed = line.trim();
-                    if (trimmed.startsWith("### ")) {
-                        TextView h3 = m3Text(trimmed.substring(4), 14.5f, M3_TERTIARY, true);
-                        h3.setPadding(0, dp(6), 0, dp(2));
-                        container.addView(h3);
-                    } else if (trimmed.startsWith("## ")) {
-                        TextView h2 = m3Text(trimmed.substring(3), 16f, M3_PRIMARY, true);
-                        h2.setPadding(0, dp(8), 0, dp(3));
-                        container.addView(h2);
-                    } else if (trimmed.startsWith("# ")) {
-                        TextView h1 = m3Text(trimmed.substring(2), 18f, M3_PRIMARY, true);
-                        h1.setPadding(0, dp(10), 0, dp(4));
-                        container.addView(h1);
+                    Matcher hMatcher = headPattern.matcher(trimmed);
+                    if (hMatcher.matches()) {
+                        int level = hMatcher.group(1).length();
+                        String headingRaw = hMatcher.group(2).trim();
+                        SpannableStringBuilder hSpan = parseInlineMarkdown(headingRaw);
+
+                        float hSize;
+                        int hColor;
+                        int topPadDp;
+                        int bottomPadDp;
+
+                        if (level == 1) {
+                            hSize = 18f;
+                            hColor = M3_PRIMARY;
+                            topPadDp = 10;
+                            bottomPadDp = 4;
+                        } else if (level == 2) {
+                            hSize = 16f;
+                            hColor = M3_PRIMARY;
+                            topPadDp = 8;
+                            bottomPadDp = 3;
+                        } else if (level == 3) {
+                            hSize = 14.5f;
+                            hColor = M3_TERTIARY;
+                            topPadDp = 6;
+                            bottomPadDp = 2;
+                        } else {
+                            hSize = 13.5f;
+                            hColor = M3_ON_SURFACE;
+                            topPadDp = 4;
+                            bottomPadDp = 2;
+                        }
+
+                        TextView h = new TextView(this);
+                        h.setText(hSpan);
+                        h.setTextSize(hSize);
+                        h.setTextColor(hColor);
+                        h.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                        h.setPadding(0, dp(topPadDp), 0, dp(bottomPadDp));
+                        h.setTextIsSelectable(true);
+                        container.addView(h);
                     } else if (trimmed.startsWith("---") || trimmed.startsWith("***")) {
                         View divider = new View(this);
                         divider.setBackgroundColor(M3_OUTLINE_VARIANT);
