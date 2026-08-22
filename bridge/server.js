@@ -288,9 +288,13 @@ const server = http.createServer((req, res) => {
       return send(res, 400, { error: "Missing session id parameter" });
     }
     const msgs = getTranscript(convId, 100);
+    const sessions = getSessions();
+    const foundSession = sessions.find(s => s.conversationId === convId) || { conversationId: convId, title: "Session" };
     return send(res, 200, {
       ok: true,
       conversationId: convId,
+      session: foundSession,
+      turns: msgs,
       messages: msgs
     });
   }

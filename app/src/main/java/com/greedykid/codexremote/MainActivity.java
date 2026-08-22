@@ -1,5 +1,7 @@
 package com.greedykid.codexremote;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -31,6 +33,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.animation.AccelerateInterpolator;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -91,6 +95,7 @@ public class MainActivity extends Activity {
     private TextView sidebarStatusDot;
     private TextView sidebarStatusText;
     private TextView sidebarEngineLabel;
+    private boolean isSidebarOpen = false;
 
     // View Containers (Screen 0: Hub, Screen 1: Chat)
     private LinearLayout mainContentContainer;
@@ -125,11 +130,15 @@ public class MainActivity extends Activity {
     private String attachedServerPath = null;
     private int currentScreen = 0; // 0: Hub ("Code"), 1: Session Chat ("New session")
 
+    // Optimization State to prevent aggressive scroll jumping & redundant re-renders
+    private String lastLoadedSessionId = null;
+    private int lastLoadedTurnCount = -1;
+
     private boolean isAutoRefreshActive = false;
     private final Runnable autoRefreshRunnable = new Runnable() {
         @Override
         public void run() {
-            if (isAutoRefreshActive && currentScreen == 1) {
+            if (isAutoRefreshActive && currentScreen == 1 && activeConversationId != null) {
                 fetchActiveSessionTurns(false);
                 mainHandler.postDelayed(this, 3000);
             }
@@ -157,14 +166,14 @@ public class MainActivity extends Activity {
         super.onResume();
         if (currentScreen == 0) {
             fetchHubSessions();
-        } else if (isAutoRefreshActive) {
+        } else if (isAutoRefreshActive && activeConversationId != null) {
             startAutoRefresh();
         }
     }
 
     @Override
     public void onBackPressed() {
-        if (sidebarPanel != null && sidebarPanel.getVisibility() == View.VISIBLE) {
+        if (isSidebarOpen) {
             closeSidebar();
         } else if (currentScreen == 1) {
             showScreen(0);
@@ -225,6 +234,7 @@ public class MainActivity extends Activity {
         sidebarScrim = new View(this);
         sidebarScrim.setBackgroundColor(Color.argb(120, 0, 0, 0));
         sidebarScrim.setVisibility(View.GONE);
+        sidebarScrim.setAlpha(0f);
         sidebarScrim.setOnClickListener(v -> closeSidebar());
         rootFrame.addView(sidebarScrim, new FrameLayout.LayoutParams(-1, -1));
 
@@ -245,7 +255,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SIDEBAR DRAWER NAVIGATION
+    // SMOOTH ANIMATED SIDEBAR NAVIGATION
     // ============================================================
     private void buildSidebarContent(LinearLayout sidebar) {
         sidebar.setPadding(dp(22), dp(24), dp(22), dp(20));
@@ -334,7 +344,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.5.0 • Bridge Active", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.5.1 • Bridge Active", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -362,13 +372,57 @@ public class MainActivity extends Activity {
     }
 
     private void openSidebar() {
-        if (sidebarScrim != null) sidebarScrim.setVisibility(View.VISIBLE);
-        if (sidebarPanel != null) sidebarPanel.setVisibility(View.VISIBLE);
+        if (isSidebarOpen) return;
+        isSidebarOpen = true;
+
+        final int panelWidth = sidebarPanel.getWidth() > 0 ? sidebarPanel.getWidth() : dp(300);
+
+        sidebarScrim.setVisibility(View.VISIBLE);
+        sidebarScrim.setAlpha(0f);
+        sidebarScrim.animate()
+                .alpha(1f)
+                .setDuration(220)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
+
+        sidebarPanel.setTranslationX(-panelWidth);
+        sidebarPanel.setVisibility(View.VISIBLE);
+        sidebarPanel.animate()
+                .translationX(0f)
+                .setDuration(240)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
     }
 
     private void closeSidebar() {
-        if (sidebarScrim != null) sidebarScrim.setVisibility(View.GONE);
-        if (sidebarPanel != null) sidebarPanel.setVisibility(View.GONE);
+        if (!isSidebarOpen) return;
+        isSidebarOpen = false;
+
+        final int panelWidth = sidebarPanel.getWidth() > 0 ? sidebarPanel.getWidth() : dp(300);
+
+        sidebarScrim.animate()
+                .alpha(0f)
+                .setDuration(180)
+                .setInterpolator(new AccelerateInterpolator())
+                .setListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        sidebarScrim.setVisibility(View.GONE);
+                    }
+                })
+                .start();
+
+        sidebarPanel.animate()
+                .translationX(-panelWidth)
+                .setDuration(200)
+                .setInterpolator(new AccelerateInterpolator())
+                .setListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        sidebarPanel.setVisibility(View.GONE);
+                    }
+                })
+                .start();
     }
 
     private void showScreen(int screenIndex) {
@@ -386,6 +440,8 @@ public class MainActivity extends Activity {
                 fetchActiveSessionTurns(true);
                 startAutoRefresh();
             } else {
+                stopAutoRefresh();
+                chatMessagesList.removeAllViews();
                 showEmptyMascotState(true);
             }
         }
@@ -557,18 +613,30 @@ public class MainActivity extends Activity {
         lpR.setMargins(0, dp(2), 0, 0);
         row.addView(repoView, lpR);
 
-        row.setOnClickListener(v -> {
-            activeConversationId = convId;
-            activeSessionTitle = title;
-            showScreen(1);
-        });
+        row.setOnClickListener(v -> openSpecificSession(convId, title));
 
         container.addView(row);
+    }
+
+    private void openSpecificSession(String convId, String title) {
+        activeConversationId = convId;
+        activeSessionTitle = title != null && !title.isEmpty() ? title : "Session";
+        lastLoadedSessionId = null;
+        lastLoadedTurnCount = -1;
+
+        if (chatMessagesList != null) chatMessagesList.removeAllViews();
+        showEmptyMascotState(false);
+        showScreen(1);
     }
 
     private void startNewSession() {
         activeConversationId = null;
         activeSessionTitle = "New session";
+        lastLoadedSessionId = null;
+        lastLoadedTurnCount = -1;
+
+        if (chatMessagesList != null) chatMessagesList.removeAllViews();
+        showEmptyMascotState(true);
         showScreen(1);
     }
 
@@ -929,6 +997,8 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpProg = new LinearLayout.LayoutParams(dp(24), dp(24));
         lpProg.setMargins(dp(16), dp(4), 0, dp(10));
         chatMessagesList.addView(chatSendProgress, lpProg);
+        
+        // Explicit user prompt: scroll to bottom smoothly
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
 
         executor.execute(() -> {
@@ -956,6 +1026,7 @@ public class MainActivity extends Activity {
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
+                    chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
                     fetchActiveSessionTurns(false);
                 });
             } catch (Exception e) {
@@ -968,6 +1039,7 @@ public class MainActivity extends Activity {
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
+                    chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
                     startAutoRefresh();
                 });
             }
@@ -1007,10 +1079,18 @@ public class MainActivity extends Activity {
         String endpoint = prefs.getString("url", "").trim();
         if (endpoint.isEmpty()) return;
 
+        // If in "New session" empty state (activeConversationId == null), DO NOT load previous session turns!
+        if (activeConversationId == null) {
+            return;
+        }
+
+        final String targetConvId = activeConversationId;
+
         executor.execute(() -> {
             try {
-                String liveUrl = endpoint.replace("/api/chat", "/api/session/live");
-                HttpURLConnection c = (HttpURLConnection) new URL(liveUrl).openConnection();
+                // Fetch the EXACT requested session transcript by ID!
+                String url = endpoint.replace("/api/chat", "/api/session/transcript?id=" + Uri.encode(targetConvId));
+                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
                 c.setRequestMethod("GET");
                 c.setConnectTimeout(8000);
                 String token = prefs.getString("token", "");
@@ -1026,7 +1106,7 @@ public class MainActivity extends Activity {
                     while ((line = r.readLine()) != null) b.append(line);
                     JSONObject json = new JSONObject(b.toString());
 
-                    mainHandler.post(() -> renderActiveSessionTurns(json, showFeedback));
+                    mainHandler.post(() -> renderActiveSessionTurns(targetConvId, json, showFeedback));
                 }
             } catch (Exception e) {
                 if (showFeedback) {
@@ -1036,17 +1116,40 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void renderActiveSessionTurns(JSONObject json, boolean showToast) {
+    private void renderActiveSessionTurns(String requestedConvId, JSONObject json, boolean showToast) {
         try {
+            // Verify that the user is still on the same session (prevent race conditions)
+            if (activeConversationId == null || !activeConversationId.equals(requestedConvId)) {
+                return;
+            }
+
             JSONObject session = json.optJSONObject("session");
             if (session != null) {
-                activeConversationId = session.optString("conversationId", activeConversationId);
                 activeSessionTitle = session.optString("title", activeSessionTitle);
                 chatTopTitle.setText(activeSessionTitle);
             }
 
             JSONArray turns = json.optJSONArray("turns");
+            if (turns == null) {
+                turns = json.optJSONArray("messages");
+            }
+
             if (turns != null && btnSend.getTag() == null) {
+                int newTurnCount = turns.length();
+
+                // Prevent unnecessary View re-creation if nothing changed
+                if (requestedConvId.equals(lastLoadedSessionId) && newTurnCount == lastLoadedTurnCount) {
+                    if (showToast) Toast.makeText(this, "Session up to date", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                // Check if user is currently near the bottom BEFORE re-rendering
+                boolean isNearBottom = isScrollNearBottom();
+                boolean isInitialSessionLoad = !requestedConvId.equals(lastLoadedSessionId);
+
+                lastLoadedSessionId = requestedConvId;
+                lastLoadedTurnCount = newTurnCount;
+
                 chatMessagesList.removeAllViews();
                 showEmptyMascotState(turns.length() == 0);
 
@@ -1075,7 +1178,10 @@ public class MainActivity extends Activity {
                     addCompactToolsGroupPill(pendingTools);
                 }
 
-                chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+                // ONLY auto-scroll down if user was already at the bottom or if opening session for the first time
+                if (isInitialSessionLoad || isNearBottom) {
+                    chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+                }
             }
 
             if (showToast) {
@@ -1084,6 +1190,15 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private boolean isScrollNearBottom() {
+        if (chatScroll == null || chatMessagesList == null) return true;
+        int scrollY = chatScroll.getScrollY();
+        int scrollHeight = chatScroll.getHeight();
+        int contentHeight = chatMessagesList.getHeight();
+        int distanceToBottom = contentHeight - (scrollY + scrollHeight);
+        return distanceToBottom <= dp(180); // within 180dp of bottom is considered bottom
     }
 
     // ============================================================
