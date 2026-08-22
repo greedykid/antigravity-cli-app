@@ -38,6 +38,7 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -109,6 +110,7 @@ public class MainActivity extends Activity {
     private ProgressBar hubLoadingProgress;
 
     // Chat View (Screen 2) Components
+    private TextView chatNavIcon;
     private TextView chatTopTitle;
     private LinearLayout chatMessagesList;
     private ScrollView chatScroll;
@@ -128,7 +130,8 @@ public class MainActivity extends Activity {
     private String activeSessionTitle = "New session";
     private String currentEngine = "antigravity";
     private String attachedServerPath = null;
-    private int currentScreen = 0; // 0: Hub ("Code"), 1: Session Chat ("New session")
+    private int currentScreen = 1; // Default to Screen 1 (New Chat Session)
+    private boolean navigatedFromHub = false;
 
     // Optimization State to prevent aggressive scroll jumping & redundant re-renders
     private String lastLoadedSessionId = null;
@@ -175,8 +178,11 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (isSidebarOpen) {
             closeSidebar();
-        } else if (currentScreen == 1) {
+        } else if (currentScreen == 1 && navigatedFromHub) {
+            navigatedFromHub = false;
             showScreen(0);
+        } else if (currentScreen == 0) {
+            startNewSession();
         } else {
             super.onBackPressed();
         }
@@ -224,7 +230,6 @@ public class MainActivity extends Activity {
 
         viewChatContainer = new LinearLayout(this);
         viewChatContainer.setOrientation(LinearLayout.VERTICAL);
-        viewChatContainer.setVisibility(View.GONE);
         buildChatScreen(viewChatContainer);
         mainContentContainer.addView(viewChatContainer, new LinearLayout.LayoutParams(-1, -1));
 
@@ -250,12 +255,13 @@ public class MainActivity extends Activity {
         rootFrame.addView(sidebarPanel, lpSide);
 
         setContentView(rootFrame);
-        showScreen(0);
-        fetchHubSessions();
+
+        // Landing default is SCREEN 1 (New Chat Session) as requested
+        startNewSession();
     }
 
     // ============================================================
-    // SMOOTH ANIMATED SIDEBAR NAVIGATION
+    // SMOOTH ANIMATED SIDEBAR NAVIGATION (Fix listener persistence bug)
     // ============================================================
     private void buildSidebarContent(LinearLayout sidebar) {
         sidebar.setPadding(dp(22), dp(24), dp(22), dp(20));
@@ -309,7 +315,7 @@ public class MainActivity extends Activity {
         LinearLayout menuItems = new LinearLayout(this);
         menuItems.setOrientation(LinearLayout.VERTICAL);
 
-        addSidebarMenuItem(menuItems, "💬", "New Session Chat", () -> {
+        addSidebarMenuItem(menuItems, "💬", "New Chat Session", () -> {
             closeSidebar();
             startNewSession();
         });
@@ -344,7 +350,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.5.1 • Bridge Active", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.5.2 • Bridge Active", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -378,8 +384,8 @@ public class MainActivity extends Activity {
         final int panelWidth = sidebarPanel.getWidth() > 0 ? sidebarPanel.getWidth() : dp(300);
 
         sidebarScrim.setVisibility(View.VISIBLE);
-        sidebarScrim.setAlpha(0f);
         sidebarScrim.animate()
+                .setListener(null) // CRITICAL: Reset listener
                 .alpha(1f)
                 .setDuration(220)
                 .setInterpolator(new DecelerateInterpolator())
@@ -388,6 +394,7 @@ public class MainActivity extends Activity {
         sidebarPanel.setTranslationX(-panelWidth);
         sidebarPanel.setVisibility(View.VISIBLE);
         sidebarPanel.animate()
+                .setListener(null) // CRITICAL: Reset listener
                 .translationX(0f)
                 .setDuration(240)
                 .setInterpolator(new DecelerateInterpolator())
@@ -401,25 +408,31 @@ public class MainActivity extends Activity {
         final int panelWidth = sidebarPanel.getWidth() > 0 ? sidebarPanel.getWidth() : dp(300);
 
         sidebarScrim.animate()
+                .setListener(null)
                 .alpha(0f)
                 .setDuration(180)
                 .setInterpolator(new AccelerateInterpolator())
                 .setListener(new AnimatorListenerAdapter() {
                     @Override
                     public void onAnimationEnd(Animator animation) {
-                        sidebarScrim.setVisibility(View.GONE);
+                        if (!isSidebarOpen) {
+                            sidebarScrim.setVisibility(View.GONE);
+                        }
                     }
                 })
                 .start();
 
         sidebarPanel.animate()
+                .setListener(null)
                 .translationX(-panelWidth)
                 .setDuration(200)
                 .setInterpolator(new AccelerateInterpolator())
                 .setListener(new AnimatorListenerAdapter() {
                     @Override
                     public void onAnimationEnd(Animator animation) {
-                        sidebarPanel.setVisibility(View.GONE);
+                        if (!isSidebarOpen) {
+                            sidebarPanel.setVisibility(View.GONE);
+                        }
                     }
                 })
                 .start();
@@ -436,6 +449,7 @@ public class MainActivity extends Activity {
         } else {
             chatTopTitle.setText(activeSessionTitle);
             updateRepoTag();
+            updateChatNavIcon();
             if (activeConversationId != null) {
                 fetchActiveSessionTurns(true);
                 startAutoRefresh();
@@ -447,13 +461,23 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void updateChatNavIcon() {
+        if (chatNavIcon != null) {
+            if (navigatedFromHub) {
+                chatNavIcon.setText("〈");
+            } else {
+                chatNavIcon.setText("☰");
+            }
+        }
+    }
+
     // ============================================================
     // SCREEN 1: "Code" SESSIONS HUB (Exact Claude Code Style)
     // ============================================================
     private void buildHubScreen(LinearLayout parent) {
         parent.setPadding(dp(20), dp(16), dp(20), dp(16));
 
-        // Top Navigation Bar (Menu and Settings)
+        // Top Navigation Bar (Menu and New Session Button)
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -613,7 +637,10 @@ public class MainActivity extends Activity {
         lpR.setMargins(0, dp(2), 0, 0);
         row.addView(repoView, lpR);
 
-        row.setOnClickListener(v -> openSpecificSession(convId, title));
+        row.setOnClickListener(v -> {
+            navigatedFromHub = true;
+            openSpecificSession(convId, title);
+        });
 
         container.addView(row);
     }
@@ -634,6 +661,7 @@ public class MainActivity extends Activity {
         activeSessionTitle = "New session";
         lastLoadedSessionId = null;
         lastLoadedTurnCount = -1;
+        navigatedFromHub = false;
 
         if (chatMessagesList != null) chatMessagesList.removeAllViews();
         showEmptyMascotState(true);
@@ -646,16 +674,23 @@ public class MainActivity extends Activity {
     private void buildChatScreen(LinearLayout parent) {
         parent.setPadding(dp(16), dp(10), dp(16), dp(12));
 
-        // Top App Bar (< Back, Title, More)
+        // Top App Bar (☰ Menu / 〈 Back, Title, More ⋯)
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setPadding(0, dp(4), 0, dp(10));
 
-        TextView backBtn = cText("〈", 18, CLAUDE_TEXT_MAIN, true, false);
-        backBtn.setPadding(dp(4), dp(4), dp(12), dp(4));
-        backBtn.setOnClickListener(v -> showScreen(0));
-        topBar.addView(backBtn);
+        chatNavIcon = cText("☰", 20, CLAUDE_TEXT_MAIN, true, false);
+        chatNavIcon.setPadding(dp(4), dp(4), dp(12), dp(4));
+        chatNavIcon.setOnClickListener(v -> {
+            if (navigatedFromHub) {
+                navigatedFromHub = false;
+                showScreen(0);
+            } else {
+                openSidebar();
+            }
+        });
+        topBar.addView(chatNavIcon);
 
         chatTopTitle = cText("New session", 15.5f, CLAUDE_TEXT_MAIN, true, false);
         chatTopTitle.setGravity(Gravity.CENTER);
@@ -1401,7 +1436,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // MARKDOWN FORMATTER & ACCORDION CODE BLOCKS
+    // MARKDOWN FORMATTER WITH NATIVE TABLES & CODE BLOCKS
     // ============================================================
     private void renderMarkdownIntoContainer(LinearLayout container, String markdown, boolean isUser) {
         if (markdown == null || markdown.isEmpty()) return;
@@ -1454,54 +1489,161 @@ public class MainActivity extends Activity {
                 lp.setMargins(0, dp(6), 0, dp(6));
                 container.addView(codeBox, lp);
             } else {
-                // Markdown text lines
+                // Parse text lines and group markdown tables
                 String text = sections[s];
                 String[] lines = text.split("\n");
-                for (String line : lines) {
-                    if (line.trim().isEmpty()) continue;
+                ArrayList<String> tableBuffer = new ArrayList<>();
 
+                for (int i = 0; i < lines.length; i++) {
+                    String line = lines[i];
                     String trimmed = line.trim();
-                    if (trimmed.startsWith("### ")) {
-                        TextView h3 = cText(trimmed.substring(4), 15, CLAUDE_TEXT_MAIN, true, true);
-                        h3.setPadding(0, dp(6), 0, dp(2));
-                        container.addView(h3);
-                    } else if (trimmed.startsWith("## ")) {
-                        TextView h2 = cText(trimmed.substring(3), 17, CLAUDE_TEXT_MAIN, true, true);
-                        h2.setPadding(0, dp(8), 0, dp(3));
-                        container.addView(h2);
-                    } else if (trimmed.startsWith("# ")) {
-                        TextView h1 = cText(trimmed.substring(2), 20, CLAUDE_TEXT_MAIN, true, true);
-                        h1.setPadding(0, dp(10), 0, dp(4));
-                        container.addView(h1);
-                    } else if (trimmed.startsWith("---") || trimmed.startsWith("***")) {
-                        View divider = new View(this);
-                        divider.setBackgroundColor(CLAUDE_BORDER);
-                        LinearLayout.LayoutParams lpDiv = new LinearLayout.LayoutParams(-1, dp(1));
-                        lpDiv.setMargins(0, dp(8), 0, dp(8));
-                        container.addView(divider, lpDiv);
+
+                    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+                        tableBuffer.add(trimmed);
                     } else {
-                        SpannableStringBuilder span = parseInlineMarkdown(line);
-                        TextView p = new TextView(this);
-                        p.setText(span);
-                        p.setTextSize(14);
-                        p.setTextColor(CLAUDE_TEXT_MAIN);
-                        p.setLineSpacing(0, 1.25f);
-                        p.setTextIsSelectable(true);
-                        p.setPadding(0, dp(2), 0, dp(2));
-
-                        final String rawLine = line;
-                        p.setOnLongClickListener(v -> {
-                            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                            cm.setPrimaryClip(ClipData.newPlainText("Chat text", rawLine));
-                            Toast.makeText(MainActivity.this, "Copied to clipboard", Toast.LENGTH_SHORT).show();
-                            return true;
-                        });
-
-                        container.addView(p);
+                        if (!tableBuffer.isEmpty()) {
+                            renderMarkdownTable(container, tableBuffer);
+                            tableBuffer.clear();
+                        }
+                        renderMarkdownLine(container, line);
                     }
+                }
+
+                if (!tableBuffer.isEmpty()) {
+                    renderMarkdownTable(container, tableBuffer);
+                    tableBuffer.clear();
                 }
             }
         }
+    }
+
+    private void renderMarkdownLine(LinearLayout container, String line) {
+        if (line.trim().isEmpty()) return;
+
+        String trimmed = line.trim();
+        if (trimmed.startsWith("### ")) {
+            TextView h3 = cText(trimmed.substring(4), 15, CLAUDE_TEXT_MAIN, true, true);
+            h3.setPadding(0, dp(6), 0, dp(2));
+            container.addView(h3);
+        } else if (trimmed.startsWith("## ")) {
+            TextView h2 = cText(trimmed.substring(3), 17, CLAUDE_TEXT_MAIN, true, true);
+            h2.setPadding(0, dp(8), 0, dp(3));
+            container.addView(h2);
+        } else if (trimmed.startsWith("# ")) {
+            TextView h1 = cText(trimmed.substring(2), 20, CLAUDE_TEXT_MAIN, true, true);
+            h1.setPadding(0, dp(10), 0, dp(4));
+            container.addView(h1);
+        } else if (trimmed.startsWith("---") || trimmed.startsWith("***")) {
+            View divider = new View(this);
+            divider.setBackgroundColor(CLAUDE_BORDER);
+            LinearLayout.LayoutParams lpDiv = new LinearLayout.LayoutParams(-1, dp(1));
+            lpDiv.setMargins(0, dp(8), 0, dp(8));
+            container.addView(divider, lpDiv);
+        } else {
+            SpannableStringBuilder span = parseInlineMarkdown(line);
+            TextView p = new TextView(this);
+            p.setText(span);
+            p.setTextSize(14);
+            p.setTextColor(CLAUDE_TEXT_MAIN);
+            p.setLineSpacing(0, 1.25f);
+            p.setTextIsSelectable(true);
+            p.setPadding(0, dp(2), 0, dp(2));
+
+            final String rawLine = line;
+            p.setOnLongClickListener(v -> {
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(ClipData.newPlainText("Chat text", rawLine));
+                Toast.makeText(MainActivity.this, "Copied to clipboard", Toast.LENGTH_SHORT).show();
+                return true;
+            });
+
+            container.addView(p);
+        }
+    }
+
+    private void renderMarkdownTable(LinearLayout container, ArrayList<String> tableLines) {
+        if (tableLines.size() < 2) {
+            for (String l : tableLines) {
+                renderMarkdownLine(container, l);
+            }
+            return;
+        }
+
+        String headerLine = tableLines.get(0);
+        String[] headers = splitTableRow(headerLine);
+        int colCount = headers.length;
+        if (colCount == 0) return;
+
+        HorizontalScrollView hScroll = new HorizontalScrollView(this);
+        hScroll.setHorizontalScrollBarEnabled(true);
+
+        LinearLayout tableLayout = new LinearLayout(this);
+        tableLayout.setOrientation(LinearLayout.VERTICAL);
+        tableLayout.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 10));
+        tableLayout.setPadding(dp(1), dp(1), dp(1), dp(1));
+
+        // Header Row
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setBackgroundColor(CLAUDE_SURFACE_MUTED);
+        headerRow.setPadding(dp(8), dp(8), dp(8), dp(8));
+
+        for (int c = 0; c < colCount; c++) {
+            TextView cell = cText(headers[c], 12.5f, CLAUDE_TEXT_MAIN, true, false);
+            cell.setPadding(dp(8), dp(4), dp(8), dp(4));
+            cell.setMinWidth(dp(85));
+            headerRow.addView(cell, new LinearLayout.LayoutParams(-2, -2));
+        }
+        tableLayout.addView(headerRow);
+
+        // Data Rows
+        for (int r = 1; r < tableLines.size(); r++) {
+            String rowLine = tableLines.get(r);
+            // Skip markdown delimiter line (e.g. |---|---|)
+            if (rowLine.replace("|", "").replace("-", "").replace(":", "").replace(" ", "").isEmpty()) {
+                continue;
+            }
+
+            String[] cells = splitTableRow(rowLine);
+
+            View div = new View(this);
+            div.setBackgroundColor(CLAUDE_BORDER);
+            tableLayout.addView(div, new LinearLayout.LayoutParams(-1, dp(1)));
+
+            LinearLayout dataRow = new LinearLayout(this);
+            dataRow.setOrientation(LinearLayout.HORIZONTAL);
+            dataRow.setBackgroundColor(r % 2 == 0 ? CLAUDE_SURFACE : Color.rgb(250, 250, 248));
+            dataRow.setPadding(dp(8), dp(6), dp(8), dp(6));
+
+            for (int c = 0; c < colCount; c++) {
+                String val = c < cells.length ? cells[c] : "";
+                SpannableStringBuilder span = parseInlineMarkdown(val);
+                TextView cell = new TextView(this);
+                cell.setText(span);
+                cell.setTextSize(12.5f);
+                cell.setTextColor(CLAUDE_TEXT_MAIN);
+                cell.setPadding(dp(8), dp(4), dp(8), dp(4));
+                cell.setMinWidth(dp(85));
+                dataRow.addView(cell, new LinearLayout.LayoutParams(-2, -2));
+            }
+            tableLayout.addView(dataRow);
+        }
+
+        hScroll.addView(tableLayout);
+        LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
+        lpH.setMargins(0, dp(6), 0, dp(8));
+        container.addView(hScroll, lpH);
+    }
+
+    private String[] splitTableRow(String row) {
+        String trimmed = row.trim();
+        if (trimmed.startsWith("|")) trimmed = trimmed.substring(1);
+        if (trimmed.endsWith("|")) trimmed = trimmed.substring(0, trimmed.length() - 1);
+        String[] parts = trimmed.split("\\|");
+        for (int i = 0; i < parts.length; i++) {
+            parts[i] = parts[i].trim();
+        }
+        return parts;
     }
 
     private SpannableStringBuilder parseInlineMarkdown(String raw) {
