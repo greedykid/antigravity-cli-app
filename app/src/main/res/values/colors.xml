@@ -1,14 +1,14 @@
 <resources>
-    <color name="ink">#101417</color>
-    <color name="panel">#172026</color>
-    <color name="panel_elevated">#202B32</color>
-    <color name="line">#35434B</color>
-    <color name="text_primary">#E9EDF0</color>
-    <color name="text_muted">#9AA7AF</color>
-    <color name="amber">#F5B84B</color>
-    <color name="amber_dark">#332B1A</color>
-    <color name="cyan">#60CDFF</color>
-    <color name="cyan_dark">#14303A</color>
-    <color name="success">#74D39B</color>
-    <color name="error">#F28B82</color>
+    <color name="m3_surface">#111318</color>
+    <color name="m3_surface_container">#1D2024</color>
+    <color name="m3_surface_container_high">#282A2F</color>
+    <color name="m3_primary">#A8C7FA</color>
+    <color name="m3_primary_container">#0842A0</color>
+    <color name="m3_on_primary_container">#D3E3FD</color>
+    <color name="m3_tertiary">#F5B84B</color>
+    <color name="m3_outline_variant">#44474E</color>
+    <color name="m3_on_surface">#E2E2E9</color>
+    <color name="m3_on_surface_variant">#C4C7D0</color>
+    <color name="m3_success">#6DD58C</color>
+    <color name="m3_error">#F2B8B5</color>
 </resources>

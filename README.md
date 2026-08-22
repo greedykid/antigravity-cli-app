@@ -1,6 +1,14 @@
-# AI CLI Remote (Antigravity & Codex)
+# Antigravity & Codex Remote (Google Material Design 3)
 
-Native Android chat client for user-hosted Antigravity CLI (`agy`) & OpenAI Codex CLI bridge.
+Native Android mobile command center for user-hosted **Google Antigravity CLI (`agy`)** and **OpenAI Codex CLI** with real-time process monitoring and full conversation history.
+
+## Features
+
+- **Google Material Design 3 (Material You)**: Dark surface tokens, M3 pill containers, and high-contrast typography.
+- **💬 Prompt Chat**: Interactive CLI execution with quick suggestion chips (*List files*, *Git status*, *Explain code*, *Run tests*).
+- **⚡ Live Session Monitor**: Real-time telemetry (PID, CPU, Memory, Uptime), active turn inspection, and 3-second live auto-refresh.
+- **📜 Session History**: Browse all past Antigravity CLI sessions and view full transcripts directly in the app.
+- **Dual Engine Gateway**: Seamless 1-tap toggle between `⚡ Antigravity` and `🚀 OpenAI Codex`.
 
 ## Build APK
 
@@ -12,11 +20,12 @@ On the machine where Antigravity CLI and/or Codex CLI are installed:
 
 ```bash
 cd bridge
-REMOTE_TOKEN='your-secret-token' BRIDGE_HOST='0.0.0.0' PORT=8787 CODEX_WORKDIR='/path/to/project' node server.js
+REMOTE_TOKEN='your-secret-token' BRIDGE_HOST='0.0.0.0' PORT=8787 CODEX_WORKDIR='/home/ubuntu' node server.js
 ```
 
 In the Android app:
-1. Tap **Connection** and enter the bridge endpoint (e.g. `https://your-tunnel.trycloudflare.com/api/chat`) and the secret Bearer token.
-2. Toggle between **⚡ Antigravity** and **🚀 Codex** directly on the top switcher.
-3. Send prompts to execute remote CLI tasks seamlessly from your phone.
+1. Tap **⚙ Settings** and enter the bridge endpoint (e.g. `https://your-tunnel.trycloudflare.com/api/chat`) and the secret Bearer token.
+2. Tap **Save & Connect**; the app automatically tests the connection.
+3. Switch between **Chat**, **Live Monitor**, and **History** tabs.
+
 
