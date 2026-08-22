@@ -7,10 +7,10 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -95,6 +95,8 @@ public class MainActivity extends Activity {
     private Button navBtnHistory;
 
     // Chat Tab Components
+    private LinearLayout chatSessionBanner;
+    private TextView chatSessionBannerText;
     private LinearLayout transcript;
     private ScrollView scrollChat;
     private EditText promptInput;
@@ -117,6 +119,7 @@ public class MainActivity extends Activity {
     private ScrollView monitorScroll;
     private Button monitorAutoRefreshBtn;
     private Button monitorStopBtn;
+    private Button monitorRefreshBtn;
     private EditText monitorPromptInput;
     private Button monitorSendBtn;
     private ProgressBar monitorSendProgress;
@@ -319,13 +322,43 @@ public class MainActivity extends Activity {
     // TAB 1: PROMPT CHAT
     // ==========================================
     private void buildChatTab(LinearLayout parent) {
+        // Active Session Quick Card / Jumping Link
+        chatSessionBanner = new LinearLayout(this);
+        chatSessionBanner.setOrientation(LinearLayout.HORIZONTAL);
+        chatSessionBanner.setGravity(Gravity.CENTER_VERTICAL);
+        chatSessionBanner.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_PRIMARY, 1, 14));
+        chatSessionBanner.setPadding(dp(12), dp(8), dp(10), dp(8));
+        LinearLayout.LayoutParams lpBanner = new LinearLayout.LayoutParams(-1, -2);
+        lpBanner.setMargins(0, dp(10), 0, dp(4));
+
+        LinearLayout bannerLeft = new LinearLayout(this);
+        bannerLeft.setOrientation(LinearLayout.VERTICAL);
+        TextView banTitle = m3Text("⚡ LIVE SESSION ACTIVE", 10.5f, M3_PRIMARY, true);
+        bannerLeft.addView(banTitle);
+
+        chatSessionBannerText = m3Text("Connected • Tap to monitor live", 12, M3_ON_SURFACE, false);
+        bannerLeft.addView(chatSessionBannerText);
+        chatSessionBanner.addView(bannerLeft, new LinearLayout.LayoutParams(0, -2, 1));
+
+        Button openMonBtn = new Button(this);
+        openMonBtn.setText("⚡ Monitor");
+        openMonBtn.setTextSize(11);
+        openMonBtn.setAllCaps(false);
+        openMonBtn.setTextColor(M3_ON_PRIMARY_CONTAINER);
+        openMonBtn.setBackground(m3Box(M3_PRIMARY_CONTAINER, 0, 0, 10));
+        openMonBtn.setPadding(dp(8), 0, dp(8), 0);
+        openMonBtn.setOnClickListener(v -> switchTab(1));
+        chatSessionBanner.addView(openMonBtn, new LinearLayout.LayoutParams(-2, dp(32)));
+
+        parent.addView(chatSessionBanner, lpBanner);
+
         // Engine Selector Pill (Antigravity | Codex)
         LinearLayout enginePill = new LinearLayout(this);
         enginePill.setOrientation(LinearLayout.HORIZONTAL);
         enginePill.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_OUTLINE_VARIANT, 1, 14));
         enginePill.setPadding(dp(3), dp(3), dp(3), dp(3));
         LinearLayout.LayoutParams lpEng = new LinearLayout.LayoutParams(-1, -2);
-        lpEng.setMargins(0, dp(10), 0, dp(6));
+        lpEng.setMargins(0, dp(4), 0, dp(6));
 
         btnEngineAgy = createEngineToggle("⚡ Antigravity");
         btnEngineAgy.setOnClickListener(v -> setEngine("antigravity"));
@@ -438,7 +471,7 @@ public class MainActivity extends Activity {
         lpT.setMargins(0, dp(8), 0, dp(4));
         emptyStateView.addView(title, lpT);
 
-        TextView desc = m3Text("Send instructions to your remote CLI agent, or open the Live Monitor tab to inspect active execution and continue chatting.", 13, M3_ON_SURFACE_VARIANT, false);
+        TextView desc = m3Text("Send instructions to your remote CLI agent, or open the Monitor & Control tab to inspect active execution and continue chatting.", 13, M3_ON_SURFACE_VARIANT, false);
         desc.setGravity(Gravity.CENTER);
         desc.setLineSpacing(0, 1.15f);
         emptyStateView.addView(desc);
@@ -456,7 +489,7 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(0, dp(10), 0, dp(10));
 
-        // 1. Process Telemetry M3 Card
+        // 1. Process Telemetry & Main Control Button Bar
         LinearLayout procCard = new LinearLayout(this);
         procCard.setOrientation(LinearLayout.VERTICAL);
         procCard.setBackground(m3Box(M3_SURFACE_CONTAINER, M3_OUTLINE_VARIANT, 1, 16));
@@ -471,35 +504,64 @@ public class MainActivity extends Activity {
 
         monitorStatusText = m3Text(" Antigravity Process Running", 13.5f, M3_ON_SURFACE, true);
         procHeader.addView(monitorStatusText, new LinearLayout.LayoutParams(0, -2, 1));
+        procCard.addView(procHeader);
+
+        // Control Buttons Row (Auto-Refresh, Stop, Refresh)
+        LinearLayout ctrlRow = new LinearLayout(this);
+        ctrlRow.setOrientation(LinearLayout.HORIZONTAL);
+        ctrlRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams lpCtrl = new LinearLayout.LayoutParams(-1, -2);
+        lpCtrl.setMargins(0, dp(10), 0, dp(10));
 
         monitorAutoRefreshBtn = new Button(this);
         monitorAutoRefreshBtn.setText("Live Auto: OFF");
-        monitorAutoRefreshBtn.setTextSize(11);
+        monitorAutoRefreshBtn.setTextSize(11.5f);
         monitorAutoRefreshBtn.setAllCaps(false);
         monitorAutoRefreshBtn.setTextColor(M3_ON_SURFACE_VARIANT);
         monitorAutoRefreshBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 12));
-        monitorAutoRefreshBtn.setPadding(dp(8), dp(2), dp(8), dp(2));
+        monitorAutoRefreshBtn.setPadding(dp(8), 0, dp(8), 0);
         monitorAutoRefreshBtn.setOnClickListener(v -> toggleAutoRefresh());
-        procHeader.addView(monitorAutoRefreshBtn, new LinearLayout.LayoutParams(-2, dp(32)));
-        procCard.addView(procHeader);
+        ctrlRow.addView(monitorAutoRefreshBtn, new LinearLayout.LayoutParams(0, dp(34), 1));
+
+        monitorRefreshBtn = new Button(this);
+        monitorRefreshBtn.setText("⟳ Refresh");
+        monitorRefreshBtn.setTextSize(11.5f);
+        monitorRefreshBtn.setAllCaps(false);
+        monitorRefreshBtn.setTextColor(M3_PRIMARY);
+        monitorRefreshBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 12));
+        monitorRefreshBtn.setPadding(dp(8), 0, dp(8), 0);
+        monitorRefreshBtn.setOnClickListener(v -> fetchLiveMonitorData(true));
+        LinearLayout.LayoutParams lpR = new LinearLayout.LayoutParams(0, dp(34), 1);
+        lpR.setMargins(dp(6), 0, dp(6), 0);
+        ctrlRow.addView(monitorRefreshBtn, lpR);
+
+        monitorStopBtn = new Button(this);
+        monitorStopBtn.setText("🛑 Stop CLI");
+        monitorStopBtn.setTextSize(11.5f);
+        monitorStopBtn.setAllCaps(false);
+        monitorStopBtn.setTextColor(M3_RED);
+        monitorStopBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_RED, 1, 12));
+        monitorStopBtn.setPadding(dp(8), 0, dp(8), 0);
+        monitorStopBtn.setOnClickListener(v -> stopRunningCliProcess());
+        ctrlRow.addView(monitorStopBtn, new LinearLayout.LayoutParams(0, dp(34), 1));
+
+        procCard.addView(ctrlRow, lpCtrl);
 
         // Metrics Grid (PID, CPU, MEM, Uptime)
         LinearLayout metricsRow = new LinearLayout(this);
         metricsRow.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams lpMet = new LinearLayout.LayoutParams(-1, -2);
-        lpMet.setMargins(0, dp(10), 0, 0);
 
         monitorPidText = addMetricPill(metricsRow, "PID", "--");
         monitorCpuText = addMetricPill(metricsRow, "CPU", "--");
         monitorMemText = addMetricPill(metricsRow, "MEM", "--");
         monitorUptimeText = addMetricPill(metricsRow, "TIME", "--");
-        procCard.addView(metricsRow, lpMet);
+        procCard.addView(metricsRow);
         content.addView(procCard);
 
         // 2. Active Conversation Session Card with Remote Control Actions
         LinearLayout sessionCard = new LinearLayout(this);
         sessionCard.setOrientation(LinearLayout.VERTICAL);
-        sessionCard.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_OUTLINE_VARIANT, 1, 16));
+        sessionCard.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_PRIMARY, 1, 16));
         sessionCard.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams lpSess = new LinearLayout.LayoutParams(-1, -2);
         lpSess.setMargins(0, dp(10), 0, dp(10));
@@ -512,15 +574,22 @@ public class MainActivity extends Activity {
         sessHeader.setLetterSpacing(0.04f);
         sessTop.addView(sessHeader, new LinearLayout.LayoutParams(0, -2, 1));
 
-        monitorStopBtn = new Button(this);
-        monitorStopBtn.setText("🛑 Stop CLI");
-        monitorStopBtn.setTextSize(11);
-        monitorStopBtn.setAllCaps(false);
-        monitorStopBtn.setTextColor(M3_RED);
-        monitorStopBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_RED, 1, 10));
-        monitorStopBtn.setPadding(dp(6), 0, dp(6), 0);
-        monitorStopBtn.setOnClickListener(v -> stopRunningCliProcess());
-        sessTop.addView(monitorStopBtn, new LinearLayout.LayoutParams(-2, dp(28)));
+        Button copyIdBtn = new Button(this);
+        copyIdBtn.setText("📋 Copy ID");
+        copyIdBtn.setTextSize(10.5f);
+        copyIdBtn.setAllCaps(false);
+        copyIdBtn.setTextColor(M3_PRIMARY);
+        copyIdBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 10));
+        copyIdBtn.setPadding(dp(6), 0, dp(6), 0);
+        copyIdBtn.setOnClickListener(v -> {
+            if (activeConversationId != null) {
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                ClipData cd = ClipData.newPlainText("Session ID", activeConversationId);
+                cm.setPrimaryClip(cd);
+                Toast.makeText(this, "Session ID copied", Toast.LENGTH_SHORT).show();
+            }
+        });
+        sessTop.addView(copyIdBtn, new LinearLayout.LayoutParams(-2, dp(28)));
 
         sessionCard.addView(sessTop);
 
@@ -813,8 +882,12 @@ public class MainActivity extends Activity {
             JSONObject session = json.optJSONObject("session");
             if (session != null) {
                 activeConversationId = session.optString("conversationId", "");
-                monitorSessionTitle.setText(session.optString("title", "Active Task"));
+                String sTitle = session.optString("title", "Active Task");
+                monitorSessionTitle.setText(sTitle);
                 monitorSessionId.setText("ID: " + activeConversationId + "  •  " + session.optString("workspace", "/home/ubuntu"));
+                if (chatSessionBannerText != null) {
+                    chatSessionBannerText.setText(sTitle);
+                }
             }
 
             JSONArray turns = json.optJSONArray("turns");
@@ -890,7 +963,7 @@ public class MainActivity extends Activity {
     }
 
     // ==========================================
-    // TAB 3: SESSION HISTORY
+    // TAB 3: SESSION HISTORY & DIRECT CONTINUE
     // ==========================================
     private void buildHistoryTab(LinearLayout parent) {
         ScrollView scroll = new ScrollView(this);
@@ -901,6 +974,7 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(0, dp(10), 0, dp(10));
 
+        // History Top Header with Quick Action to Jump to Active Monitor
         LinearLayout histHead = new LinearLayout(this);
         histHead.setOrientation(LinearLayout.HORIZONTAL);
         histHead.setGravity(Gravity.CENTER_VERTICAL);
@@ -982,7 +1056,7 @@ public class MainActivity extends Activity {
             try {
                 JSONObject s = sessions.getJSONObject(i);
                 final String convId = s.optString("conversationId", "");
-                String title = s.optString("title", "Session");
+                final String title = s.optString("title", "Session");
                 long ts = s.optLong("timestamp", System.currentTimeMillis());
                 String timeStr = fmt.format(new Date(ts));
 
@@ -1004,13 +1078,47 @@ public class MainActivity extends Activity {
 
                 TextView titleV = m3Text(title, 14, M3_ON_SURFACE, true);
                 LinearLayout.LayoutParams lpT = new LinearLayout.LayoutParams(-1, -2);
-                lpT.setMargins(0, dp(4), 0, dp(6));
+                lpT.setMargins(0, dp(4), 0, dp(4));
                 card.addView(titleV, lpT);
 
                 TextView idV = m3Text("ID: " + convId.substring(0, Math.min(16, convId.length())) + "...", 11.5f, M3_ON_SURFACE_VARIANT, false);
                 card.addView(idV);
 
-                card.setOnClickListener(v -> openSessionTranscriptDialog(convId, title));
+                // Direct Action Buttons on each Card (View Transcript & Continue Session)
+                LinearLayout cardActions = new LinearLayout(this);
+                cardActions.setOrientation(LinearLayout.HORIZONTAL);
+                cardActions.setGravity(Gravity.CENTER_VERTICAL);
+                LinearLayout.LayoutParams lpAct = new LinearLayout.LayoutParams(-1, -2);
+                lpAct.setMargins(0, dp(8), 0, 0);
+
+                Button viewBtn = new Button(this);
+                viewBtn.setText("👁 Transkrip");
+                viewBtn.setTextSize(11.5f);
+                viewBtn.setAllCaps(false);
+                viewBtn.setTextColor(M3_ON_SURFACE);
+                viewBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 10));
+                viewBtn.setPadding(dp(8), 0, dp(8), 0);
+                viewBtn.setOnClickListener(v -> openSessionTranscriptDialog(convId, title));
+                cardActions.addView(viewBtn, new LinearLayout.LayoutParams(0, dp(32), 1));
+
+                Button contBtn = new Button(this);
+                contBtn.setText("💬 Lanjut Sesi ➔");
+                contBtn.setTextSize(11.5f);
+                contBtn.setAllCaps(false);
+                contBtn.setTextColor(M3_ON_PRIMARY_CONTAINER);
+                contBtn.setBackground(m3Box(M3_PRIMARY_CONTAINER, 0, 0, 10));
+                contBtn.setPadding(dp(8), 0, dp(8), 0);
+                contBtn.setOnClickListener(v -> {
+                    activeConversationId = convId;
+                    switchTab(1);
+                    fetchLiveMonitorData(true);
+                    Toast.makeText(MainActivity.this, "Tersambung ke sesi: " + title, Toast.LENGTH_SHORT).show();
+                });
+                LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(0, dp(32), 1.2f);
+                lpC.setMargins(dp(8), 0, 0, 0);
+                cardActions.addView(contBtn, lpC);
+
+                card.addView(cardActions, lpAct);
 
                 LinearLayout.LayoutParams lpCard = new LinearLayout.LayoutParams(-1, -2);
                 lpCard.setMargins(0, 0, 0, dp(10));
