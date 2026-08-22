@@ -101,18 +101,31 @@ function getTranscript(convId, limit = 80) {
         if (s.tool_calls && s.tool_calls.length) {
           for (const tc of s.tool_calls) {
             const toolName = tc.name || "tool";
-            let argsStr = "";
-            if (tc.args) {
-              if (typeof tc.args === "string") {
-                argsStr = tc.args;
-              } else {
-                argsStr = JSON.stringify(tc.args, null, 2);
-              }
+            let argsObj = tc.args;
+            if (typeof argsObj === "string") {
+              try { argsObj = JSON.parse(argsObj); } catch(e) {}
             }
+            let argsStr = typeof argsObj === "object" ? JSON.stringify(argsObj, null, 2) : String(argsObj || "");
+
+            let friendlyTitle = "Aksi: " + toolName;
+            if (toolName === "view_file" && argsObj && argsObj.AbsolutePath) {
+              friendlyTitle = "Dibaca " + path.basename(argsObj.AbsolutePath);
+            } else if (toolName === "run_command" && argsObj && argsObj.CommandLine) {
+              friendlyTitle = "Menjalankan: " + (argsObj.CommandLine.length > 35 ? argsObj.CommandLine.slice(0, 32) + "..." : argsObj.CommandLine);
+            } else if ((toolName === "replace_file_content" || toolName === "write_to_file") && argsObj && argsObj.TargetFile) {
+              friendlyTitle = "Mengedit " + path.basename(argsObj.TargetFile);
+            } else if (toolName === "grep_search" || toolName === "find_by_name") {
+              friendlyTitle = "Mencari file di project...";
+            } else if (tc.toolSummary) {
+              friendlyTitle = tc.toolSummary;
+            } else if (tc.toolAction) {
+              friendlyTitle = tc.toolAction;
+            }
+
             msgs.push({
               role: "tool",
               toolName: toolName,
-              title: "Executed tool: " + toolName,
+              title: friendlyTitle,
               content: argsStr || ("Action: " + toolName),
               time: s.created_at,
               index: s.step_index
