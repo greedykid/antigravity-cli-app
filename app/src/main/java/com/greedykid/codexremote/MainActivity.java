@@ -2,6 +2,7 @@ package com.greedykid.codexremote;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -10,6 +11,7 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
@@ -26,8 +28,12 @@ import android.text.style.TypefaceSpan;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -78,7 +84,16 @@ public class MainActivity extends Activity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
 
-    // View Containers
+    // Root Frame & Sidebar Navigation
+    private FrameLayout rootFrame;
+    private View sidebarScrim;
+    private LinearLayout sidebarPanel;
+    private TextView sidebarStatusDot;
+    private TextView sidebarStatusText;
+    private TextView sidebarEngineLabel;
+
+    // View Containers (Screen 0: Hub, Screen 1: Chat)
+    private LinearLayout mainContentContainer;
     private LinearLayout viewHubContainer;
     private LinearLayout viewChatContainer;
 
@@ -128,7 +143,7 @@ public class MainActivity extends Activity {
         getWindow().setNavigationBarColor(CLAUDE_BG);
         prefs = getSharedPreferences("connection", MODE_PRIVATE);
         currentEngine = prefs.getString("engine", "antigravity");
-        buildClaudeUi();
+        buildClaudeUiWithSidebar();
     }
 
     @Override
@@ -144,6 +159,17 @@ public class MainActivity extends Activity {
             fetchHubSessions();
         } else if (isAutoRefreshActive) {
             startAutoRefresh();
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (sidebarPanel != null && sidebarPanel.getVisibility() == View.VISIBLE) {
+            closeSidebar();
+        } else if (currentScreen == 1) {
+            showScreen(0);
+        } else {
+            super.onBackPressed();
         }
     }
 
@@ -174,27 +200,175 @@ public class MainActivity extends Activity {
         return v;
     }
 
-    private void buildClaudeUi() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(CLAUDE_BG);
+    private void buildClaudeUiWithSidebar() {
+        rootFrame = new FrameLayout(this);
+        rootFrame.setBackgroundColor(CLAUDE_BG);
 
-        // Screen 1: "Code" Hub (Session Browser)
+        // 1. Main Screens Container (Hub & Chat)
+        mainContentContainer = new LinearLayout(this);
+        mainContentContainer.setOrientation(LinearLayout.VERTICAL);
+
         viewHubContainer = new LinearLayout(this);
         viewHubContainer.setOrientation(LinearLayout.VERTICAL);
         buildHubScreen(viewHubContainer);
-        root.addView(viewHubContainer, new LinearLayout.LayoutParams(-1, -1));
+        mainContentContainer.addView(viewHubContainer, new LinearLayout.LayoutParams(-1, -1));
 
-        // Screen 2: "New session" / Chat View
         viewChatContainer = new LinearLayout(this);
         viewChatContainer.setOrientation(LinearLayout.VERTICAL);
         viewChatContainer.setVisibility(View.GONE);
         buildChatScreen(viewChatContainer);
-        root.addView(viewChatContainer, new LinearLayout.LayoutParams(-1, -1));
+        mainContentContainer.addView(viewChatContainer, new LinearLayout.LayoutParams(-1, -1));
 
-        setContentView(root);
+        rootFrame.addView(mainContentContainer, new FrameLayout.LayoutParams(-1, -1));
+
+        // 2. Sidebar Backdrop Scrim (Dim overlay)
+        sidebarScrim = new View(this);
+        sidebarScrim.setBackgroundColor(Color.argb(120, 0, 0, 0));
+        sidebarScrim.setVisibility(View.GONE);
+        sidebarScrim.setOnClickListener(v -> closeSidebar());
+        rootFrame.addView(sidebarScrim, new FrameLayout.LayoutParams(-1, -1));
+
+        // 3. Sidebar Panel (Left Drawer)
+        sidebarPanel = new LinearLayout(this);
+        sidebarPanel.setOrientation(LinearLayout.VERTICAL);
+        sidebarPanel.setBackgroundColor(CLAUDE_SURFACE);
+        sidebarPanel.setVisibility(View.GONE);
+        buildSidebarContent(sidebarPanel);
+
+        FrameLayout.LayoutParams lpSide = new FrameLayout.LayoutParams(dp(300), -1);
+        lpSide.gravity = Gravity.START;
+        rootFrame.addView(sidebarPanel, lpSide);
+
+        setContentView(rootFrame);
         showScreen(0);
         fetchHubSessions();
+    }
+
+    // ============================================================
+    // SIDEBAR DRAWER NAVIGATION
+    // ============================================================
+    private void buildSidebarContent(LinearLayout sidebar) {
+        sidebar.setPadding(dp(22), dp(24), dp(22), dp(20));
+
+        // App Branding Header
+        LinearLayout brand = new LinearLayout(this);
+        brand.setOrientation(LinearLayout.HORIZONTAL);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView icon = cText("👾", 28, CLAUDE_TERRACOTTA, true, false);
+        brand.addView(icon);
+
+        LinearLayout brandText = new LinearLayout(this);
+        brandText.setOrientation(LinearLayout.VERTICAL);
+        brandText.setPadding(dp(12), 0, 0, 0);
+
+        TextView title = cText("Antigravity Remote", 16, CLAUDE_TEXT_MAIN, true, true);
+        brandText.addView(title);
+        TextView sub = cText("Claude Code Edition", 12, CLAUDE_TEXT_MUTED, false, false);
+        brandText.addView(sub);
+        brand.addView(brandText, new LinearLayout.LayoutParams(0, -2, 1));
+        sidebar.addView(brand);
+
+        // Status Card
+        LinearLayout statusCard = new LinearLayout(this);
+        statusCard.setOrientation(LinearLayout.VERTICAL);
+        statusCard.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        statusCard.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout.LayoutParams lpSt = new LinearLayout.LayoutParams(-1, -2);
+        lpSt.setMargins(0, dp(18), 0, dp(16));
+
+        LinearLayout stRow = new LinearLayout(this);
+        stRow.setOrientation(LinearLayout.HORIZONTAL);
+        stRow.setGravity(Gravity.CENTER_VERTICAL);
+        sidebarStatusDot = cText("●", 11, CLAUDE_GREEN, false, false);
+        stRow.addView(sidebarStatusDot);
+        sidebarStatusText = cText(" Gateway Online", 12, CLAUDE_TEXT_MAIN, true, false);
+        stRow.addView(sidebarStatusText);
+        statusCard.addView(stRow);
+
+        sidebarEngineLabel = cText("Active Engine: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Antigravity CLI" : "Codex CLI"), 11.5f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lpE = new LinearLayout.LayoutParams(-1, -2);
+        lpE.setMargins(0, dp(4), 0, 0);
+        statusCard.addView(sidebarEngineLabel, lpE);
+        sidebar.addView(statusCard, lpSt);
+
+        // Menu Items List
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+        LinearLayout menuItems = new LinearLayout(this);
+        menuItems.setOrientation(LinearLayout.VERTICAL);
+
+        addSidebarMenuItem(menuItems, "💬", "New Session Chat", () -> {
+            closeSidebar();
+            startNewSession();
+        });
+
+        addSidebarMenuItem(menuItems, "📜", "All Sessions (Code Hub)", () -> {
+            closeSidebar();
+            showScreen(0);
+        });
+
+        addSidebarMenuItem(menuItems, "🚀", "Switch Engine (Agy / Codex)", () -> {
+            toggleEngine();
+            if (sidebarEngineLabel != null) {
+                sidebarEngineLabel.setText("Active Engine: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Antigravity CLI" : "Codex CLI"));
+            }
+        });
+
+        addSidebarMenuItem(menuItems, "⚙", "Connection Settings", () -> {
+            closeSidebar();
+            showConnectionDialog();
+        });
+
+        addSidebarMenuItem(menuItems, "🛑", "Interrupt Running Process", () -> {
+            closeSidebar();
+            stopRunningCliProcess();
+        });
+
+        addSidebarMenuItem(menuItems, "⟳", "Test Ping & Health", () -> {
+            checkHealth();
+        });
+
+        scroll.addView(menuItems);
+        sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        // Footer Version info
+        TextView ver = cText("v2.5.0 • Bridge Active", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        ver.setGravity(Gravity.CENTER);
+        ver.setPadding(0, dp(10), 0, 0);
+        sidebar.addView(ver);
+    }
+
+    private void addSidebarMenuItem(LinearLayout container, String icon, String title, final Runnable action) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(8), dp(12), dp(8), dp(12));
+        row.setBackground(cBox(Color.TRANSPARENT, 0, 0, 10));
+
+        TextView ic = cText(icon, 18, CLAUDE_TEXT_MAIN, false, false);
+        row.addView(ic);
+
+        TextView label = cText(title, 14, CLAUDE_TEXT_MAIN, false, false);
+        label.setPadding(dp(14), 0, 0, 0);
+        row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+
+        row.setOnClickListener(v -> action.run());
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(2));
+        container.addView(row, lp);
+    }
+
+    private void openSidebar() {
+        if (sidebarScrim != null) sidebarScrim.setVisibility(View.VISIBLE);
+        if (sidebarPanel != null) sidebarPanel.setVisibility(View.VISIBLE);
+    }
+
+    private void closeSidebar() {
+        if (sidebarScrim != null) sidebarScrim.setVisibility(View.GONE);
+        if (sidebarPanel != null) sidebarPanel.setVisibility(View.GONE);
     }
 
     private void showScreen(int screenIndex) {
@@ -230,7 +404,7 @@ public class MainActivity extends Activity {
         topBar.setPadding(0, dp(4), 0, dp(14));
 
         TextView menuIcon = cText("☰", 22, CLAUDE_TEXT_MAIN, false, false);
-        menuIcon.setOnClickListener(v -> showConnectionDialog());
+        menuIcon.setOnClickListener(v -> openSidebar());
         topBar.addView(menuIcon, new LinearLayout.LayoutParams(0, -2, 1));
 
         TextView newBtnTop = cText("＋ New", 14, CLAUDE_TERRACOTTA, true, false);
@@ -748,7 +922,7 @@ public class MainActivity extends Activity {
         promptInput.setEnabled(false);
 
         String displayText = (file != null ? "[📎 " + file + "]\n" : "") + text;
-        addMessageCard("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), null);
+        addMessageCard("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
         promptInput.setText("");
 
         chatSendProgress = new ProgressBar(this);
@@ -778,7 +952,7 @@ public class MainActivity extends Activity {
                         chatMessagesList.removeView(chatSendProgress);
                         chatSendProgress = null;
                     }
-                    addMessageCard("assistant", responseText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), null);
+                    addMessageCard("assistant", responseText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
@@ -790,7 +964,7 @@ public class MainActivity extends Activity {
                         chatMessagesList.removeView(chatSendProgress);
                         chatSendProgress = null;
                     }
-                    addMessageCard("tool", "Notice: " + e.getMessage() + "\nSyncing live outputs from server...", "", "Gateway Notice");
+                    addCompactExecutionPill("Notice: " + e.getMessage() + "\nSyncing live outputs from server...", "Gateway Status");
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
@@ -875,14 +1049,32 @@ public class MainActivity extends Activity {
             if (turns != null && btnSend.getTag() == null) {
                 chatMessagesList.removeAllViews();
                 showEmptyMascotState(turns.length() == 0);
+
+                // Group consecutive tool & thinking turns into a SINGLE compact summary line
+                ArrayList<JSONObject> pendingTools = new ArrayList<>();
+
                 for (int i = 0; i < turns.length(); i++) {
                     JSONObject turn = turns.getJSONObject(i);
                     String role = turn.optString("role", "info");
-                    String title = turn.optString("title", "");
                     String content = turn.optString("content", "");
                     String time = turn.optString("time", "");
-                    addMessageCard(role, content, time, title);
+
+                    if ("tool".equalsIgnoreCase(role) || "thinking".equalsIgnoreCase(role)) {
+                        pendingTools.add(turn);
+                    } else {
+                        // Flush any pending tool & thinking executions as one compact modal pill
+                        if (!pendingTools.isEmpty()) {
+                            addCompactToolsGroupPill(new ArrayList<>(pendingTools));
+                            pendingTools.clear();
+                        }
+                        addMessageCard(role, content, time);
+                    }
                 }
+
+                if (!pendingTools.isEmpty()) {
+                    addCompactToolsGroupPill(pendingTools);
+                }
+
                 chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
             }
 
@@ -894,71 +1086,176 @@ public class MainActivity extends Activity {
         }
     }
 
-    // Claude-style Message Bubble & Dropdown Accordions
-    private void addMessageCard(String role, String content, String time, String title) {
-        boolean isTool = "tool".equalsIgnoreCase(role);
-        boolean isThinking = "thinking".equalsIgnoreCase(role);
+    // ============================================================
+    // COMPACT TEXT PILL & BOTTOM MODAL SHEET (Expanding Bottom-to-Top)
+    // ============================================================
+    private void addCompactToolsGroupPill(final ArrayList<JSONObject> toolTurns) {
+        int toolCount = 0;
+        int thinkCount = 0;
+        String latestToolName = "";
+
+        for (JSONObject t : toolTurns) {
+            if ("tool".equalsIgnoreCase(t.optString("role"))) {
+                toolCount++;
+                latestToolName = t.optString("toolName", t.optString("title", "tool"));
+            } else if ("thinking".equalsIgnoreCase(t.optString("role"))) {
+                thinkCount++;
+            }
+        }
+
+        String labelText;
+        if (toolCount > 0 && thinkCount > 0) {
+            labelText = "⚡ Worked on " + (toolCount + thinkCount) + " steps (" + toolCount + " tools, " + thinkCount + " thinking)  ›";
+        } else if (toolCount > 0) {
+            labelText = "🛠 Executed " + toolCount + " tool" + (toolCount > 1 ? "s" : "") + (latestToolName.isEmpty() ? "" : ": " + latestToolName) + "  ›";
+        } else {
+            labelText = "💭 Viewed thought process (" + thinkCount + " step" + (thinkCount > 1 ? "s" : "") + ")  ›";
+        }
+
+        LinearLayout pill = new LinearLayout(this);
+        pill.setOrientation(LinearLayout.HORIZONTAL);
+        pill.setGravity(Gravity.CENTER_VERTICAL);
+        pill.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        pill.setPadding(dp(14), dp(8), dp(14), dp(8));
+
+        TextView tv = cText(labelText, 12.5f, CLAUDE_TEXT_MAIN, true, false);
+        pill.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView doneBadge = cText("✓ Done", 10.5f, CLAUDE_GREEN, true, false);
+        doneBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
+        doneBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
+        pill.addView(doneBadge);
+
+        pill.setOnClickListener(v -> openExecutionBottomModal(toolTurns));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(4), 0, dp(8));
+        chatMessagesList.addView(pill, lp);
+    }
+
+    private void addCompactExecutionPill(String detail, String title) {
+        ArrayList<JSONObject> list = new ArrayList<>();
+        try {
+            JSONObject o = new JSONObject();
+            o.put("role", "tool");
+            o.put("title", title);
+            o.put("content", detail);
+            list.add(o);
+        } catch (Exception e) {}
+        addCompactToolsGroupPill(list);
+    }
+
+    private void openExecutionBottomModal(ArrayList<JSONObject> items) {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout modalRoot = new LinearLayout(this);
+        modalRoot.setOrientation(LinearLayout.VERTICAL);
+        modalRoot.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 24));
+        modalRoot.setPadding(dp(20), dp(12), dp(20), dp(18));
+
+        // Top Drag Handle Pill
+        View dragHandle = new View(this);
+        dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
+        LinearLayout.LayoutParams lpHandle = new LinearLayout.LayoutParams(dp(42), dp(5));
+        lpHandle.gravity = Gravity.CENTER_HORIZONTAL;
+        lpHandle.setMargins(0, 0, 0, dp(14));
+        modalRoot.addView(dragHandle, lpHandle);
+
+        // Header Title
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = cText("Execution & Thoughts", 18, CLAUDE_TEXT_MAIN, true, true);
+        headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView closeBtn = cText("✕", 16, CLAUDE_TEXT_MUTED, true, false);
+        closeBtn.setPadding(dp(8), dp(4), dp(4), dp(4));
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        headerRow.addView(closeBtn);
+        modalRoot.addView(headerRow);
+
+        TextView sub = cText(items.size() + " actions executed by agent in this turn", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
+        lpSub.setMargins(0, dp(2), 0, dp(14));
+        modalRoot.addView(sub, lpSub);
+
+        // Scrollable List of Actions
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+
+        for (int i = 0; i < items.size(); i++) {
+            JSONObject it = items.get(i);
+            String role = it.optString("role", "tool");
+            String itTitle = it.optString("title", "tool".equalsIgnoreCase(role) ? "Executed Tool" : "Thinking Process");
+            String content = it.optString("content", "");
+            boolean isTool = "tool".equalsIgnoreCase(role);
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+            card.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+            LinearLayout cHead = new LinearLayout(this);
+            cHead.setOrientation(LinearLayout.HORIZONTAL);
+            cHead.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView ic = cText(isTool ? "🛠 " : "💭 ", 13, isTool ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED, true, false);
+            cHead.addView(ic);
+
+            TextView tView = cText(itTitle, 13, CLAUDE_TEXT_MAIN, true, false);
+            cHead.addView(tView, new LinearLayout.LayoutParams(0, -2, 1));
+
+            TextView bBadge = cText("✓ Done", 10.5f, CLAUDE_GREEN, true, false);
+            bBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
+            bBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
+            cHead.addView(bBadge);
+            card.addView(cHead);
+
+            TextView body = new TextView(this);
+            body.setText(content);
+            body.setTextSize(12);
+            body.setTextColor(CLAUDE_TEXT_MUTED);
+            body.setTypeface(Typeface.MONOSPACE);
+            body.setTextIsSelectable(true);
+            body.setPadding(0, dp(6), 0, 0);
+            card.addView(body);
+
+            LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(-1, -2);
+            lpC.setMargins(0, 0, 0, dp(10));
+            list.addView(card, lpC);
+        }
+
+        scroll.addView(list);
+        modalRoot.addView(scroll, new LinearLayout.LayoutParams(-1, dp(340)));
+
+        dialog.setContentView(modalRoot);
+
+        // Configure Bottom Sheet Dialog Window
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            WindowManager.LayoutParams wlp = window.getAttributes();
+            wlp.gravity = Gravity.BOTTOM;
+            wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
+            wlp.windowAnimations = android.R.style.Animation_InputMethod; // Smooth slide from bottom
+            window.setAttributes(wlp);
+        }
+
+        dialog.show();
+    }
+
+    // Standard Message Card (User or Assistant)
+    private void addMessageCard(String role, String content, String time) {
         boolean isUser = "user".equalsIgnoreCase(role);
 
         showEmptyMascotState(false);
 
-        if (isTool || isThinking) {
-            // Collapsible Claude Tool/Thinking Dropdown Accordion
-            LinearLayout accordion = new LinearLayout(this);
-            accordion.setOrientation(LinearLayout.VERTICAL);
-            accordion.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 12));
-            accordion.setPadding(dp(12), dp(8), dp(12), dp(8));
-
-            LinearLayout header = new LinearLayout(this);
-            header.setOrientation(LinearLayout.HORIZONTAL);
-            header.setGravity(Gravity.CENTER_VERTICAL);
-
-            final TextView chevron = cText("▶ ", 12, CLAUDE_TEXT_MUTED, true, false);
-            header.addView(chevron);
-
-            String displayTitle = (title != null && !title.isEmpty()) ? title : (isTool ? "Executed tool" : "Thinking process");
-            String icon = isTool ? "🛠 " : "💭 ";
-            TextView titleView = cText(icon + displayTitle, 13, CLAUDE_TEXT_MAIN, true, false);
-            header.addView(titleView, new LinearLayout.LayoutParams(0, -2, 1));
-
-            TextView badge = cText("✓ Done", 10.5f, CLAUDE_GREEN, true, false);
-            badge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
-            badge.setPadding(dp(6), dp(2), dp(6), dp(2));
-            header.addView(badge);
-
-            accordion.addView(header);
-
-            final LinearLayout bodyContainer = new LinearLayout(this);
-            bodyContainer.setOrientation(LinearLayout.VERTICAL);
-            bodyContainer.setVisibility(View.GONE);
-            bodyContainer.setBackground(cBox(CLAUDE_CODE_BG, 0, 0, 8));
-            bodyContainer.setPadding(dp(10), dp(8), dp(10), dp(8));
-            LinearLayout.LayoutParams lpBody = new LinearLayout.LayoutParams(-1, -2);
-            lpBody.setMargins(0, dp(8), 0, 0);
-
-            TextView bodyContent = new TextView(this);
-            bodyContent.setText(content);
-            bodyContent.setTextSize(12);
-            bodyContent.setTextColor(Color.rgb(220, 220, 225));
-            bodyContent.setTypeface(Typeface.MONOSPACE);
-            bodyContent.setTextIsSelectable(true);
-            bodyContainer.addView(bodyContent);
-
-            accordion.addView(bodyContainer, lpBody);
-
-            header.setOnClickListener(v -> {
-                boolean isOpen = (bodyContainer.getVisibility() == View.VISIBLE);
-                bodyContainer.setVisibility(isOpen ? View.GONE : View.VISIBLE);
-                chevron.setText(isOpen ? "▶ " : "▼ ");
-            });
-
-            LinearLayout.LayoutParams lpAcc = new LinearLayout.LayoutParams(-1, -2);
-            lpAcc.setMargins(0, 0, 0, dp(8));
-            chatMessagesList.addView(accordion, lpAcc);
-            return;
-        }
-
-        // Standard Message Card (User or Assistant)
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
 
@@ -1190,9 +1487,22 @@ public class MainActivity extends Activity {
                 c.setRequestMethod("GET");
                 c.setConnectTimeout(5000);
                 int code = c.getResponseCode();
-                mainHandler.post(() -> Toast.makeText(this, code == 200 ? "Gateway online & connected!" : "Gateway HTTP " + code, Toast.LENGTH_SHORT).show());
+                mainHandler.post(() -> {
+                    if (code == 200) {
+                        if (sidebarStatusDot != null) sidebarStatusDot.setTextColor(CLAUDE_GREEN);
+                        if (sidebarStatusText != null) sidebarStatusText.setText(" Gateway Online");
+                        Toast.makeText(this, "Gateway online & connected!", Toast.LENGTH_SHORT).show();
+                    } else {
+                        if (sidebarStatusDot != null) sidebarStatusDot.setTextColor(CLAUDE_RED);
+                        if (sidebarStatusText != null) sidebarStatusText.setText(" HTTP " + code);
+                    }
+                });
             } catch (Exception e) {
-                mainHandler.post(() -> Toast.makeText(this, "Gateway offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                mainHandler.post(() -> {
+                    if (sidebarStatusDot != null) sidebarStatusDot.setTextColor(CLAUDE_RED);
+                    if (sidebarStatusText != null) sidebarStatusText.setText(" Gateway Offline");
+                    Toast.makeText(this, "Gateway offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
