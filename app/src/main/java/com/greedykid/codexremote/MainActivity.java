@@ -65,6 +65,7 @@ public class MainActivity extends Activity {
 
     private static final int M3_GREEN = Color.rgb(109, 213, 140);               // #6DD58C
     private static final int M3_RED = Color.rgb(242, 184, 181);                 // #F2B8B5
+    private static final int M3_TEXT_MUTED = Color.rgb(142, 145, 153);        // #8E9199
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -1235,5 +1236,4 @@ public class MainActivity extends Activity {
         scrollChat.post(() -> scrollChat.fullScroll(View.FOCUS_DOWN));
     }
 }
-
-
+}
