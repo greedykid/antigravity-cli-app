@@ -139,9 +139,9 @@ public class MainActivity extends Activity {
     private LinearLayout emptyMascotView;
     private EditText promptInput;
     private FrameLayout btnSend;
-    private ImageView btnAttach;
-    private ImageView btnEnginePill;
-    private ImageView btnVoice;
+    private FrameLayout btnAttach;
+    private FrameLayout btnEnginePill;
+    private FrameLayout btnVoice;
     private TextView repoTagLabel;
     private LinearLayout attachmentChip;
     private TextView attachmentText;
@@ -243,9 +243,49 @@ public class MainActivity extends Activity {
         if (tintColor != 0) {
             iv.setColorFilter(tintColor);
         }
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp));
         iv.setLayoutParams(lp);
         return iv;
+    }
+
+    private FrameLayout createTopBarIconBtn(int iconRes, int iconColor, View.OnClickListener onClick) {
+        FrameLayout btn = new FrameLayout(this);
+        btn.setBackground(cBox(Color.TRANSPARENT, 0, 0, 20));
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(iconRes);
+        if (iconColor != 0) {
+            iv.setColorFilter(iconColor);
+        }
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        FrameLayout.LayoutParams lpIv = new FrameLayout.LayoutParams(dp(24), dp(24));
+        lpIv.gravity = Gravity.CENTER;
+        btn.addView(iv, lpIv);
+        btn.setOnClickListener(onClick);
+
+        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(dp(40), dp(40));
+        btn.setLayoutParams(lpBtn);
+        return btn;
+    }
+
+    private FrameLayout createComposerActionBtn(int iconRes, int iconColor, View.OnClickListener onClick) {
+        FrameLayout btn = new FrameLayout(this);
+        btn.setBackground(cBox(Color.TRANSPARENT, 0, 0, 18));
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(iconRes);
+        if (iconColor != 0) {
+            iv.setColorFilter(iconColor);
+        }
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        FrameLayout.LayoutParams lpIv = new FrameLayout.LayoutParams(dp(22), dp(22));
+        lpIv.gravity = Gravity.CENTER;
+        btn.addView(iv, lpIv);
+        btn.setOnClickListener(onClick);
+
+        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(dp(36), dp(36));
+        lpBtn.setMargins(dp(2), 0, dp(2), 0);
+        btn.setLayoutParams(lpBtn);
+        return btn;
     }
 
     private void buildClaudeUiWithSidebar() {
@@ -305,7 +345,7 @@ public class MainActivity extends Activity {
         brand.setOrientation(LinearLayout.HORIZONTAL);
         brand.setGravity(Gravity.CENTER_VERTICAL);
 
-        ImageView sparkLogo = cIcon(R.drawable.ic_spark, 30, CLAUDE_TERRACOTTA);
+        ImageView sparkLogo = cIcon(R.drawable.ic_spark, 32, CLAUDE_TERRACOTTA);
         brand.addView(sparkLogo);
 
         LinearLayout brandText = new LinearLayout(this);
@@ -399,7 +439,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.7.0 • Material Icons Edition", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.7.1 • Proportions Perfected", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -409,10 +449,10 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(8), dp(11), dp(8), dp(11));
+        row.setPadding(dp(8), dp(12), dp(8), dp(12));
         row.setBackground(cBox(Color.TRANSPARENT, 0, 0, 10));
 
-        ImageView ic = cIcon(iconRes, 20, CLAUDE_TEXT_MAIN);
+        ImageView ic = cIcon(iconRes, 22, CLAUDE_TEXT_MAIN);
         row.addView(ic);
 
         TextView label = cText(title, 14, CLAUDE_TEXT_MAIN, false, false);
@@ -533,9 +573,8 @@ public class MainActivity extends Activity {
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setPadding(0, dp(4), 0, dp(14));
 
-        ImageView menuIcon = cIcon(R.drawable.ic_menu, 24, CLAUDE_TEXT_MAIN);
-        menuIcon.setOnClickListener(v -> openSidebar());
-        topBar.addView(menuIcon, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        FrameLayout menuBtn = createTopBarIconBtn(R.drawable.ic_menu, CLAUDE_TEXT_MAIN, v -> openSidebar());
+        topBar.addView(menuBtn);
 
         View spacer = new View(this);
         topBar.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
@@ -545,9 +584,9 @@ public class MainActivity extends Activity {
         qrBtn.setOrientation(LinearLayout.HORIZONTAL);
         qrBtn.setGravity(Gravity.CENTER_VERTICAL);
         qrBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 16));
-        qrBtn.setPadding(dp(10), dp(6), dp(12), dp(6));
-        qrBtn.addView(cIcon(R.drawable.ic_qr_code, 16, CLAUDE_TEXT_MAIN));
-        TextView qrLabel = cText(" QR", 13f, CLAUDE_TEXT_MAIN, true, false);
+        qrBtn.setPadding(dp(12), dp(8), dp(14), dp(8));
+        qrBtn.addView(cIcon(R.drawable.ic_qr_code, 18, CLAUDE_TEXT_MAIN));
+        TextView qrLabel = cText(" QR", 13.5f, CLAUDE_TEXT_MAIN, true, false);
         qrBtn.addView(qrLabel);
         qrBtn.setOnClickListener(v -> startQrScanner());
         LinearLayout.LayoutParams lpQr = new LinearLayout.LayoutParams(-2, -2);
@@ -559,9 +598,9 @@ public class MainActivity extends Activity {
         newBtnTop.setOrientation(LinearLayout.HORIZONTAL);
         newBtnTop.setGravity(Gravity.CENTER_VERTICAL);
         newBtnTop.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, 0, 0, 16));
-        newBtnTop.setPadding(dp(10), dp(6), dp(12), dp(6));
-        newBtnTop.addView(cIcon(R.drawable.ic_add, 16, CLAUDE_TERRACOTTA));
-        TextView newLabel = cText(" New", 13.5f, CLAUDE_TERRACOTTA, true, false);
+        newBtnTop.setPadding(dp(12), dp(8), dp(14), dp(8));
+        newBtnTop.addView(cIcon(R.drawable.ic_add, 18, CLAUDE_TERRACOTTA));
+        TextView newLabel = cText(" New", 14f, CLAUDE_TERRACOTTA, true, false);
         newBtnTop.addView(newLabel);
         newBtnTop.setOnClickListener(v -> startNewSession());
         topBar.addView(newBtnTop);
@@ -751,11 +790,17 @@ public class MainActivity extends Activity {
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(0, dp(4), 0, dp(10));
+        topBar.setPadding(0, dp(2), 0, dp(8));
 
-        chatNavIcon = cIcon(R.drawable.ic_menu, 22, CLAUDE_TEXT_MAIN);
-        chatNavIcon.setPadding(dp(4), dp(4), dp(8), dp(4));
-        chatNavIcon.setOnClickListener(v -> {
+        FrameLayout navBtn = new FrameLayout(this);
+        chatNavIcon = new ImageView(this);
+        chatNavIcon.setImageResource(R.drawable.ic_menu);
+        chatNavIcon.setColorFilter(CLAUDE_TEXT_MAIN);
+        chatNavIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        FrameLayout.LayoutParams lpNavIcon = new FrameLayout.LayoutParams(dp(24), dp(24));
+        lpNavIcon.gravity = Gravity.CENTER_VERTICAL | Gravity.START;
+        navBtn.addView(chatNavIcon, lpNavIcon);
+        navBtn.setOnClickListener(v -> {
             if (navigatedFromHub) {
                 navigatedFromHub = false;
                 showScreen(0);
@@ -763,20 +808,17 @@ public class MainActivity extends Activity {
                 openSidebar();
             }
         });
-        topBar.addView(chatNavIcon);
+        topBar.addView(navBtn, new LinearLayout.LayoutParams(dp(36), dp(36)));
 
-        chatTopTitle = cText("New session", 15.5f, CLAUDE_TEXT_MAIN, true, false);
+        chatTopTitle = cText("New session", 16f, CLAUDE_TEXT_MAIN, true, false);
         chatTopTitle.setGravity(Gravity.CENTER);
         chatTopTitle.setSingleLine(true);
         topBar.addView(chatTopTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView qrTopBtn = cIcon(R.drawable.ic_qr_code, 22, CLAUDE_TEXT_MUTED);
-        qrTopBtn.setPadding(dp(6), dp(4), dp(6), dp(4));
-        qrTopBtn.setOnClickListener(v -> startQrScanner());
+        FrameLayout qrTopBtn = createTopBarIconBtn(R.drawable.ic_qr_code, CLAUDE_TEXT_MAIN, v -> startQrScanner());
         topBar.addView(qrTopBtn);
 
-        final ImageView moreBtn = cIcon(R.drawable.ic_more_vert, 22, CLAUDE_TEXT_MUTED);
-        moreBtn.setPadding(dp(6), dp(4), dp(2), dp(4));
+        final FrameLayout moreBtn = createTopBarIconBtn(R.drawable.ic_more_vert, CLAUDE_TEXT_MAIN, null);
         moreBtn.setOnClickListener(v -> showMoreDropdownMenu(moreBtn));
         topBar.addView(moreBtn);
         parent.addView(topBar);
@@ -835,33 +877,30 @@ public class MainActivity extends Activity {
         bottomRow.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
 
         // Plus (+) Attachment Button
-        btnAttach = cIcon(R.drawable.ic_add, 22, CLAUDE_TEXT_MAIN);
-        btnAttach.setPadding(dp(6), dp(6), dp(6), dp(6));
-        btnAttach.setOnClickListener(v -> openFilePicker());
+        btnAttach = createComposerActionBtn(R.drawable.ic_add, CLAUDE_TEXT_MAIN, v -> openFilePicker());
         bottomRow.addView(btnAttach);
 
         // Cloud Gateway Status Button
-        btnEnginePill = cIcon(R.drawable.ic_cloud, 22, CLAUDE_TEXT_MAIN);
-        btnEnginePill.setPadding(dp(6), dp(6), dp(6), dp(6));
-        btnEnginePill.setOnClickListener(v -> checkHealth());
+        btnEnginePill = createComposerActionBtn(R.drawable.ic_cloud, CLAUDE_TEXT_MAIN, v -> checkHealth());
         bottomRow.addView(btnEnginePill);
 
         // Voice Microphone Button
-        btnVoice = cIcon(R.drawable.ic_mic, 22, CLAUDE_TEXT_MAIN);
-        btnVoice.setPadding(dp(6), dp(6), dp(6), dp(6));
-        btnVoice.setOnClickListener(v -> startVoiceRecognition());
+        btnVoice = createComposerActionBtn(R.drawable.ic_mic, CLAUDE_TEXT_MAIN, v -> startVoiceRecognition());
         bottomRow.addView(btnVoice);
 
         // Terracotta Circle Arrow Send Button
         btnSend = new FrameLayout(this);
         btnSend.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 20));
-        ImageView sendIcon = cIcon(R.drawable.ic_send, 18, Color.WHITE);
-        FrameLayout.LayoutParams lpSendIcon = new FrameLayout.LayoutParams(dp(18), dp(18));
+        ImageView sendIcon = new ImageView(this);
+        sendIcon.setImageResource(R.drawable.ic_send);
+        sendIcon.setColorFilter(Color.WHITE);
+        sendIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        FrameLayout.LayoutParams lpSendIcon = new FrameLayout.LayoutParams(dp(20), dp(20));
         lpSendIcon.gravity = Gravity.CENTER;
         btnSend.addView(sendIcon, lpSendIcon);
         btnSend.setOnClickListener(v -> sendClaudePrompt());
 
-        LinearLayout.LayoutParams lpSend = new LinearLayout.LayoutParams(dp(38), dp(38));
+        LinearLayout.LayoutParams lpSend = new LinearLayout.LayoutParams(dp(40), dp(40));
         lpSend.setMargins(dp(6), 0, 0, 0);
         bottomRow.addView(btnSend, lpSend);
 
@@ -877,13 +916,13 @@ public class MainActivity extends Activity {
         chip.setPadding(dp(10), dp(6), dp(10), dp(6));
         chip.setVisibility(View.GONE);
 
-        ImageView clipIcon = cIcon(R.drawable.ic_attach_file, 16, CLAUDE_TERRACOTTA);
+        ImageView clipIcon = cIcon(R.drawable.ic_attach_file, 18, CLAUDE_TERRACOTTA);
         chip.addView(clipIcon);
 
         attachmentText = cText(" Attached File", 12.5f, CLAUDE_TERRACOTTA, true, false);
         chip.addView(attachmentText, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView close = cIcon(R.drawable.ic_close, 16, CLAUDE_RED);
+        ImageView close = cIcon(R.drawable.ic_close, 18, CLAUDE_RED);
         close.setPadding(dp(4), 0, 0, 0);
         close.setOnClickListener(v -> {
             chip.setVisibility(View.GONE);
@@ -903,15 +942,25 @@ public class MainActivity extends Activity {
         emptyMascotView.setGravity(Gravity.CENTER);
         emptyMascotView.setPadding(dp(20), dp(80), dp(20), dp(80));
 
-        // Claude Spark Icon
-        ImageView spark = cIcon(R.drawable.ic_spark, 56, CLAUDE_TERRACOTTA);
-        emptyMascotView.addView(spark);
+        // Claude Spark Logo
+        ImageView spark = new ImageView(this);
+        spark.setImageResource(R.drawable.ic_spark);
+        spark.setColorFilter(CLAUDE_TERRACOTTA);
+        spark.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams lpSpark = new LinearLayout.LayoutParams(dp(72), dp(72));
+        emptyMascotView.addView(spark, lpSpark);
 
-        TextView brandName = cText("Antigravity Code", 16, CLAUDE_TEXT_MAIN, true, true);
+        TextView brandName = cText("Antigravity Code", 18, CLAUDE_TEXT_MAIN, true, true);
         brandName.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpBn = new LinearLayout.LayoutParams(-1, -2);
-        lpBn.setMargins(0, dp(14), 0, 0);
+        lpBn.setMargins(0, dp(16), 0, 0);
         emptyMascotView.addView(brandName, lpBn);
+
+        TextView brandSub = cText("Ready to code anything", 13, CLAUDE_TEXT_MUTED, false, false);
+        brandSub.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
+        lpSub.setMargins(0, dp(4), 0, 0);
+        emptyMascotView.addView(brandSub, lpSub);
     }
 
     private void showEmptyMascotState(boolean show) {
@@ -1000,13 +1049,13 @@ public class MainActivity extends Activity {
             head.setOrientation(LinearLayout.HORIZONTAL);
             head.setGravity(Gravity.CENTER_VERTICAL);
 
-            ImageView qrIcon = cIcon(R.drawable.ic_qr_code, 20, CLAUDE_TERRACOTTA);
+            ImageView qrIcon = cIcon(R.drawable.ic_qr_code, 22, CLAUDE_TERRACOTTA);
             head.addView(qrIcon);
 
             TextView title = cText(" Scan QR Pairing", 17, CLAUDE_TEXT_MAIN, true, true);
             head.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
-            ImageView close = cIcon(R.drawable.ic_close, 20, CLAUDE_TEXT_MUTED);
+            ImageView close = cIcon(R.drawable.ic_close, 22, CLAUDE_TEXT_MUTED);
             close.setPadding(dp(4), dp(4), dp(4), dp(4));
             close.setOnClickListener(v -> dialog.dismiss());
             head.addView(close);
@@ -1044,7 +1093,7 @@ public class MainActivity extends Activity {
             clipBtn.setGravity(Gravity.CENTER);
             clipBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
             clipBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
-            clipBtn.addView(cIcon(R.drawable.ic_content_paste, 18, CLAUDE_TEXT_MAIN));
+            clipBtn.addView(cIcon(R.drawable.ic_content_paste, 20, CLAUDE_TEXT_MAIN));
             TextView clipLbl = cText("  Tempel dari Clipboard", 13, CLAUDE_TEXT_MAIN, true, false);
             clipBtn.addView(clipLbl);
             clipBtn.setOnClickListener(v -> {
@@ -1650,7 +1699,7 @@ public class MainActivity extends Activity {
         pill.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
         pill.setPadding(dp(12), dp(8), dp(12), dp(8));
 
-        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 16, CLAUDE_TERRACOTTA);
+        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 18, CLAUDE_TERRACOTTA);
         pill.addView(actionIcon);
 
         TextView tv = cText("  " + labelText, 12.5f, CLAUDE_TEXT_MAIN, true, false);
@@ -1666,7 +1715,7 @@ public class MainActivity extends Activity {
         doneBadge.addView(doneText);
         pill.addView(doneBadge);
 
-        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 18, CLAUDE_TEXT_MUTED);
+        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
         chevron.setPadding(dp(4), 0, 0, 0);
         pill.addView(chevron);
 
@@ -1714,7 +1763,7 @@ public class MainActivity extends Activity {
         TextView title = cText("Execution & Thoughts", 18, CLAUDE_TEXT_MAIN, true, true);
         headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView closeBtn = cIcon(R.drawable.ic_close, 20, CLAUDE_TEXT_MUTED);
+        ImageView closeBtn = cIcon(R.drawable.ic_close, 22, CLAUDE_TEXT_MUTED);
         closeBtn.setPadding(dp(4), dp(4), dp(4), dp(4));
         closeBtn.setOnClickListener(v -> dialog.dismiss());
         headerRow.addView(closeBtn);
@@ -1750,7 +1799,7 @@ public class MainActivity extends Activity {
             cHead.setOrientation(LinearLayout.HORIZONTAL);
             cHead.setGravity(Gravity.CENTER_VERTICAL);
 
-            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 16, isTool ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED);
+            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isTool ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED);
             cHead.addView(ic);
 
             TextView tView = cText("  " + itTitle, 13, CLAUDE_TEXT_MAIN, true, false);
@@ -1761,13 +1810,13 @@ public class MainActivity extends Activity {
             bBadge.setGravity(Gravity.CENTER_VERTICAL);
             bBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
             bBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
-            bBadge.addView(cIcon(R.drawable.ic_check, 10, CLAUDE_GREEN));
+            bBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
             TextView bText = cText(" Done", 10.5f, CLAUDE_GREEN, true, false);
             bBadge.addView(bText);
             cHead.addView(bBadge);
 
             // Expand/Collapse Chevron Indicator
-            final ImageView expandChevron = cIcon(R.drawable.ic_chevron_right, 18, CLAUDE_TEXT_MUTED);
+            final ImageView expandChevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
             expandChevron.setPadding(dp(4), 0, 0, 0);
             cHead.addView(expandChevron);
 
@@ -2194,7 +2243,7 @@ public class MainActivity extends Activity {
         scanBtn.setGravity(Gravity.CENTER);
         scanBtn.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
         scanBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
-        scanBtn.addView(cIcon(R.drawable.ic_qr_code, 20, Color.WHITE));
+        scanBtn.addView(cIcon(R.drawable.ic_qr_code, 22, Color.WHITE));
         TextView scanLbl = cText("  Scan QR Code dari Terminal", 13.5f, Color.WHITE, true, false);
         scanBtn.addView(scanLbl);
         scanBtn.setOnClickListener(v -> startQrScanner());
@@ -2208,7 +2257,7 @@ public class MainActivity extends Activity {
         pasteBtn.setGravity(Gravity.CENTER);
         pasteBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
         pasteBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
-        pasteBtn.addView(cIcon(R.drawable.ic_content_paste, 18, CLAUDE_TEXT_MAIN));
+        pasteBtn.addView(cIcon(R.drawable.ic_content_paste, 20, CLAUDE_TEXT_MAIN));
         TextView pasteLbl = cText("  Tempel Link dari Clipboard", 13, CLAUDE_TEXT_MAIN, true, false);
         pasteBtn.addView(pasteLbl);
         pasteBtn.setOnClickListener(v -> pasteFromClipboard());
