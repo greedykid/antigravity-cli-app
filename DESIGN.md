@@ -1,27 +1,29 @@
-# Codex Remote Visual System
+# AI CLI Remote Visual System (Impeccable Edition)
 
 ## Direction
 
-Control room yang tenang: the app is a focused Android operating surface, not a terminal imitation. Conversation takes the largest area; status is compact telemetry.
+High-craft mobile developer command surface. Clean Obsidian dark foundation with distinct accent identities for **Antigravity CLI** (`#58A6FF` Cyan) and **OpenAI Codex CLI** (`#E3B341` Amber).
 
-## Material and Color
+## Material and Color Palette
 
-- Ink background: `#101417`
-- Panel: `#172026`
-- Elevated panel: `#202B32`
-- Amber action and active state: `#F5B84B`
-- Green connection state: `#74D39B`
-- Error: `#F28B82`
-- Text: `#E9EDF0`, muted text: `#9AA7AF`
+- **Base Canvas:** `#0D1117` (Deep Obsidian)
+- **Panel / Card:** `#161B22` (Subtle elevation)
+- **Elevated Surface:** `#21262D`
+- **Border / Stroke:** `#30363D`
+- **Antigravity Accent:** `#58A6FF` (Container: `#122438`)
+- **Codex Accent:** `#E3B341` (Container: `#272115`)
+- **Status Success:** `#3FB950`
+- **Status Error:** `#F85149`
+- **Text Primary:** `#F0F6FC`
+- **Text Secondary:** `#8B949E`
+- **Text Muted:** `#6E7681`
 
-## Components
+## Components & Structure
 
-Use Android-native touch targets at least 48dp. Messages are full-width readable blocks with 12dp corners; the composer is anchored to the bottom and stays visible above the keyboard. Connection settings are progressive disclosure from the top app bar.
+1. **Top Bar:** Sleek minimal header with app branding, instant *Clear Transcript* action, and *Connect Setup* button.
+2. **Engine Switcher:** Segmented pill toggle allowing one-tap switching between `⚡ Antigravity` and `🚀 OpenAI Codex`.
+3. **Telemetry Row:** Status dot with real-time feedback and quick *Test* ping action.
+4. **Empty State & Quick Chips:** Helpful onboarding view with horizontal suggestion chips (*List files*, *Git status*, *Explain code*, *Run tests*).
+5. **Transcript Cards:** Distinct message cards with timestamps, engine badges, monospace formatting for code, and long-press clipboard copy.
+6. **Composer:** Multiline auto-expanding input field paired with high-contrast primary action button.
 
-## States
-
-The connection row communicates ready, unconfigured, working, and error states. Send disables while Codex runs. Empty state gives a direct next action. Errors identify bridge failure and leave the composer available for recovery.
-
-## Typography
-
-System sans is used through the Android type system. Uppercase is reserved for the compact product mark; body copy remains sentence case for scanning and accessibility.
