@@ -1190,8 +1190,7 @@ public class MainActivity extends Activity {
         StringBuilder out = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) {
-            out.append(line).append("
-");
+            out.append(line).append("\n");
         }
 
         if (code >= 400) {
@@ -1267,8 +1266,7 @@ public class MainActivity extends Activity {
         bodyView.setTextColor(author.contains("Error") ? M3_RED : M3_ON_SURFACE);
         bodyView.setLineSpacing(0, 1.2f);
         bodyView.setTextIsSelectable(true);
-        bodyView.setTypeface(message.contains("
-") && (message.contains("    ") || message.contains("	") || message.contains("{")) ? Typeface.MONOSPACE : Typeface.DEFAULT);
+        bodyView.setTypeface(message.contains("\n") && (message.contains("    ") || message.contains("	") || message.contains("{")) ? Typeface.MONOSPACE : Typeface.DEFAULT);
         bodyView.setPadding(0, dp(6), 0, 0);
 
         bodyView.setOnLongClickListener(v -> {
