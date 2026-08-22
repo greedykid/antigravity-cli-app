@@ -1,5 +1,6 @@
 package com.greedykid.codexremote;
 
+import android.Manifest;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
@@ -10,12 +11,14 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -87,6 +90,7 @@ public class MainActivity extends Activity {
 
     private static final int REQ_PICK_FILE = 1001;
     private static final int REQ_VOICE_SPEECH = 1002;
+    private static final int REQ_CAMERA_PERMISSION = 2001;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -324,6 +328,11 @@ public class MainActivity extends Activity {
             startQrScanner();
         });
 
+        addSidebarMenuItem(menuItems, "📋", "Paste Pairing from Clipboard", () -> {
+            closeSidebar();
+            pasteFromClipboard();
+        });
+
         addSidebarMenuItem(menuItems, "💬", "New Chat Session", () -> {
             closeSidebar();
             startNewSession();
@@ -359,7 +368,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.6.0 • QR Connect Active", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.6.1 • QR Connect Safe", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -886,32 +895,76 @@ public class MainActivity extends Activity {
     }
 
     private void showMoreOptionsMenu() {
-        String[] options = {"📷 Scan QR Pairing", "🛑 Interrupt / Stop Task", "⚙ Connection Settings", "⟳ Refresh Transcript", "＋ Clear to New Session"};
+        String[] options = {"📷 Scan QR Pairing", "📋 Paste Pairing Link", "🛑 Interrupt / Stop Task", "⚙ Connection Settings", "⟳ Refresh Transcript", "＋ Clear to New Session"};
         new AlertDialog.Builder(this)
                 .setTitle("Session Controls")
                 .setItems(options, (d, which) -> {
                     if (which == 0) startQrScanner();
-                    else if (which == 1) stopRunningCliProcess();
-                    else if (which == 2) showConnectionDialog();
-                    else if (which == 3) fetchActiveSessionTurns(true);
-                    else if (which == 4) startNewSession();
+                    else if (which == 1) pasteFromClipboard();
+                    else if (which == 2) stopRunningCliProcess();
+                    else if (which == 3) showConnectionDialog();
+                    else if (which == 4) fetchActiveSessionTurns(true);
+                    else if (which == 5) startNewSession();
                 })
                 .show();
     }
 
     // ============================================================
-    // QR CODE SCANNER & PAIRING
+    // SAFE QR CODE SCANNER & RUNTIME PERMISSION
     // ============================================================
     private void startQrScanner() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA_PERMISSION);
+                return;
+            }
+        }
+        launchCameraScanner();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_CAMERA_PERMISSION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                launchCameraScanner();
+            } else {
+                Toast.makeText(this, "Izin kamera ditolak. Gunakan opsi Paste Clipboard.", Toast.LENGTH_LONG).show();
+                pasteFromClipboard();
+            }
+        }
+    }
+
+    private void launchCameraScanner() {
         try {
             IntentIntegrator integrator = new IntentIntegrator(this);
             integrator.setPrompt("Arahkan kamera ke QR Code di terminal");
             integrator.setBeepEnabled(true);
-            integrator.setOrientationLocked(false);
+            integrator.setOrientationLocked(true);
+            integrator.setCaptureActivity(com.journeyapps.barcodescanner.CaptureActivity.class);
             integrator.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
             integrator.initiateScan();
+        } catch (Throwable t) {
+            Toast.makeText(this, "Gagal membuka kamera: " + t.getMessage(), Toast.LENGTH_LONG).show();
+            pasteFromClipboard();
+        }
+    }
+
+    private void pasteFromClipboard() {
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0) {
+                CharSequence text = cm.getPrimaryClip().getItemAt(0).getText();
+                if (text != null && text.length() > 0) {
+                    handleQrPayload(text.toString().trim());
+                    return;
+                }
+            }
+            Toast.makeText(this, "Clipboard kosong. Salin URL/kode pairing terlebih dahulu.", Toast.LENGTH_SHORT).show();
+            showConnectionDialog();
         } catch (Exception e) {
-            Toast.makeText(this, "QR Scanner error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Clipboard error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            showConnectionDialog();
         }
     }
 
@@ -934,7 +987,7 @@ public class MainActivity extends Activity {
             }
 
             // 2. URI Format: agy://connect?url=...&token=...
-            if (trimmed.startsWith("agy://") || trimmed.startsWith("codex://") || trimmed.startsWith("http")) {
+            if (trimmed.startsWith("agy://") || trimmed.startsWith("codex://") || trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
                 Uri uri = Uri.parse(trimmed);
                 String url = uri.getQueryParameter("url");
                 String token = uri.getQueryParameter("token");
@@ -950,9 +1003,9 @@ public class MainActivity extends Activity {
                 }
             }
 
-            Toast.makeText(this, "Format QR Code tidak dikenali: " + trimmed, Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Format pairing tidak dikenali: " + trimmed, Toast.LENGTH_LONG).show();
         } catch (Exception e) {
-            Toast.makeText(this, "Gagal memproses QR Code: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Gagal memproses pairing: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -965,7 +1018,7 @@ public class MainActivity extends Activity {
 
         currentEngine = engine;
         updateRepoTag();
-        Toast.makeText(this, "🎉 Berhasil terhubung via QR Code!", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "🎉 Berhasil terhubung ke Server!", Toast.LENGTH_LONG).show();
         checkHealth();
         fetchHubSessions();
     }
@@ -999,12 +1052,16 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         // Check ZXing QR Scan Result first
-        IntentResult qrResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
-        if (qrResult != null) {
-            if (qrResult.getContents() != null) {
-                handleQrPayload(qrResult.getContents());
+        try {
+            IntentResult qrResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+            if (qrResult != null) {
+                if (qrResult.getContents() != null) {
+                    handleQrPayload(qrResult.getContents());
+                }
+                return;
             }
-            return;
+        } catch (Throwable t) {
+            t.printStackTrace();
         }
 
         super.onActivityResult(requestCode, resultCode, data);
@@ -1882,8 +1939,19 @@ public class MainActivity extends Activity {
         scanBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
         scanBtn.setOnClickListener(v -> startQrScanner());
         LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, dp(44));
-        lpBtn.setMargins(0, 0, 0, dp(16));
+        lpBtn.setMargins(0, 0, 0, dp(8));
         form.addView(scanBtn, lpBtn);
+
+        Button pasteBtn = new Button(this);
+        pasteBtn.setText("📋 Tempel Link dari Clipboard");
+        pasteBtn.setTextColor(CLAUDE_TEXT_MAIN);
+        pasteBtn.setTextSize(13);
+        pasteBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        pasteBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
+        pasteBtn.setOnClickListener(v -> pasteFromClipboard());
+        LinearLayout.LayoutParams lpPBtn = new LinearLayout.LayoutParams(-1, dp(42));
+        lpPBtn.setMargins(0, 0, 0, dp(14));
+        form.addView(pasteBtn, lpPBtn);
 
         TextView orLbl = cText("— atau isi manual —", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         orLbl.setGravity(Gravity.CENTER);
