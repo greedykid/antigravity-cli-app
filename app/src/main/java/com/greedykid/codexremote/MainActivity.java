@@ -45,6 +45,9 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -230,6 +233,7 @@ public class MainActivity extends Activity {
 
         viewChatContainer = new LinearLayout(this);
         viewChatContainer.setOrientation(LinearLayout.VERTICAL);
+        viewChatContainer.setVisibility(View.GONE);
         buildChatScreen(viewChatContainer);
         mainContentContainer.addView(viewChatContainer, new LinearLayout.LayoutParams(-1, -1));
 
@@ -261,7 +265,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SMOOTH ANIMATED SIDEBAR NAVIGATION (Fix listener persistence bug)
+    // SMOOTH ANIMATED SIDEBAR NAVIGATION
     // ============================================================
     private void buildSidebarContent(LinearLayout sidebar) {
         sidebar.setPadding(dp(22), dp(24), dp(22), dp(20));
@@ -315,6 +319,11 @@ public class MainActivity extends Activity {
         LinearLayout menuItems = new LinearLayout(this);
         menuItems.setOrientation(LinearLayout.VERTICAL);
 
+        addSidebarMenuItem(menuItems, "📷", "Scan QR Code Pairing", () -> {
+            closeSidebar();
+            startQrScanner();
+        });
+
         addSidebarMenuItem(menuItems, "💬", "New Chat Session", () -> {
             closeSidebar();
             startNewSession();
@@ -350,7 +359,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.5.2 • Bridge Active", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.6.0 • QR Connect Active", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -385,7 +394,7 @@ public class MainActivity extends Activity {
 
         sidebarScrim.setVisibility(View.VISIBLE);
         sidebarScrim.animate()
-                .setListener(null) // CRITICAL: Reset listener
+                .setListener(null)
                 .alpha(1f)
                 .setDuration(220)
                 .setInterpolator(new DecelerateInterpolator())
@@ -394,7 +403,7 @@ public class MainActivity extends Activity {
         sidebarPanel.setTranslationX(-panelWidth);
         sidebarPanel.setVisibility(View.VISIBLE);
         sidebarPanel.animate()
-                .setListener(null) // CRITICAL: Reset listener
+                .setListener(null)
                 .translationX(0f)
                 .setDuration(240)
                 .setInterpolator(new DecelerateInterpolator())
@@ -477,7 +486,7 @@ public class MainActivity extends Activity {
     private void buildHubScreen(LinearLayout parent) {
         parent.setPadding(dp(20), dp(16), dp(20), dp(16));
 
-        // Top Navigation Bar (Menu and New Session Button)
+        // Top Navigation Bar (Menu, QR Scan, and New Session Button)
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -486,6 +495,14 @@ public class MainActivity extends Activity {
         TextView menuIcon = cText("☰", 22, CLAUDE_TEXT_MAIN, false, false);
         menuIcon.setOnClickListener(v -> openSidebar());
         topBar.addView(menuIcon, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView qrBtn = cText("📷 QR", 13.5f, CLAUDE_TEXT_MAIN, true, false);
+        qrBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 16));
+        qrBtn.setPadding(dp(10), dp(6), dp(10), dp(6));
+        qrBtn.setOnClickListener(v -> startQrScanner());
+        LinearLayout.LayoutParams lpQr = new LinearLayout.LayoutParams(-2, -2);
+        lpQr.setMargins(0, 0, dp(8), 0);
+        topBar.addView(qrBtn, lpQr);
 
         TextView newBtnTop = cText("＋ New", 14, CLAUDE_TERRACOTTA, true, false);
         newBtnTop.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, 0, 0, 16));
@@ -674,7 +691,7 @@ public class MainActivity extends Activity {
     private void buildChatScreen(LinearLayout parent) {
         parent.setPadding(dp(16), dp(10), dp(16), dp(12));
 
-        // Top App Bar (☰ Menu / 〈 Back, Title, More ⋯)
+        // Top App Bar (☰ Menu / 〈 Back, Title, 📷 QR, ⋯ More)
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -696,6 +713,11 @@ public class MainActivity extends Activity {
         chatTopTitle.setGravity(Gravity.CENTER);
         chatTopTitle.setSingleLine(true);
         topBar.addView(chatTopTitle, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView qrTopBtn = cText("📷", 18, CLAUDE_TEXT_MUTED, true, false);
+        qrTopBtn.setPadding(dp(8), dp(4), dp(8), dp(4));
+        qrTopBtn.setOnClickListener(v -> startQrScanner());
+        topBar.addView(qrTopBtn);
 
         TextView moreBtn = cText("⋯", 18, CLAUDE_TEXT_MUTED, true, false);
         moreBtn.setPadding(dp(8), dp(4), dp(4), dp(4));
@@ -864,16 +886,88 @@ public class MainActivity extends Activity {
     }
 
     private void showMoreOptionsMenu() {
-        String[] options = {"🛑 Interrupt / Stop Task", "⚙ Connection Settings", "⟳ Refresh Transcript", "＋ Clear to New Session"};
+        String[] options = {"📷 Scan QR Pairing", "🛑 Interrupt / Stop Task", "⚙ Connection Settings", "⟳ Refresh Transcript", "＋ Clear to New Session"};
         new AlertDialog.Builder(this)
                 .setTitle("Session Controls")
                 .setItems(options, (d, which) -> {
-                    if (which == 0) stopRunningCliProcess();
-                    else if (which == 1) showConnectionDialog();
-                    else if (which == 2) fetchActiveSessionTurns(true);
-                    else if (which == 3) startNewSession();
+                    if (which == 0) startQrScanner();
+                    else if (which == 1) stopRunningCliProcess();
+                    else if (which == 2) showConnectionDialog();
+                    else if (which == 3) fetchActiveSessionTurns(true);
+                    else if (which == 4) startNewSession();
                 })
                 .show();
+    }
+
+    // ============================================================
+    // QR CODE SCANNER & PAIRING
+    // ============================================================
+    private void startQrScanner() {
+        try {
+            IntentIntegrator integrator = new IntentIntegrator(this);
+            integrator.setPrompt("Arahkan kamera ke QR Code di terminal");
+            integrator.setBeepEnabled(true);
+            integrator.setOrientationLocked(false);
+            integrator.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
+            integrator.initiateScan();
+        } catch (Exception e) {
+            Toast.makeText(this, "QR Scanner error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void handleQrPayload(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return;
+        String trimmed = raw.trim();
+
+        try {
+            // 1. JSON Payload Format: {"url":"...","token":"...","engine":"..."}
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                JSONObject obj = new JSONObject(trimmed);
+                String url = obj.optString("url", "").trim();
+                String token = obj.optString("token", "").trim();
+                String engine = obj.optString("engine", "antigravity").trim();
+
+                if (!url.isEmpty()) {
+                    saveConnectionCredentials(url, token, engine);
+                    return;
+                }
+            }
+
+            // 2. URI Format: agy://connect?url=...&token=...
+            if (trimmed.startsWith("agy://") || trimmed.startsWith("codex://") || trimmed.startsWith("http")) {
+                Uri uri = Uri.parse(trimmed);
+                String url = uri.getQueryParameter("url");
+                String token = uri.getQueryParameter("token");
+                String engine = uri.getQueryParameter("engine");
+
+                if (url == null && (trimmed.startsWith("http://") || trimmed.startsWith("https://"))) {
+                    url = trimmed;
+                }
+
+                if (url != null && !url.isEmpty()) {
+                    saveConnectionCredentials(url, token != null ? token : "codex-remote-token-2026", engine != null ? engine : "antigravity");
+                    return;
+                }
+            }
+
+            Toast.makeText(this, "Format QR Code tidak dikenali: " + trimmed, Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Gagal memproses QR Code: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void saveConnectionCredentials(String url, String token, String engine) {
+        prefs.edit()
+                .putString("url", url)
+                .putString("token", token)
+                .putString("engine", engine)
+                .apply();
+
+        currentEngine = engine;
+        updateRepoTag();
+        Toast.makeText(this, "🎉 Berhasil terhubung via QR Code!", Toast.LENGTH_LONG).show();
+        checkHealth();
+        fetchHubSessions();
     }
 
     // ============================================================
@@ -904,6 +998,15 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        // Check ZXing QR Scan Result first
+        IntentResult qrResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+        if (qrResult != null) {
+            if (qrResult.getContents() != null) {
+                handleQrPayload(qrResult.getContents());
+            }
+            return;
+        }
+
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode == RESULT_OK && data != null) {
             if (requestCode == REQ_PICK_FILE && data.getData() != null) {
@@ -1768,6 +1871,25 @@ public class MainActivity extends Activity {
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(22), dp(10), dp(22), dp(10));
+
+        // QR Scan Shortcut Button
+        Button scanBtn = new Button(this);
+        scanBtn.setText("📷 Scan QR Code dari Terminal");
+        scanBtn.setTextColor(Color.WHITE);
+        scanBtn.setTextSize(13.5f);
+        scanBtn.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        scanBtn.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
+        scanBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
+        scanBtn.setOnClickListener(v -> startQrScanner());
+        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, dp(44));
+        lpBtn.setMargins(0, 0, 0, dp(16));
+        form.addView(scanBtn, lpBtn);
+
+        TextView orLbl = cText("— atau isi manual —", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        orLbl.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lpOr = new LinearLayout.LayoutParams(-1, -2);
+        lpOr.setMargins(0, 0, 0, dp(12));
+        form.addView(orLbl, lpOr);
 
         TextView urlLbl = cText("Bridge Endpoint URL:", 12.5f, CLAUDE_TEXT_MUTED, true, false);
         form.addView(urlLbl);
