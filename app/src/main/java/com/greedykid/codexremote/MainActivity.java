@@ -32,8 +32,10 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
 import android.util.Base64;
+import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -139,13 +141,13 @@ public class MainActivity extends Activity {
     private LinearLayout emptyMascotView;
     private EditText promptInput;
     private FrameLayout btnSend;
-    private FrameLayout btnAttach;
-    private FrameLayout btnEnginePill;
-    private FrameLayout btnVoice;
+    private ImageView btnAttach;
+    private ImageView btnEnginePill;
+    private ImageView btnVoice;
     private TextView repoTagLabel;
     private LinearLayout attachmentChip;
     private TextView attachmentText;
-    private ProgressBar chatSendProgress;
+    private LinearLayout liveTaskPill;
 
     // Active Session State
     private String activeConversationId = null;
@@ -155,7 +157,8 @@ public class MainActivity extends Activity {
     private int currentScreen = 1; // Default to Screen 1 (New Chat Session)
     private boolean navigatedFromHub = false;
 
-    // Optimization State to prevent aggressive scroll jumping & redundant re-renders
+    // Live Execution & Sync State
+    private boolean isLiveTaskRunning = false;
     private String lastLoadedSessionId = null;
     private int lastLoadedTurnCount = -1;
 
@@ -163,9 +166,10 @@ public class MainActivity extends Activity {
     private final Runnable autoRefreshRunnable = new Runnable() {
         @Override
         public void run() {
-            if (isAutoRefreshActive && currentScreen == 1 && activeConversationId != null) {
-                fetchActiveSessionTurns(false);
-                mainHandler.postDelayed(this, 3000);
+            if (currentScreen == 1 && (isLiveTaskRunning || isAutoRefreshActive)) {
+                syncLiveExecution();
+                int delay = isLiveTaskRunning ? 1200 : 3000;
+                mainHandler.postDelayed(this, delay);
             }
         }
     };
@@ -191,7 +195,7 @@ public class MainActivity extends Activity {
         super.onResume();
         if (currentScreen == 0) {
             fetchHubSessions();
-        } else if (isAutoRefreshActive && activeConversationId != null) {
+        } else if (activeConversationId != null || isLiveTaskRunning) {
             startAutoRefresh();
         }
     }
@@ -243,49 +247,9 @@ public class MainActivity extends Activity {
         if (tintColor != 0) {
             iv.setColorFilter(tintColor);
         }
-        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp));
         iv.setLayoutParams(lp);
         return iv;
-    }
-
-    private FrameLayout createTopBarIconBtn(int iconRes, int iconColor, View.OnClickListener onClick) {
-        FrameLayout btn = new FrameLayout(this);
-        btn.setBackground(cBox(Color.TRANSPARENT, 0, 0, 20));
-        ImageView iv = new ImageView(this);
-        iv.setImageResource(iconRes);
-        if (iconColor != 0) {
-            iv.setColorFilter(iconColor);
-        }
-        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        FrameLayout.LayoutParams lpIv = new FrameLayout.LayoutParams(dp(24), dp(24));
-        lpIv.gravity = Gravity.CENTER;
-        btn.addView(iv, lpIv);
-        btn.setOnClickListener(onClick);
-
-        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(dp(40), dp(40));
-        btn.setLayoutParams(lpBtn);
-        return btn;
-    }
-
-    private FrameLayout createComposerActionBtn(int iconRes, int iconColor, View.OnClickListener onClick) {
-        FrameLayout btn = new FrameLayout(this);
-        btn.setBackground(cBox(Color.TRANSPARENT, 0, 0, 18));
-        ImageView iv = new ImageView(this);
-        iv.setImageResource(iconRes);
-        if (iconColor != 0) {
-            iv.setColorFilter(iconColor);
-        }
-        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        FrameLayout.LayoutParams lpIv = new FrameLayout.LayoutParams(dp(22), dp(22));
-        lpIv.gravity = Gravity.CENTER;
-        btn.addView(iv, lpIv);
-        btn.setOnClickListener(onClick);
-
-        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(dp(36), dp(36));
-        lpBtn.setMargins(dp(2), 0, dp(2), 0);
-        btn.setLayoutParams(lpBtn);
-        return btn;
     }
 
     private void buildClaudeUiWithSidebar() {
@@ -345,7 +309,7 @@ public class MainActivity extends Activity {
         brand.setOrientation(LinearLayout.HORIZONTAL);
         brand.setGravity(Gravity.CENTER_VERTICAL);
 
-        ImageView sparkLogo = cIcon(R.drawable.ic_spark, 32, CLAUDE_TERRACOTTA);
+        ImageView sparkLogo = cIcon(R.drawable.ic_spark, 30, CLAUDE_TERRACOTTA);
         brand.addView(sparkLogo);
 
         LinearLayout brandText = new LinearLayout(this);
@@ -439,7 +403,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.7.1 • Proportions Perfected", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.8.0 • Real-time Live Sync", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -449,10 +413,10 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(8), dp(12), dp(8), dp(12));
+        row.setPadding(dp(8), dp(11), dp(8), dp(11));
         row.setBackground(cBox(Color.TRANSPARENT, 0, 0, 10));
 
-        ImageView ic = cIcon(iconRes, 22, CLAUDE_TEXT_MAIN);
+        ImageView ic = cIcon(iconRes, 20, CLAUDE_TEXT_MAIN);
         row.addView(ic);
 
         TextView label = cText(title, 14, CLAUDE_TEXT_MAIN, false, false);
@@ -539,7 +503,7 @@ public class MainActivity extends Activity {
             chatTopTitle.setText(activeSessionTitle);
             updateRepoTag();
             updateChatNavIcon();
-            if (activeConversationId != null) {
+            if (activeConversationId != null || isLiveTaskRunning) {
                 fetchActiveSessionTurns(true);
                 startAutoRefresh();
             } else {
@@ -573,8 +537,9 @@ public class MainActivity extends Activity {
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setPadding(0, dp(4), 0, dp(14));
 
-        FrameLayout menuBtn = createTopBarIconBtn(R.drawable.ic_menu, CLAUDE_TEXT_MAIN, v -> openSidebar());
-        topBar.addView(menuBtn);
+        ImageView menuIcon = cIcon(R.drawable.ic_menu, 24, CLAUDE_TEXT_MAIN);
+        menuIcon.setOnClickListener(v -> openSidebar());
+        topBar.addView(menuIcon, new LinearLayout.LayoutParams(dp(24), dp(24)));
 
         View spacer = new View(this);
         topBar.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
@@ -584,9 +549,9 @@ public class MainActivity extends Activity {
         qrBtn.setOrientation(LinearLayout.HORIZONTAL);
         qrBtn.setGravity(Gravity.CENTER_VERTICAL);
         qrBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 16));
-        qrBtn.setPadding(dp(12), dp(8), dp(14), dp(8));
-        qrBtn.addView(cIcon(R.drawable.ic_qr_code, 18, CLAUDE_TEXT_MAIN));
-        TextView qrLabel = cText(" QR", 13.5f, CLAUDE_TEXT_MAIN, true, false);
+        qrBtn.setPadding(dp(10), dp(6), dp(12), dp(6));
+        qrBtn.addView(cIcon(R.drawable.ic_qr_code, 16, CLAUDE_TEXT_MAIN));
+        TextView qrLabel = cText(" QR", 13f, CLAUDE_TEXT_MAIN, true, false);
         qrBtn.addView(qrLabel);
         qrBtn.setOnClickListener(v -> startQrScanner());
         LinearLayout.LayoutParams lpQr = new LinearLayout.LayoutParams(-2, -2);
@@ -598,9 +563,9 @@ public class MainActivity extends Activity {
         newBtnTop.setOrientation(LinearLayout.HORIZONTAL);
         newBtnTop.setGravity(Gravity.CENTER_VERTICAL);
         newBtnTop.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, 0, 0, 16));
-        newBtnTop.setPadding(dp(12), dp(8), dp(14), dp(8));
-        newBtnTop.addView(cIcon(R.drawable.ic_add, 18, CLAUDE_TERRACOTTA));
-        TextView newLabel = cText(" New", 14f, CLAUDE_TERRACOTTA, true, false);
+        newBtnTop.setPadding(dp(10), dp(6), dp(12), dp(6));
+        newBtnTop.addView(cIcon(R.drawable.ic_add, 16, CLAUDE_TERRACOTTA));
+        TextView newLabel = cText(" New", 13.5f, CLAUDE_TERRACOTTA, true, false);
         newBtnTop.addView(newLabel);
         newBtnTop.setOnClickListener(v -> startNewSession());
         topBar.addView(newBtnTop);
@@ -773,6 +738,7 @@ public class MainActivity extends Activity {
         activeSessionTitle = "New session";
         lastLoadedSessionId = null;
         lastLoadedTurnCount = -1;
+        isLiveTaskRunning = false;
         navigatedFromHub = false;
 
         if (chatMessagesList != null) chatMessagesList.removeAllViews();
@@ -790,17 +756,11 @@ public class MainActivity extends Activity {
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(0, dp(2), 0, dp(8));
+        topBar.setPadding(0, dp(4), 0, dp(10));
 
-        FrameLayout navBtn = new FrameLayout(this);
-        chatNavIcon = new ImageView(this);
-        chatNavIcon.setImageResource(R.drawable.ic_menu);
-        chatNavIcon.setColorFilter(CLAUDE_TEXT_MAIN);
-        chatNavIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        FrameLayout.LayoutParams lpNavIcon = new FrameLayout.LayoutParams(dp(24), dp(24));
-        lpNavIcon.gravity = Gravity.CENTER_VERTICAL | Gravity.START;
-        navBtn.addView(chatNavIcon, lpNavIcon);
-        navBtn.setOnClickListener(v -> {
+        chatNavIcon = cIcon(R.drawable.ic_menu, 22, CLAUDE_TEXT_MAIN);
+        chatNavIcon.setPadding(dp(4), dp(4), dp(8), dp(4));
+        chatNavIcon.setOnClickListener(v -> {
             if (navigatedFromHub) {
                 navigatedFromHub = false;
                 showScreen(0);
@@ -808,17 +768,20 @@ public class MainActivity extends Activity {
                 openSidebar();
             }
         });
-        topBar.addView(navBtn, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        topBar.addView(chatNavIcon);
 
-        chatTopTitle = cText("New session", 16f, CLAUDE_TEXT_MAIN, true, false);
+        chatTopTitle = cText("New session", 15.5f, CLAUDE_TEXT_MAIN, true, false);
         chatTopTitle.setGravity(Gravity.CENTER);
         chatTopTitle.setSingleLine(true);
         topBar.addView(chatTopTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
-        FrameLayout qrTopBtn = createTopBarIconBtn(R.drawable.ic_qr_code, CLAUDE_TEXT_MAIN, v -> startQrScanner());
+        ImageView qrTopBtn = cIcon(R.drawable.ic_qr_code, 22, CLAUDE_TEXT_MUTED);
+        qrTopBtn.setPadding(dp(6), dp(4), dp(6), dp(4));
+        qrTopBtn.setOnClickListener(v -> startQrScanner());
         topBar.addView(qrTopBtn);
 
-        final FrameLayout moreBtn = createTopBarIconBtn(R.drawable.ic_more_vert, CLAUDE_TEXT_MAIN, null);
+        final ImageView moreBtn = cIcon(R.drawable.ic_more_vert, 22, CLAUDE_TEXT_MUTED);
+        moreBtn.setPadding(dp(6), dp(4), dp(2), dp(4));
         moreBtn.setOnClickListener(v -> showMoreDropdownMenu(moreBtn));
         topBar.addView(moreBtn);
         parent.addView(topBar);
@@ -877,30 +840,33 @@ public class MainActivity extends Activity {
         bottomRow.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
 
         // Plus (+) Attachment Button
-        btnAttach = createComposerActionBtn(R.drawable.ic_add, CLAUDE_TEXT_MAIN, v -> openFilePicker());
+        btnAttach = cIcon(R.drawable.ic_add, 22, CLAUDE_TEXT_MAIN);
+        btnAttach.setPadding(dp(6), dp(6), dp(6), dp(6));
+        btnAttach.setOnClickListener(v -> openFilePicker());
         bottomRow.addView(btnAttach);
 
         // Cloud Gateway Status Button
-        btnEnginePill = createComposerActionBtn(R.drawable.ic_cloud, CLAUDE_TEXT_MAIN, v -> checkHealth());
+        btnEnginePill = cIcon(R.drawable.ic_cloud, 22, CLAUDE_TEXT_MAIN);
+        btnEnginePill.setPadding(dp(6), dp(6), dp(6), dp(6));
+        btnEnginePill.setOnClickListener(v -> checkHealth());
         bottomRow.addView(btnEnginePill);
 
         // Voice Microphone Button
-        btnVoice = createComposerActionBtn(R.drawable.ic_mic, CLAUDE_TEXT_MAIN, v -> startVoiceRecognition());
+        btnVoice = cIcon(R.drawable.ic_mic, 22, CLAUDE_TEXT_MAIN);
+        btnVoice.setPadding(dp(6), dp(6), dp(6), dp(6));
+        btnVoice.setOnClickListener(v -> startVoiceRecognition());
         bottomRow.addView(btnVoice);
 
         // Terracotta Circle Arrow Send Button
         btnSend = new FrameLayout(this);
         btnSend.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 20));
-        ImageView sendIcon = new ImageView(this);
-        sendIcon.setImageResource(R.drawable.ic_send);
-        sendIcon.setColorFilter(Color.WHITE);
-        sendIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        FrameLayout.LayoutParams lpSendIcon = new FrameLayout.LayoutParams(dp(20), dp(20));
+        ImageView sendIcon = cIcon(R.drawable.ic_send, 18, Color.WHITE);
+        FrameLayout.LayoutParams lpSendIcon = new FrameLayout.LayoutParams(dp(18), dp(18));
         lpSendIcon.gravity = Gravity.CENTER;
         btnSend.addView(sendIcon, lpSendIcon);
         btnSend.setOnClickListener(v -> sendClaudePrompt());
 
-        LinearLayout.LayoutParams lpSend = new LinearLayout.LayoutParams(dp(40), dp(40));
+        LinearLayout.LayoutParams lpSend = new LinearLayout.LayoutParams(dp(38), dp(38));
         lpSend.setMargins(dp(6), 0, 0, 0);
         bottomRow.addView(btnSend, lpSend);
 
@@ -916,13 +882,13 @@ public class MainActivity extends Activity {
         chip.setPadding(dp(10), dp(6), dp(10), dp(6));
         chip.setVisibility(View.GONE);
 
-        ImageView clipIcon = cIcon(R.drawable.ic_attach_file, 18, CLAUDE_TERRACOTTA);
+        ImageView clipIcon = cIcon(R.drawable.ic_attach_file, 16, CLAUDE_TERRACOTTA);
         chip.addView(clipIcon);
 
         attachmentText = cText(" Attached File", 12.5f, CLAUDE_TERRACOTTA, true, false);
         chip.addView(attachmentText, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView close = cIcon(R.drawable.ic_close, 18, CLAUDE_RED);
+        ImageView close = cIcon(R.drawable.ic_close, 16, CLAUDE_RED);
         close.setPadding(dp(4), 0, 0, 0);
         close.setOnClickListener(v -> {
             chip.setVisibility(View.GONE);
@@ -942,25 +908,15 @@ public class MainActivity extends Activity {
         emptyMascotView.setGravity(Gravity.CENTER);
         emptyMascotView.setPadding(dp(20), dp(80), dp(20), dp(80));
 
-        // Claude Spark Logo
-        ImageView spark = new ImageView(this);
-        spark.setImageResource(R.drawable.ic_spark);
-        spark.setColorFilter(CLAUDE_TERRACOTTA);
-        spark.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        LinearLayout.LayoutParams lpSpark = new LinearLayout.LayoutParams(dp(72), dp(72));
-        emptyMascotView.addView(spark, lpSpark);
+        // Claude Spark Icon
+        ImageView spark = cIcon(R.drawable.ic_spark, 56, CLAUDE_TERRACOTTA);
+        emptyMascotView.addView(spark);
 
-        TextView brandName = cText("Antigravity Code", 18, CLAUDE_TEXT_MAIN, true, true);
+        TextView brandName = cText("Antigravity Code", 16, CLAUDE_TEXT_MAIN, true, true);
         brandName.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpBn = new LinearLayout.LayoutParams(-1, -2);
-        lpBn.setMargins(0, dp(16), 0, 0);
+        lpBn.setMargins(0, dp(14), 0, 0);
         emptyMascotView.addView(brandName, lpBn);
-
-        TextView brandSub = cText("Ready to code anything", 13, CLAUDE_TEXT_MUTED, false, false);
-        brandSub.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
-        lpSub.setMargins(0, dp(4), 0, 0);
-        emptyMascotView.addView(brandSub, lpSub);
     }
 
     private void showEmptyMascotState(boolean show) {
@@ -1049,13 +1005,13 @@ public class MainActivity extends Activity {
             head.setOrientation(LinearLayout.HORIZONTAL);
             head.setGravity(Gravity.CENTER_VERTICAL);
 
-            ImageView qrIcon = cIcon(R.drawable.ic_qr_code, 22, CLAUDE_TERRACOTTA);
+            ImageView qrIcon = cIcon(R.drawable.ic_qr_code, 20, CLAUDE_TERRACOTTA);
             head.addView(qrIcon);
 
             TextView title = cText(" Scan QR Pairing", 17, CLAUDE_TEXT_MAIN, true, true);
             head.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
-            ImageView close = cIcon(R.drawable.ic_close, 22, CLAUDE_TEXT_MUTED);
+            ImageView close = cIcon(R.drawable.ic_close, 20, CLAUDE_TEXT_MUTED);
             close.setPadding(dp(4), dp(4), dp(4), dp(4));
             close.setOnClickListener(v -> dialog.dismiss());
             head.addView(close);
@@ -1093,7 +1049,7 @@ public class MainActivity extends Activity {
             clipBtn.setGravity(Gravity.CENTER);
             clipBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
             clipBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
-            clipBtn.addView(cIcon(R.drawable.ic_content_paste, 20, CLAUDE_TEXT_MAIN));
+            clipBtn.addView(cIcon(R.drawable.ic_content_paste, 18, CLAUDE_TEXT_MAIN));
             TextView clipLbl = cText("  Tempel dari Clipboard", 13, CLAUDE_TEXT_MAIN, true, false);
             clipBtn.addView(clipLbl);
             clipBtn.setOnClickListener(v -> {
@@ -1433,7 +1389,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // CHAT EXECUTION & LIVE STREAMING
+    // REAL-TIME LIVE CHAT EXECUTION & STREAMING SYNC
     // ============================================================
     private void sendClaudePrompt() {
         String text = promptInput.getText().toString().trim();
@@ -1454,61 +1410,133 @@ public class MainActivity extends Activity {
         btnSend.setTag("busy");
         btnSend.setEnabled(false);
         promptInput.setEnabled(false);
+        isLiveTaskRunning = true;
 
         String displayText = (file != null ? "[File: " + file + "]\n" : "") + text;
         addMessageCard("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
         promptInput.setText("");
 
-        chatSendProgress = new ProgressBar(this);
-        LinearLayout.LayoutParams lpProg = new LinearLayout.LayoutParams(dp(24), dp(24));
-        lpProg.setMargins(dp(16), dp(4), 0, dp(10));
-        chatMessagesList.addView(chatSendProgress, lpProg);
-        
-        // Explicit user prompt: scroll to bottom smoothly
+        // Show Real-time Agent Working Banner
+        showLiveWorkingPill("Agent is processing instructions...");
+
+        // Scroll to bottom immediately
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+
+        // Start high-frequency live transcript sync
+        startAutoRefresh();
+
+        final String promptToSend = text;
+        final String fileToSend = file;
 
         executor.execute(() -> {
             try {
                 JSONObject req = new JSONObject();
-                req.put("prompt", text);
+                req.put("prompt", promptToSend);
                 req.put("engine", currentEngine);
                 req.put("resume", true);
-                if (file != null) {
-                    req.put("attachedFile", file);
+                if (fileToSend != null) {
+                    req.put("attachedFile", fileToSend);
                 }
                 if (activeConversationId != null && !activeConversationId.isEmpty()) {
                     req.put("conversationId", activeConversationId);
                 }
 
                 JSONObject res = executePost(endpoint, prefs.getString("token", ""), req);
-                String responseText = res.optString("response", "No output returned.");
+                String activeId = res.optString("conversationId", activeConversationId);
+                if (activeId != null && !activeId.isEmpty()) {
+                    activeConversationId = activeId;
+                }
 
                 mainHandler.post(() -> {
-                    if (chatSendProgress != null) {
-                        chatMessagesList.removeView(chatSendProgress);
-                        chatSendProgress = null;
-                    }
-                    addMessageCard("assistant", responseText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
+                    isLiveTaskRunning = false;
+                    removeLiveWorkingPill();
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
+                    syncLiveExecution();
                     chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
-                    fetchActiveSessionTurns(false);
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
-                    if (chatSendProgress != null) {
-                        chatMessagesList.removeView(chatSendProgress);
-                        chatSendProgress = null;
-                    }
-                    addCompactExecutionPill("Notice: " + e.getMessage() + "\nSyncing live outputs from server...", "Gateway Status");
+                    isLiveTaskRunning = false;
+                    removeLiveWorkingPill();
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
+                    syncLiveExecution();
                     chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
-                    startAutoRefresh();
                 });
             }
+        });
+    }
+
+    private void showLiveWorkingPill(String status) {
+        removeLiveWorkingPill();
+        liveTaskPill = new LinearLayout(this);
+        liveTaskPill.setOrientation(LinearLayout.HORIZONTAL);
+        liveTaskPill.setGravity(Gravity.CENTER_VERTICAL);
+        liveTaskPill.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, CLAUDE_TERRACOTTA, 1, 14));
+        liveTaskPill.setPadding(dp(12), dp(8), dp(12), dp(8));
+
+        ProgressBar pb = new ProgressBar(this);
+        LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(16), dp(16));
+        liveTaskPill.addView(pb, lpPb);
+
+        TextView tv = cText("  " + status, 12.5f, CLAUDE_TERRACOTTA, true, false);
+        liveTaskPill.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(4), 0, dp(8));
+        chatMessagesList.addView(liveTaskPill, lp);
+    }
+
+    private void removeLiveWorkingPill() {
+        if (liveTaskPill != null) {
+            chatMessagesList.removeView(liveTaskPill);
+            liveTaskPill = null;
+        }
+    }
+
+    private void syncLiveExecution() {
+        String endpoint = prefs.getString("url", "").trim();
+        if (endpoint.isEmpty()) return;
+
+        executor.execute(() -> {
+            try {
+                // If in active session, query directly; if in new session, query /api/session/live
+                String targetConvId = activeConversationId;
+                String queryUrl;
+                if (targetConvId != null && !targetConvId.isEmpty()) {
+                    queryUrl = endpoint.replace("/api/chat", "/api/session/transcript?id=" + Uri.encode(targetConvId));
+                } else {
+                    queryUrl = endpoint.replace("/api/chat", "/api/session/live");
+                }
+
+                HttpURLConnection c = (HttpURLConnection) new URL(queryUrl).openConnection();
+                c.setRequestMethod("GET");
+                c.setConnectTimeout(6000);
+                String token = prefs.getString("token", "");
+                if (!token.isEmpty()) {
+                    c.setRequestProperty("Authorization", "Bearer " + token);
+                }
+
+                int code = c.getResponseCode();
+                if (code == 200) {
+                    BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
+                    StringBuilder b = new StringBuilder();
+                    String line;
+                    while ((line = r.readLine()) != null) b.append(line);
+                    JSONObject json = new JSONObject(b.toString());
+
+                    mainHandler.post(() -> {
+                        String newId = json.optString("conversationId", "");
+                        if (activeConversationId == null && !newId.isEmpty()) {
+                            activeConversationId = newId;
+                        }
+                        renderActiveSessionTurns(activeConversationId, json, false);
+                    });
+                }
+            } catch (Exception e) {}
         });
     }
 
@@ -1542,52 +1570,15 @@ public class MainActivity extends Activity {
     }
 
     private void fetchActiveSessionTurns(final boolean showFeedback) {
-        String endpoint = prefs.getString("url", "").trim();
-        if (endpoint.isEmpty()) return;
-
-        // If in "New session" empty state (activeConversationId == null), DO NOT load previous session turns!
-        if (activeConversationId == null) {
-            return;
+        syncLiveExecution();
+        if (showFeedback) {
+            Toast.makeText(this, "Syncing session...", Toast.LENGTH_SHORT).show();
         }
-
-        final String targetConvId = activeConversationId;
-
-        executor.execute(() -> {
-            try {
-                // Fetch the EXACT requested session transcript by ID!
-                String url = endpoint.replace("/api/chat", "/api/session/transcript?id=" + Uri.encode(targetConvId));
-                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-                c.setRequestMethod("GET");
-                c.setConnectTimeout(8000);
-                String token = prefs.getString("token", "");
-                if (!token.isEmpty()) {
-                    c.setRequestProperty("Authorization", "Bearer " + token);
-                }
-
-                int code = c.getResponseCode();
-                if (code == 200) {
-                    BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
-                    StringBuilder b = new StringBuilder();
-                    String line;
-                    while ((line = r.readLine()) != null) b.append(line);
-                    JSONObject json = new JSONObject(b.toString());
-
-                    mainHandler.post(() -> renderActiveSessionTurns(targetConvId, json, showFeedback));
-                }
-            } catch (Exception e) {
-                if (showFeedback) {
-                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Sync error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                }
-            }
-        });
     }
 
     private void renderActiveSessionTurns(String requestedConvId, JSONObject json, boolean showToast) {
         try {
-            // Verify that the user is still on the same session (prevent race conditions)
-            if (activeConversationId == null || !activeConversationId.equals(requestedConvId)) {
-                return;
-            }
+            if (json == null) return;
 
             JSONObject session = json.optJSONObject("session");
             if (session != null) {
@@ -1600,24 +1591,22 @@ public class MainActivity extends Activity {
                 turns = json.optJSONArray("messages");
             }
 
-            if (turns != null && btnSend.getTag() == null) {
+            if (turns != null) {
                 int newTurnCount = turns.length();
 
                 // Prevent unnecessary View re-creation if nothing changed
-                if (requestedConvId.equals(lastLoadedSessionId) && newTurnCount == lastLoadedTurnCount) {
-                    if (showToast) Toast.makeText(this, "Session up to date", Toast.LENGTH_SHORT).show();
+                if (requestedConvId != null && requestedConvId.equals(lastLoadedSessionId) && newTurnCount == lastLoadedTurnCount && !isLiveTaskRunning) {
                     return;
                 }
 
-                // Check if user is currently near the bottom BEFORE re-rendering
                 boolean isNearBottom = isScrollNearBottom();
-                boolean isInitialSessionLoad = !requestedConvId.equals(lastLoadedSessionId);
+                boolean isInitialSessionLoad = requestedConvId != null && !requestedConvId.equals(lastLoadedSessionId);
 
                 lastLoadedSessionId = requestedConvId;
                 lastLoadedTurnCount = newTurnCount;
 
                 chatMessagesList.removeAllViews();
-                showEmptyMascotState(turns.length() == 0);
+                showEmptyMascotState(turns.length() == 0 && !isLiveTaskRunning);
 
                 // Group consecutive tool & thinking turns into a SINGLE compact summary line
                 ArrayList<JSONObject> pendingTools = new ArrayList<>();
@@ -1644,8 +1633,13 @@ public class MainActivity extends Activity {
                     addCompactToolsGroupPill(pendingTools);
                 }
 
-                // ONLY auto-scroll down if user was already at the bottom or if opening session for the first time
-                if (isInitialSessionLoad || isNearBottom) {
+                // If currently running, keep the active working pill at the bottom
+                if (isLiveTaskRunning) {
+                    showLiveWorkingPill("Agent is processing step " + (newTurnCount + 1) + "...");
+                }
+
+                // Smooth scroll down
+                if (isInitialSessionLoad || isNearBottom || isLiveTaskRunning) {
                     chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
                 }
             }
@@ -1668,7 +1662,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // COMPACT TEXT PILL & EXPANDABLE ACCORDION BOTTOM MODAL SHEET
+    // COMPACT TEXT PILL & FULLY SWIPEABLE / EXPANDABLE FULLSCREEN BOTTOM SHEET
     // ============================================================
     private void addCompactToolsGroupPill(final ArrayList<JSONObject> toolTurns) {
         int toolCount = 0;
@@ -1699,7 +1693,7 @@ public class MainActivity extends Activity {
         pill.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
         pill.setPadding(dp(12), dp(8), dp(12), dp(8));
 
-        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 18, CLAUDE_TERRACOTTA);
+        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 16, CLAUDE_TERRACOTTA);
         pill.addView(actionIcon);
 
         TextView tv = cText("  " + labelText, 12.5f, CLAUDE_TEXT_MAIN, true, false);
@@ -1715,7 +1709,7 @@ public class MainActivity extends Activity {
         doneBadge.addView(doneText);
         pill.addView(doneBadge);
 
-        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
+        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 18, CLAUDE_TEXT_MUTED);
         chevron.setPadding(dp(4), 0, 0, 0);
         pill.addView(chevron);
 
@@ -1738,24 +1732,33 @@ public class MainActivity extends Activity {
         addCompactToolsGroupPill(list);
     }
 
-    private void openExecutionBottomModal(ArrayList<JSONObject> items) {
+    private void openExecutionBottomModal(final ArrayList<JSONObject> items) {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
-        LinearLayout modalRoot = new LinearLayout(this);
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        final int screenHeight = dm.heightPixels;
+        final int peekHeight = (int) (screenHeight * 0.58f);
+        final int fullHeight = (int) (screenHeight * 0.94f);
+
+        final LinearLayout modalRoot = new LinearLayout(this);
         modalRoot.setOrientation(LinearLayout.VERTICAL);
         modalRoot.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 24));
-        modalRoot.setPadding(dp(20), dp(12), dp(20), dp(18));
+        modalRoot.setPadding(dp(20), dp(10), dp(20), dp(16));
 
-        // Top Drag Handle Pill
+        // Top Drag Handle Pill (Touchable to swipe up/down)
+        final LinearLayout dragArea = new LinearLayout(this);
+        dragArea.setOrientation(LinearLayout.VERTICAL);
+        dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
+        dragArea.setPadding(0, dp(6), 0, dp(10));
+
         View dragHandle = new View(this);
         dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
-        LinearLayout.LayoutParams lpHandle = new LinearLayout.LayoutParams(dp(42), dp(5));
-        lpHandle.gravity = Gravity.CENTER_HORIZONTAL;
-        lpHandle.setMargins(0, 0, 0, dp(14));
-        modalRoot.addView(dragHandle, lpHandle);
+        LinearLayout.LayoutParams lpHandle = new LinearLayout.LayoutParams(dp(44), dp(5));
+        dragArea.addView(dragHandle, lpHandle);
+        modalRoot.addView(dragArea);
 
-        // Header Title
+        // Header Title Row (Title, Fullscreen Toggle, Close)
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -1763,24 +1766,35 @@ public class MainActivity extends Activity {
         TextView title = cText("Execution & Thoughts", 18, CLAUDE_TEXT_MAIN, true, true);
         headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView closeBtn = cIcon(R.drawable.ic_close, 22, CLAUDE_TEXT_MUTED);
-        closeBtn.setPadding(dp(4), dp(4), dp(4), dp(4));
+        final ImageView fullscreenBtn = cIcon(R.drawable.ic_fullscreen, 22, CLAUDE_TEXT_MUTED);
+        fullscreenBtn.setPadding(dp(6), dp(4), dp(6), dp(4));
+        headerRow.addView(fullscreenBtn);
+
+        ImageView closeBtn = cIcon(R.drawable.ic_close, 20, CLAUDE_TEXT_MUTED);
+        closeBtn.setPadding(dp(6), dp(4), dp(2), dp(4));
         closeBtn.setOnClickListener(v -> dialog.dismiss());
         headerRow.addView(closeBtn);
         modalRoot.addView(headerRow);
 
-        TextView sub = cText(items.size() + " actions executed • tap item to expand/collapse", 12.5f, CLAUDE_TEXT_MUTED, false, false);
-        LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
-        lpSub.setMargins(0, dp(2), 0, dp(14));
-        modalRoot.addView(sub, lpSub);
+        // Subtitle Info Row
+        LinearLayout subRow = new LinearLayout(this);
+        subRow.setOrientation(LinearLayout.HORIZONTAL);
+        subRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView sub = cText(items.size() + " actions executed • tap to expand/collapse", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        subRow.addView(sub, new LinearLayout.LayoutParams(0, -2, 1));
+        modalRoot.addView(subRow);
 
         // Scrollable List of Actions
-        ScrollView scroll = new ScrollView(this);
+        final ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setVerticalScrollBarEnabled(true);
 
-        LinearLayout list = new LinearLayout(this);
+        final LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(0, dp(12), 0, dp(12));
+
+        final ArrayList<TextView> allBodies = new ArrayList<>();
+        final ArrayList<ImageView> allChevrons = new ArrayList<>();
 
         for (int i = 0; i < items.size(); i++) {
             JSONObject it = items.get(i);
@@ -1799,7 +1813,7 @@ public class MainActivity extends Activity {
             cHead.setOrientation(LinearLayout.HORIZONTAL);
             cHead.setGravity(Gravity.CENTER_VERTICAL);
 
-            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isTool ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED);
+            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 16, isTool ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED);
             cHead.addView(ic);
 
             TextView tView = cText("  " + itTitle, 13, CLAUDE_TEXT_MAIN, true, false);
@@ -1810,15 +1824,16 @@ public class MainActivity extends Activity {
             bBadge.setGravity(Gravity.CENTER_VERTICAL);
             bBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
             bBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
-            bBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
+            bBadge.addView(cIcon(R.drawable.ic_check, 10, CLAUDE_GREEN));
             TextView bText = cText(" Done", 10.5f, CLAUDE_GREEN, true, false);
             bBadge.addView(bText);
             cHead.addView(bBadge);
 
             // Expand/Collapse Chevron Indicator
-            final ImageView expandChevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
+            final ImageView expandChevron = cIcon(R.drawable.ic_chevron_right, 18, CLAUDE_TEXT_MUTED);
             expandChevron.setPadding(dp(4), 0, 0, 0);
             cHead.addView(expandChevron);
+            allChevrons.add(expandChevron);
 
             card.addView(cHead);
 
@@ -1832,6 +1847,7 @@ public class MainActivity extends Activity {
             body.setPadding(0, dp(8), 0, dp(4));
             body.setVisibility(View.GONE); // DEFAULT COLLAPSE
             card.addView(body);
+            allBodies.add(body);
 
             // Toggle Expand / Collapse on Click
             cHead.setOnClickListener(v -> {
@@ -1850,20 +1866,77 @@ public class MainActivity extends Activity {
         }
 
         scroll.addView(list);
-        modalRoot.addView(scroll, new LinearLayout.LayoutParams(-1, dp(340)));
+        modalRoot.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         dialog.setContentView(modalRoot);
 
-        // Configure Bottom Sheet Dialog Window
-        Window window = dialog.getWindow();
+        // Configure Bottom Sheet Window & Height State
+        final Window window = dialog.getWindow();
+        final boolean[] isFullscreen = {false};
+
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             WindowManager.LayoutParams wlp = window.getAttributes();
             wlp.gravity = Gravity.BOTTOM;
             wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
-            wlp.windowAnimations = android.R.style.Animation_InputMethod; // Smooth slide from bottom
+            wlp.height = peekHeight;
+            wlp.windowAnimations = android.R.style.Animation_InputMethod;
             window.setAttributes(wlp);
         }
+
+        // Fullscreen Toggle Action
+        fullscreenBtn.setOnClickListener(v -> {
+            isFullscreen[0] = !isFullscreen[0];
+            if (window != null) {
+                WindowManager.LayoutParams lp = window.getAttributes();
+                lp.height = isFullscreen[0] ? fullHeight : peekHeight;
+                window.setAttributes(lp);
+            }
+            fullscreenBtn.setImageResource(isFullscreen[0] ? R.drawable.ic_fullscreen_exit : R.drawable.ic_fullscreen);
+        });
+
+        // Touch Drag Gesture to Swipe Up (Expand Fullscreen) or Swipe Down (Dismiss / Collapse)
+        View.OnTouchListener swipeDragListener = new View.OnTouchListener() {
+            private float startY = 0;
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startY = event.getRawY();
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        float deltaY = event.getRawY() - startY;
+                        if (deltaY < -dp(50)) {
+                            // Swiped UP -> Expand to Fullscreen!
+                            isFullscreen[0] = true;
+                            if (window != null) {
+                                WindowManager.LayoutParams lp = window.getAttributes();
+                                lp.height = fullHeight;
+                                window.setAttributes(lp);
+                            }
+                            fullscreenBtn.setImageResource(R.drawable.ic_fullscreen_exit);
+                        } else if (deltaY > dp(70)) {
+                            // Swiped DOWN -> If in fullscreen, collapse to peek; if in peek, dismiss!
+                            if (isFullscreen[0]) {
+                                isFullscreen[0] = false;
+                                if (window != null) {
+                                    WindowManager.LayoutParams lp = window.getAttributes();
+                                    lp.height = peekHeight;
+                                    window.setAttributes(lp);
+                                }
+                                fullscreenBtn.setImageResource(R.drawable.ic_fullscreen);
+                            } else {
+                                dialog.dismiss();
+                            }
+                        }
+                        return true;
+                }
+                return false;
+            }
+        };
+
+        dragArea.setOnTouchListener(swipeDragListener);
+        headerRow.setOnTouchListener(swipeDragListener);
 
         dialog.show();
     }
@@ -2191,7 +2264,7 @@ public class MainActivity extends Activity {
 
                 mainHandler.post(() -> {
                     Toast.makeText(MainActivity.this, code == 200 ? "Task interrupted" : "HTTP " + code, Toast.LENGTH_SHORT).show();
-                    fetchActiveSessionTurns(false);
+                    syncLiveExecution();
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> Toast.makeText(MainActivity.this, "Error stopping: " + e.getMessage(), Toast.LENGTH_SHORT).show());
@@ -2243,7 +2316,7 @@ public class MainActivity extends Activity {
         scanBtn.setGravity(Gravity.CENTER);
         scanBtn.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
         scanBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
-        scanBtn.addView(cIcon(R.drawable.ic_qr_code, 22, Color.WHITE));
+        scanBtn.addView(cIcon(R.drawable.ic_qr_code, 20, Color.WHITE));
         TextView scanLbl = cText("  Scan QR Code dari Terminal", 13.5f, Color.WHITE, true, false);
         scanBtn.addView(scanLbl);
         scanBtn.setOnClickListener(v -> startQrScanner());
@@ -2257,7 +2330,7 @@ public class MainActivity extends Activity {
         pasteBtn.setGravity(Gravity.CENTER);
         pasteBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
         pasteBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
-        pasteBtn.addView(cIcon(R.drawable.ic_content_paste, 20, CLAUDE_TEXT_MAIN));
+        pasteBtn.addView(cIcon(R.drawable.ic_content_paste, 18, CLAUDE_TEXT_MAIN));
         TextView pasteLbl = cText("  Tempel Link dari Clipboard", 13, CLAUDE_TEXT_MAIN, true, false);
         pasteBtn.addView(pasteLbl);
         pasteBtn.setOnClickListener(v -> pasteFromClipboard());

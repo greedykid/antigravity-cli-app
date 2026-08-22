@@ -354,7 +354,15 @@ const server = http.createServer((req, res) => {
           response = await runAgy(prompt.trim(), conversationId, resume);
         }
 
-        send(res, 200, { response, engine: engine === "codex" ? "codex" : "antigravity" });
+        const sessions = getSessions();
+        const activeConvId = conversationId || (sessions[0] ? sessions[0].conversationId : null);
+
+        send(res, 200, {
+          ok: true,
+          response,
+          conversationId: activeConvId,
+          engine: engine === "codex" ? "codex" : "antigravity"
+        });
       } catch (error) {
         send(res, 500, { error: error.message || "Internal server error" });
       }
