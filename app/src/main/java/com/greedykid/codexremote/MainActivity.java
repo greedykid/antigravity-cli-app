@@ -5,7 +5,9 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -1501,8 +1503,25 @@ public class MainActivity extends Activity {
         tokenInput.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 10));
         tokenInput.setPadding(dp(12), dp(10), dp(12), dp(10));
         LinearLayout.LayoutParams lpTok = new LinearLayout.LayoutParams(-1, dp(48));
-        lpTok.setMargins(0, dp(4), 0, dp(8));
+        lpTok.setMargins(0, dp(4), 0, dp(12));
         form.addView(tokenInput, lpTok);
+
+        TextView updateLbl = m3Text("App Version & Updates:", 12.5f, M3_ON_SURFACE_VARIANT, true);
+        form.addView(updateLbl);
+
+        Button updateBtn = new Button(this);
+        updateBtn.setText("📥 Check & Download Latest APK Update");
+        updateBtn.setTextSize(12);
+        updateBtn.setAllCaps(false);
+        updateBtn.setTextColor(M3_PRIMARY);
+        updateBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 10));
+        updateBtn.setOnClickListener(v -> {
+            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/greedykid/codexcli-remote-app/actions"));
+            startActivity(browserIntent);
+        });
+        LinearLayout.LayoutParams lpUp = new LinearLayout.LayoutParams(-1, dp(42));
+        lpUp.setMargins(0, dp(4), 0, dp(6));
+        form.addView(updateBtn, lpUp);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Remote Gateway Setup")

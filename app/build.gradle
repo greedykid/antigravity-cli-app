@@ -8,8 +8,33 @@ android {
         applicationId 'com.greedykid.codexremote'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '0.1.0'
+        versionCode System.getenv("GITHUB_RUN_NUMBER") ? Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER")) + 10 : 2
+        versionName '0.2.0'
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        release {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
     }
 
     compileOptions {
@@ -17,3 +42,4 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
