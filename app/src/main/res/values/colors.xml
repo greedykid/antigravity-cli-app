@@ -1,0 +1,12 @@
+<resources>
+    <color name="ink">#101417</color>
+    <color name="panel">#172026</color>
+    <color name="panel_elevated">#202B32</color>
+    <color name="line">#35434B</color>
+    <color name="text_primary">#E9EDF0</color>
+    <color name="text_muted">#9AA7AF</color>
+    <color name="amber">#F5B84B</color>
+    <color name="amber_dark">#332B1A</color>
+    <color name="success">#74D39B</color>
+    <color name="error">#F28B82</color>
+</resources>
