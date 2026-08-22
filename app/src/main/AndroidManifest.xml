@@ -19,10 +19,5 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name="com.journeyapps.barcodescanner.CaptureActivity"
-            android:screenOrientation="portrait"
-            android:stateNotNeeded="true"
-            tools:replace="android:screenOrientation" />
     </application>
 </manifest>

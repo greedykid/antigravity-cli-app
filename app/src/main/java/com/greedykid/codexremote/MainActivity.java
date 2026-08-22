@@ -17,6 +17,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
+import android.hardware.Camera;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -32,6 +33,8 @@ import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
 import android.util.Base64;
 import android.view.Gravity;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -48,8 +51,13 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.zxing.integration.android.IntentIntegrator;
-import com.google.zxing.integration.android.IntentResult;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.DecodeHintType;
+import com.google.zxing.MultiFormatReader;
+import com.google.zxing.PlanarYUVLuminanceSource;
+import com.google.zxing.Result;
+import com.google.zxing.common.HybridBinarizer;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -62,8 +70,12 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -368,7 +380,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.6.1 • QR Connect Safe", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.6.2 • Native Viewfinder QR", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -910,7 +922,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SAFE QR CODE SCANNER & RUNTIME PERMISSION
+    // CRASH-PROOF EMBEDDED QR SCANNER & PERMISSIONS
     // ============================================================
     private void startQrScanner() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -919,7 +931,7 @@ public class MainActivity extends Activity {
                 return;
             }
         }
-        launchCameraScanner();
+        showNativeQrScannerModal();
     }
 
     @Override
@@ -927,7 +939,7 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_CAMERA_PERMISSION) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                launchCameraScanner();
+                showNativeQrScannerModal();
             } else {
                 Toast.makeText(this, "Izin kamera ditolak. Gunakan opsi Paste Clipboard.", Toast.LENGTH_LONG).show();
                 pasteFromClipboard();
@@ -935,18 +947,198 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void launchCameraScanner() {
+    private void showNativeQrScannerModal() {
         try {
-            IntentIntegrator integrator = new IntentIntegrator(this);
-            integrator.setPrompt("Arahkan kamera ke QR Code di terminal");
-            integrator.setBeepEnabled(true);
-            integrator.setOrientationLocked(true);
-            integrator.setCaptureActivity(com.journeyapps.barcodescanner.CaptureActivity.class);
-            integrator.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
-            integrator.initiateScan();
+            final Dialog dialog = new Dialog(this);
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+            LinearLayout root = new LinearLayout(this);
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 24));
+            root.setPadding(dp(20), dp(16), dp(20), dp(20));
+
+            // Top Header
+            LinearLayout head = new LinearLayout(this);
+            head.setOrientation(LinearLayout.HORIZONTAL);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView title = cText("📷 Scan QR Code Pairing", 17, CLAUDE_TEXT_MAIN, true, true);
+            head.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+
+            TextView close = cText("✕", 18, CLAUDE_TEXT_MUTED, true, false);
+            close.setPadding(dp(8), dp(4), dp(4), dp(4));
+            close.setOnClickListener(v -> dialog.dismiss());
+            head.addView(close);
+            root.addView(head);
+
+            TextView sub = cText("Arahkan kamera ke QR Code yang muncul di terminal (agy-pair)", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+            LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
+            lpSub.setMargins(0, dp(4), 0, dp(14));
+            root.addView(sub, lpSub);
+
+            // Embedded Camera Viewport Frame
+            FrameLayout frame = new FrameLayout(this);
+            frame.setBackground(cBox(Color.BLACK, CLAUDE_TERRACOTTA, 2, 16));
+
+            final QrCameraScannerView scannerView = new QrCameraScannerView(this, text -> {
+                dialog.dismiss();
+                handleQrPayload(text);
+            });
+            frame.addView(scannerView, new FrameLayout.LayoutParams(-1, -1));
+
+            // Viewfinder Guide Overlay
+            View guide = new View(this);
+            guide.setBackground(cBox(Color.TRANSPARENT, Color.WHITE, 2, 12));
+            FrameLayout.LayoutParams lpG = new FrameLayout.LayoutParams(dp(180), dp(180));
+            lpG.gravity = Gravity.CENTER;
+            frame.addView(guide, lpG);
+
+            LinearLayout.LayoutParams lpFr = new LinearLayout.LayoutParams(-1, dp(260));
+            lpFr.setMargins(0, 0, 0, dp(16));
+            root.addView(frame, lpFr);
+
+            // Alternative Clipboard Action Button
+            Button clipBtn = new Button(this);
+            clipBtn.setText("📋 Tempel dari Clipboard");
+            clipBtn.setTextColor(CLAUDE_TEXT_MAIN);
+            clipBtn.setTextSize(13);
+            clipBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+            clipBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
+            clipBtn.setOnClickListener(v -> {
+                dialog.dismiss();
+                pasteFromClipboard();
+            });
+            root.addView(clipBtn, new LinearLayout.LayoutParams(-1, dp(44)));
+
+            dialog.setContentView(root);
+            dialog.setOnDismissListener(d -> scannerView.stopCamera());
+
+            Window w = dialog.getWindow();
+            if (w != null) {
+                w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                w.setLayout(dp(340), -2);
+            }
+            dialog.show();
         } catch (Throwable t) {
-            Toast.makeText(this, "Gagal membuka kamera: " + t.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Tidak dapat membuka kamera: " + t.getMessage(), Toast.LENGTH_LONG).show();
             pasteFromClipboard();
+        }
+    }
+
+    public interface QrScanResultListener {
+        void onQrDecoded(String text);
+    }
+
+    @SuppressWarnings("deprecation")
+    public static class QrCameraScannerView extends SurfaceView implements SurfaceHolder.Callback, Camera.PreviewCallback {
+        private Camera camera;
+        private final MultiFormatReader reader;
+        private final QrScanResultListener listener;
+        private boolean isScanning = true;
+
+        public QrCameraScannerView(Context context, QrScanResultListener listener) {
+            super(context);
+            this.listener = listener;
+            reader = new MultiFormatReader();
+            Map<DecodeHintType, Object> hints = new HashMap<>();
+            hints.put(DecodeHintType.POSSIBLE_FORMATS, Collections.singletonList(BarcodeFormat.QR_CODE));
+            hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+            reader.setHints(hints);
+            getHolder().addCallback(this);
+        }
+
+        @Override
+        public void surfaceCreated(SurfaceHolder holder) {
+            try {
+                camera = Camera.open();
+                camera.setDisplayOrientation(90);
+                Camera.Parameters params = camera.getParameters();
+                List<String> focusModes = params.getSupportedFocusModes();
+                if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
+                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+                }
+                camera.setParameters(params);
+                camera.setPreviewDisplay(holder);
+                camera.setPreviewCallback(this);
+                camera.startPreview();
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+            if (camera != null) {
+                try {
+                    camera.startPreview();
+                } catch (Throwable ignored) {}
+            }
+        }
+
+        @Override
+        public void surfaceDestroyed(SurfaceHolder holder) {
+            stopCamera();
+        }
+
+        public void stopCamera() {
+            if (camera != null) {
+                try {
+                    camera.setPreviewCallback(null);
+                    camera.stopPreview();
+                    camera.release();
+                } catch (Throwable ignored) {}
+                camera = null;
+            }
+        }
+
+        @Override
+        public void onPreviewFrame(byte[] data, Camera camera) {
+            if (!isScanning || camera == null) return;
+            try {
+                Camera.Size size = camera.getParameters().getPreviewSize();
+                byte[] rotated = rotateYuv90(data, size.width, size.height);
+                PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(
+                        rotated, size.height, size.width, 0, 0, size.height, size.width, false);
+                BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
+
+                Result result = null;
+                try {
+                    result = reader.decodeWithState(bitmap);
+                } catch (Throwable ignored) {}
+
+                if (result == null) {
+                    PlanarYUVLuminanceSource rawSource = new PlanarYUVLuminanceSource(
+                            data, size.width, size.height, 0, 0, size.width, size.height, false);
+                    try {
+                        result = reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(rawSource)));
+                    } catch (Throwable ignored) {}
+                }
+
+                if (result != null && result.getText() != null && !result.getText().isEmpty()) {
+                    isScanning = false;
+                    final String text = result.getText();
+                    post(() -> {
+                        if (listener != null) {
+                            listener.onQrDecoded(text);
+                        }
+                    });
+                }
+            } catch (Throwable ignored) {
+            } finally {
+                reader.reset();
+            }
+        }
+
+        private byte[] rotateYuv90(byte[] data, int imageWidth, int imageHeight) {
+            byte[] yuv = new byte[data.length];
+            int i = 0;
+            for (int x = 0; x < imageWidth; x++) {
+                for (int y = imageHeight - 1; y >= 0; y--) {
+                    yuv[i] = data[y * imageWidth + x];
+                    i++;
+                }
+            }
+            return yuv;
         }
     }
 
@@ -1051,19 +1243,6 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        // Check ZXing QR Scan Result first
-        try {
-            IntentResult qrResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
-            if (qrResult != null) {
-                if (qrResult.getContents() != null) {
-                    handleQrPayload(qrResult.getContents());
-                }
-                return;
-            }
-        } catch (Throwable t) {
-            t.printStackTrace();
-        }
-
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode == RESULT_OK && data != null) {
             if (requestCode == REQ_PICK_FILE && data.getData() != null) {
