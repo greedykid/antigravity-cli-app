@@ -7,6 +7,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -14,18 +15,16 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.OpenableColumns;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
-import android.text.method.LinkMovementMethod;
 import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
-import android.text.style.RelativeSizeSpan;
 import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
-import android.text.style.URLSpan;
+import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
@@ -38,6 +37,8 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -57,6 +58,7 @@ public class MainActivity extends Activity {
     private static final int M3_SURFACE_CONTAINER = Color.rgb(29, 32, 36);      // #1D2024
     private static final int M3_SURFACE_CONTAINER_HIGH = Color.rgb(40, 42, 47); // #282A2F
     private static final int M3_SURFACE_CONTAINER_HIGHEST = Color.rgb(51, 53, 58); // #33353A
+    private static final int M3_CODE_BG = Color.rgb(13, 16, 23);                // #0D1017
 
     private static final int M3_PRIMARY = Color.rgb(168, 199, 250);             // #A8C7FA Google Blue
     private static final int M3_ON_PRIMARY = Color.rgb(6, 46, 111);             // #062E6F
@@ -80,6 +82,9 @@ public class MainActivity extends Activity {
     private static final int M3_GREEN = Color.rgb(109, 213, 140);               // #6DD58C
     private static final int M3_RED = Color.rgb(242, 184, 181);                 // #F2B8B5
 
+    private static final int REQ_PICK_FILE_CHAT = 1001;
+    private static final int REQ_PICK_FILE_MONITOR = 1002;
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
@@ -95,8 +100,6 @@ public class MainActivity extends Activity {
     private Button navBtnHistory;
 
     // Chat Tab Components
-    private LinearLayout chatSessionBanner;
-    private TextView chatSessionBannerText;
     private LinearLayout transcript;
     private ScrollView scrollChat;
     private EditText promptInput;
@@ -105,6 +108,9 @@ public class MainActivity extends Activity {
     private Button btnEngineCodex;
     private LinearLayout emptyStateView;
     private ProgressBar sendProgress;
+    private LinearLayout chatAttachmentChip;
+    private TextView chatAttachmentText;
+    private String chatAttachedServerPath = null;
 
     // Monitor Tab Components
     private TextView monitorStatusDot;
@@ -119,10 +125,12 @@ public class MainActivity extends Activity {
     private ScrollView monitorScroll;
     private Button monitorAutoRefreshBtn;
     private Button monitorStopBtn;
-    private Button monitorRefreshBtn;
     private EditText monitorPromptInput;
     private Button monitorSendBtn;
     private ProgressBar monitorSendProgress;
+    private LinearLayout monitorAttachmentChip;
+    private TextView monitorAttachmentText;
+    private String monitorAttachedServerPath = null;
     private String activeConversationId = null;
 
     private boolean isAutoRefreshActive = false;
@@ -322,43 +330,13 @@ public class MainActivity extends Activity {
     // TAB 1: PROMPT CHAT
     // ==========================================
     private void buildChatTab(LinearLayout parent) {
-        // Active Session Quick Card / Jumping Link
-        chatSessionBanner = new LinearLayout(this);
-        chatSessionBanner.setOrientation(LinearLayout.HORIZONTAL);
-        chatSessionBanner.setGravity(Gravity.CENTER_VERTICAL);
-        chatSessionBanner.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_PRIMARY, 1, 14));
-        chatSessionBanner.setPadding(dp(12), dp(8), dp(10), dp(8));
-        LinearLayout.LayoutParams lpBanner = new LinearLayout.LayoutParams(-1, -2);
-        lpBanner.setMargins(0, dp(10), 0, dp(4));
-
-        LinearLayout bannerLeft = new LinearLayout(this);
-        bannerLeft.setOrientation(LinearLayout.VERTICAL);
-        TextView banTitle = m3Text("⚡ LIVE SESSION ACTIVE", 10.5f, M3_PRIMARY, true);
-        bannerLeft.addView(banTitle);
-
-        chatSessionBannerText = m3Text("Connected • Tap to monitor live", 12, M3_ON_SURFACE, false);
-        bannerLeft.addView(chatSessionBannerText);
-        chatSessionBanner.addView(bannerLeft, new LinearLayout.LayoutParams(0, -2, 1));
-
-        Button openMonBtn = new Button(this);
-        openMonBtn.setText("⚡ Monitor");
-        openMonBtn.setTextSize(11);
-        openMonBtn.setAllCaps(false);
-        openMonBtn.setTextColor(M3_ON_PRIMARY_CONTAINER);
-        openMonBtn.setBackground(m3Box(M3_PRIMARY_CONTAINER, 0, 0, 10));
-        openMonBtn.setPadding(dp(8), 0, dp(8), 0);
-        openMonBtn.setOnClickListener(v -> switchTab(1));
-        chatSessionBanner.addView(openMonBtn, new LinearLayout.LayoutParams(-2, dp(32)));
-
-        parent.addView(chatSessionBanner, lpBanner);
-
         // Engine Selector Pill (Antigravity | Codex)
         LinearLayout enginePill = new LinearLayout(this);
         enginePill.setOrientation(LinearLayout.HORIZONTAL);
         enginePill.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_OUTLINE_VARIANT, 1, 14));
         enginePill.setPadding(dp(3), dp(3), dp(3), dp(3));
         LinearLayout.LayoutParams lpEng = new LinearLayout.LayoutParams(-1, -2);
-        lpEng.setMargins(0, dp(4), 0, dp(6));
+        lpEng.setMargins(0, dp(10), 0, dp(6));
 
         btnEngineAgy = createEngineToggle("⚡ Antigravity");
         btnEngineAgy.setOnClickListener(v -> setEngine("antigravity"));
@@ -384,6 +362,10 @@ public class MainActivity extends Activity {
         scrollChat.addView(transcript);
         parent.addView(scrollChat, new LinearLayout.LayoutParams(-1, 0, 1));
 
+        // Attachment Preview Chip (Chat)
+        chatAttachmentChip = createAttachmentChip(true);
+        parent.addView(chatAttachmentChip);
+
         // Quick Suggestion Chips
         HorizontalScrollView chipScroll = new HorizontalScrollView(this);
         chipScroll.setHorizontalScrollBarEnabled(false);
@@ -398,12 +380,15 @@ public class MainActivity extends Activity {
         chipScroll.addView(chipBox);
         parent.addView(chipScroll);
 
-        // M3 Pill Composer
+        // M3 Pill Composer with File Attachment Button
         LinearLayout composer = new LinearLayout(this);
         composer.setOrientation(LinearLayout.HORIZONTAL);
         composer.setGravity(Gravity.CENTER_VERTICAL);
         composer.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 28));
-        composer.setPadding(dp(14), dp(4), dp(6), dp(4));
+        composer.setPadding(dp(8), dp(4), dp(6), dp(4));
+
+        Button attachBtn = createAttachmentButton(true);
+        composer.addView(attachBtn, new LinearLayout.LayoutParams(dp(38), dp(38)));
 
         promptInput = new EditText(this);
         promptInput.setHint("Ask Antigravity CLI...");
@@ -414,6 +399,7 @@ public class MainActivity extends Activity {
         promptInput.setMinLines(1);
         promptInput.setMaxLines(4);
         promptInput.setSingleLine(false);
+        promptInput.setPadding(dp(8), 0, dp(8), 0);
         composer.addView(promptInput, new LinearLayout.LayoutParams(0, -2, 1));
 
         sendButton = new Button(this);
@@ -426,6 +412,164 @@ public class MainActivity extends Activity {
         composer.addView(sendButton, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
         parent.addView(composer);
+    }
+
+    private LinearLayout createAttachmentChip(final boolean isChatTab) {
+        LinearLayout chip = new LinearLayout(this);
+        chip.setOrientation(LinearLayout.HORIZONTAL);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setBackground(m3Box(M3_SURFACE_CONTAINER, M3_PRIMARY, 1, 14));
+        chip.setPadding(dp(10), dp(4), dp(10), dp(4));
+        chip.setVisibility(View.GONE);
+
+        TextView tv = m3Text("📎 Attached File", 12, M3_PRIMARY, true);
+        chip.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView close = m3Text("✕", 14, M3_RED, true);
+        close.setPadding(dp(8), 0, 0, 0);
+        close.setOnClickListener(v -> {
+            chip.setVisibility(View.GONE);
+            if (isChatTab) {
+                chatAttachedServerPath = null;
+            } else {
+                monitorAttachedServerPath = null;
+            }
+        });
+        chip.addView(close);
+
+        if (isChatTab) {
+            chatAttachmentText = tv;
+        } else {
+            monitorAttachmentText = tv;
+        }
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(6));
+        chip.setLayoutParams(lp);
+        return chip;
+    }
+
+    private Button createAttachmentButton(final boolean isChatTab) {
+        Button b = new Button(this);
+        b.setText("📎");
+        b.setTextSize(17);
+        b.setTextColor(M3_PRIMARY);
+        b.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, 0, 0, 19));
+        b.setPadding(0, 0, 0, 0);
+        b.setOnClickListener(v -> openFilePicker(isChatTab));
+        return b;
+    }
+
+    private void openFilePicker(boolean isChatTab) {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("*/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(Intent.createChooser(intent, "Select File or Image to Upload"),
+                    isChatTab ? REQ_PICK_FILE_CHAT : REQ_PICK_FILE_MONITOR);
+        } catch (Exception e) {
+            Toast.makeText(this, "No file manager found: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+            Uri uri = data.getData();
+            boolean isChatTab = (requestCode == REQ_PICK_FILE_CHAT);
+            uploadSelectedFile(uri, isChatTab);
+        }
+    }
+
+    private void uploadSelectedFile(final Uri uri, final boolean isChatTab) {
+        String endpoint = prefs.getString("url", "").trim();
+        if (endpoint.isEmpty()) {
+            showConnectionDialog();
+            return;
+        }
+
+        Toast.makeText(this, "Uploading file to server...", Toast.LENGTH_SHORT).show();
+
+        executor.execute(() -> {
+            try {
+                String fileName = getFileNameFromUri(uri);
+                InputStream is = getContentResolver().openInputStream(uri);
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = is.read(buf)) != -1) {
+                    bos.write(buf, 0, len);
+                }
+                is.close();
+
+                byte[] fileBytes = bos.toByteArray();
+                String base64Data = Base64.encodeToString(fileBytes, Base64.NO_WRAP);
+
+                String uploadUrl = endpoint.replace("/api/chat", "/api/upload");
+                HttpURLConnection c = (HttpURLConnection) new URL(uploadUrl).openConnection();
+                c.setRequestMethod("POST");
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(60000);
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json");
+                String token = prefs.getString("token", "");
+                if (!token.isEmpty()) {
+                    c.setRequestProperty("Authorization", "Bearer " + token);
+                }
+
+                JSONObject req = new JSONObject();
+                req.put("filename", fileName);
+                req.put("data", base64Data);
+                c.getOutputStream().write(req.toString().getBytes(StandardCharsets.UTF_8));
+
+                int code = c.getResponseCode();
+                if (code == 200) {
+                    BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
+                    StringBuilder out = new StringBuilder();
+                    String line;
+                    while ((line = r.readLine()) != null) out.append(line);
+                    JSONObject res = new JSONObject(out.toString());
+                    final String serverPath = res.optString("filePath", "");
+                    final String savedName = res.optString("filename", fileName);
+
+                    mainHandler.post(() -> {
+                        if (isChatTab) {
+                            chatAttachedServerPath = serverPath;
+                            chatAttachmentText.setText("📎 " + savedName + " (Attached)");
+                            chatAttachmentChip.setVisibility(View.VISIBLE);
+                        } else {
+                            monitorAttachedServerPath = serverPath;
+                            monitorAttachmentText.setText("📎 " + savedName + " (Attached)");
+                            monitorAttachmentChip.setVisibility(View.VISIBLE);
+                        }
+                        Toast.makeText(MainActivity.this, "File uploaded successfully!", Toast.LENGTH_SHORT).show();
+                    });
+                } else {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Upload failed: HTTP " + code, Toast.LENGTH_SHORT).show());
+                }
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Upload error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private String getFileNameFromUri(Uri uri) {
+        String result = null;
+        if ("content".equals(uri.getScheme())) {
+            try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (idx >= 0) {
+                        result = cursor.getString(idx);
+                    }
+                }
+            } catch (Exception e) {}
+        }
+        if (result == null) {
+            result = uri.getLastPathSegment();
+        }
+        return result != null ? result : "file_" + System.currentTimeMillis() + ".bin";
     }
 
     private Button createEngineToggle(String label) {
@@ -471,7 +615,7 @@ public class MainActivity extends Activity {
         lpT.setMargins(0, dp(8), 0, dp(4));
         emptyStateView.addView(title, lpT);
 
-        TextView desc = m3Text("Send instructions to your remote CLI agent, or open the Monitor & Control tab to inspect active execution and continue chatting.", 13, M3_ON_SURFACE_VARIANT, false);
+        TextView desc = m3Text("Send instructions, upload files or images, or inspect active execution in the Live Monitor tab.", 13, M3_ON_SURFACE_VARIANT, false);
         desc.setGravity(Gravity.CENTER);
         desc.setLineSpacing(0, 1.15f);
         emptyStateView.addView(desc);
@@ -489,7 +633,7 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(0, dp(10), 0, dp(10));
 
-        // 1. Process Telemetry & Main Control Button Bar
+        // 1. Process Telemetry M3 Card
         LinearLayout procCard = new LinearLayout(this);
         procCard.setOrientation(LinearLayout.VERTICAL);
         procCard.setBackground(m3Box(M3_SURFACE_CONTAINER, M3_OUTLINE_VARIANT, 1, 16));
@@ -504,64 +648,35 @@ public class MainActivity extends Activity {
 
         monitorStatusText = m3Text(" Antigravity Process Running", 13.5f, M3_ON_SURFACE, true);
         procHeader.addView(monitorStatusText, new LinearLayout.LayoutParams(0, -2, 1));
-        procCard.addView(procHeader);
-
-        // Control Buttons Row (Auto-Refresh, Stop, Refresh)
-        LinearLayout ctrlRow = new LinearLayout(this);
-        ctrlRow.setOrientation(LinearLayout.HORIZONTAL);
-        ctrlRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams lpCtrl = new LinearLayout.LayoutParams(-1, -2);
-        lpCtrl.setMargins(0, dp(10), 0, dp(10));
 
         monitorAutoRefreshBtn = new Button(this);
         monitorAutoRefreshBtn.setText("Live Auto: OFF");
-        monitorAutoRefreshBtn.setTextSize(11.5f);
+        monitorAutoRefreshBtn.setTextSize(11);
         monitorAutoRefreshBtn.setAllCaps(false);
         monitorAutoRefreshBtn.setTextColor(M3_ON_SURFACE_VARIANT);
         monitorAutoRefreshBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 12));
-        monitorAutoRefreshBtn.setPadding(dp(8), 0, dp(8), 0);
+        monitorAutoRefreshBtn.setPadding(dp(8), dp(2), dp(8), dp(2));
         monitorAutoRefreshBtn.setOnClickListener(v -> toggleAutoRefresh());
-        ctrlRow.addView(monitorAutoRefreshBtn, new LinearLayout.LayoutParams(0, dp(34), 1));
-
-        monitorRefreshBtn = new Button(this);
-        monitorRefreshBtn.setText("⟳ Refresh");
-        monitorRefreshBtn.setTextSize(11.5f);
-        monitorRefreshBtn.setAllCaps(false);
-        monitorRefreshBtn.setTextColor(M3_PRIMARY);
-        monitorRefreshBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 12));
-        monitorRefreshBtn.setPadding(dp(8), 0, dp(8), 0);
-        monitorRefreshBtn.setOnClickListener(v -> fetchLiveMonitorData(true));
-        LinearLayout.LayoutParams lpR = new LinearLayout.LayoutParams(0, dp(34), 1);
-        lpR.setMargins(dp(6), 0, dp(6), 0);
-        ctrlRow.addView(monitorRefreshBtn, lpR);
-
-        monitorStopBtn = new Button(this);
-        monitorStopBtn.setText("🛑 Stop CLI");
-        monitorStopBtn.setTextSize(11.5f);
-        monitorStopBtn.setAllCaps(false);
-        monitorStopBtn.setTextColor(M3_RED);
-        monitorStopBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_RED, 1, 12));
-        monitorStopBtn.setPadding(dp(8), 0, dp(8), 0);
-        monitorStopBtn.setOnClickListener(v -> stopRunningCliProcess());
-        ctrlRow.addView(monitorStopBtn, new LinearLayout.LayoutParams(0, dp(34), 1));
-
-        procCard.addView(ctrlRow, lpCtrl);
+        procHeader.addView(monitorAutoRefreshBtn, new LinearLayout.LayoutParams(-2, dp(32)));
+        procCard.addView(procHeader);
 
         // Metrics Grid (PID, CPU, MEM, Uptime)
         LinearLayout metricsRow = new LinearLayout(this);
         metricsRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams lpMet = new LinearLayout.LayoutParams(-1, -2);
+        lpMet.setMargins(0, dp(10), 0, 0);
 
         monitorPidText = addMetricPill(metricsRow, "PID", "--");
         monitorCpuText = addMetricPill(metricsRow, "CPU", "--");
         monitorMemText = addMetricPill(metricsRow, "MEM", "--");
         monitorUptimeText = addMetricPill(metricsRow, "TIME", "--");
-        procCard.addView(metricsRow);
+        procCard.addView(metricsRow, lpMet);
         content.addView(procCard);
 
         // 2. Active Conversation Session Card with Remote Control Actions
         LinearLayout sessionCard = new LinearLayout(this);
         sessionCard.setOrientation(LinearLayout.VERTICAL);
-        sessionCard.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_PRIMARY, 1, 16));
+        sessionCard.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_OUTLINE_VARIANT, 1, 16));
         sessionCard.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams lpSess = new LinearLayout.LayoutParams(-1, -2);
         lpSess.setMargins(0, dp(10), 0, dp(10));
@@ -574,22 +689,15 @@ public class MainActivity extends Activity {
         sessHeader.setLetterSpacing(0.04f);
         sessTop.addView(sessHeader, new LinearLayout.LayoutParams(0, -2, 1));
 
-        Button copyIdBtn = new Button(this);
-        copyIdBtn.setText("📋 Copy ID");
-        copyIdBtn.setTextSize(10.5f);
-        copyIdBtn.setAllCaps(false);
-        copyIdBtn.setTextColor(M3_PRIMARY);
-        copyIdBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 10));
-        copyIdBtn.setPadding(dp(6), 0, dp(6), 0);
-        copyIdBtn.setOnClickListener(v -> {
-            if (activeConversationId != null) {
-                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                ClipData cd = ClipData.newPlainText("Session ID", activeConversationId);
-                cm.setPrimaryClip(cd);
-                Toast.makeText(this, "Session ID copied", Toast.LENGTH_SHORT).show();
-            }
-        });
-        sessTop.addView(copyIdBtn, new LinearLayout.LayoutParams(-2, dp(28)));
+        monitorStopBtn = new Button(this);
+        monitorStopBtn.setText("🛑 Stop CLI");
+        monitorStopBtn.setTextSize(11);
+        monitorStopBtn.setAllCaps(false);
+        monitorStopBtn.setTextColor(M3_RED);
+        monitorStopBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_RED, 1, 10));
+        monitorStopBtn.setPadding(dp(6), 0, dp(6), 0);
+        monitorStopBtn.setOnClickListener(v -> stopRunningCliProcess());
+        sessTop.addView(monitorStopBtn, new LinearLayout.LayoutParams(-2, dp(28)));
 
         sessionCard.addView(sessTop);
 
@@ -613,7 +721,7 @@ public class MainActivity extends Activity {
         turnsHeader.addView(refreshLink);
         content.addView(turnsHeader);
 
-        // 4. Live Turns List
+        // 4. Live Turns List (with Claude-style tool & thinking dropdowns)
         monitorTurnsList = new LinearLayout(this);
         monitorTurnsList.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams lpTL = new LinearLayout.LayoutParams(-1, -2);
@@ -623,12 +731,19 @@ public class MainActivity extends Activity {
         monitorScroll.addView(content);
         parent.addView(monitorScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
+        // Attachment Preview Chip (Monitor)
+        monitorAttachmentChip = createAttachmentChip(false);
+        parent.addView(monitorAttachmentChip);
+
         // 5. Active Session Remote Chat Bar (Continue Chat in Active Session)
         LinearLayout activeComposer = new LinearLayout(this);
         activeComposer.setOrientation(LinearLayout.HORIZONTAL);
         activeComposer.setGravity(Gravity.CENTER_VERTICAL);
         activeComposer.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_PRIMARY, 1, 28));
-        activeComposer.setPadding(dp(14), dp(4), dp(6), dp(4));
+        activeComposer.setPadding(dp(8), dp(4), dp(6), dp(4));
+
+        Button monAttachBtn = createAttachmentButton(false);
+        activeComposer.addView(monAttachBtn, new LinearLayout.LayoutParams(dp(38), dp(38)));
 
         monitorPromptInput = new EditText(this);
         monitorPromptInput.setHint("Reply to active Antigravity session...");
@@ -639,6 +754,7 @@ public class MainActivity extends Activity {
         monitorPromptInput.setMinLines(1);
         monitorPromptInput.setMaxLines(4);
         monitorPromptInput.setSingleLine(false);
+        monitorPromptInput.setPadding(dp(8), 0, dp(8), 0);
         activeComposer.addView(monitorPromptInput, new LinearLayout.LayoutParams(0, -2, 1));
 
         monitorSendBtn = new Button(this);
@@ -742,13 +858,19 @@ public class MainActivity extends Activity {
             showConnectionDialog();
             return;
         }
-        if (text.isEmpty() || monitorSendBtn.getTag() != null) return;
+        if (text.isEmpty() && monitorAttachedServerPath == null) return;
+        if (monitorSendBtn.getTag() != null) return;
+
+        final String attachedFile = monitorAttachedServerPath;
+        monitorAttachedServerPath = null;
+        if (monitorAttachmentChip != null) monitorAttachmentChip.setVisibility(View.GONE);
 
         monitorSendBtn.setTag("busy");
         monitorSendBtn.setEnabled(false);
         monitorPromptInput.setEnabled(false);
 
-        addTurnItemToMonitor("user", text, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
+        String displayText = (attachedFile != null ? "[📎 " + attachedFile + "]\n" : "") + text;
+        addTurnItemToMonitor("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), null);
         monitorPromptInput.setText("");
 
         monitorSendProgress = new ProgressBar(this);
@@ -763,6 +885,9 @@ public class MainActivity extends Activity {
                 req.put("prompt", text);
                 req.put("engine", "antigravity");
                 req.put("resume", true);
+                if (attachedFile != null) {
+                    req.put("attachedFile", attachedFile);
+                }
                 if (activeConversationId != null && !activeConversationId.isEmpty()) {
                     req.put("conversationId", activeConversationId);
                 }
@@ -775,7 +900,7 @@ public class MainActivity extends Activity {
                         monitorTurnsList.removeView(monitorSendProgress);
                         monitorSendProgress = null;
                     }
-                    addTurnItemToMonitor("assistant", responseText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
+                    addTurnItemToMonitor("assistant", responseText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), null);
                     monitorSendBtn.setTag(null);
                     monitorSendBtn.setEnabled(true);
                     monitorPromptInput.setEnabled(true);
@@ -787,10 +912,12 @@ public class MainActivity extends Activity {
                         monitorTurnsList.removeView(monitorSendProgress);
                         monitorSendProgress = null;
                     }
-                    addTurnItemToMonitor("tool", "Error: " + e.getMessage(), "");
+                    // Resilient Handling: if 502 / timeout, agent might still be running on server
+                    addTurnItemToMonitor("tool", "Notice: " + e.getMessage() + "\nSyncing latest status from server...", "", "Gateway Notice");
                     monitorSendBtn.setTag(null);
                     monitorSendBtn.setEnabled(true);
                     monitorPromptInput.setEnabled(true);
+                    startAutoRefresh();
                 });
             }
         });
@@ -882,12 +1009,8 @@ public class MainActivity extends Activity {
             JSONObject session = json.optJSONObject("session");
             if (session != null) {
                 activeConversationId = session.optString("conversationId", "");
-                String sTitle = session.optString("title", "Active Task");
-                monitorSessionTitle.setText(sTitle);
+                monitorSessionTitle.setText(session.optString("title", "Active Task"));
                 monitorSessionId.setText("ID: " + activeConversationId + "  •  " + session.optString("workspace", "/home/ubuntu"));
-                if (chatSessionBannerText != null) {
-                    chatSessionBannerText.setText(sTitle);
-                }
             }
 
             JSONArray turns = json.optJSONArray("turns");
@@ -896,9 +1019,10 @@ public class MainActivity extends Activity {
                 for (int i = 0; i < turns.length(); i++) {
                     JSONObject turn = turns.getJSONObject(i);
                     String role = turn.optString("role", "info");
+                    String title = turn.optString("title", "");
                     String content = turn.optString("content", "");
                     String time = turn.optString("time", "");
-                    addTurnItemToMonitor(role, content, time);
+                    addTurnItemToMonitor(role, content, time, title);
                 }
             }
 
@@ -910,34 +1034,80 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void addTurnItemToMonitor(String role, String content, String time) {
+    // Claude-style Dropdown Accordions for Tool Executions & Thinking
+    private void addTurnItemToMonitor(String role, String content, String time, String title) {
+        boolean isTool = "tool".equalsIgnoreCase(role);
+        boolean isThinking = "thinking".equalsIgnoreCase(role);
+        boolean isUser = "user".equalsIgnoreCase(role);
+
+        if (isTool || isThinking) {
+            // Render as Collapsible Claude Dropdown Accordion
+            LinearLayout accordion = new LinearLayout(this);
+            accordion.setOrientation(LinearLayout.VERTICAL);
+            accordion.setBackground(m3Box(M3_SURFACE_CONTAINER, M3_OUTLINE_VARIANT, 1, 12));
+            accordion.setPadding(dp(12), dp(8), dp(12), dp(8));
+
+            LinearLayout header = new LinearLayout(this);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            header.setGravity(Gravity.CENTER_VERTICAL);
+
+            final TextView chevron = m3Text("▶ ", 12, isTool ? M3_SECONDARY : M3_TERTIARY, true);
+            header.addView(chevron);
+
+            String displayTitle = (title != null && !title.isEmpty()) ? title : (isTool ? "Executed Tool" : "Thinking Process");
+            String icon = isTool ? "🛠 " : "💭 ";
+            TextView titleView = m3Text(icon + displayTitle, 12.5f, isTool ? M3_SECONDARY : M3_TERTIARY, true);
+            header.addView(titleView, new LinearLayout.LayoutParams(0, -2, 1));
+
+            TextView badge = m3Text("✓ Done", 10.5f, M3_GREEN, true);
+            badge.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, 0, 0, 8));
+            badge.setPadding(dp(6), dp(2), dp(6), dp(2));
+            header.addView(badge);
+
+            accordion.addView(header);
+
+            // Collapsible Body View (Hidden by default)
+            final LinearLayout bodyContainer = new LinearLayout(this);
+            bodyContainer.setOrientation(LinearLayout.VERTICAL);
+            bodyContainer.setVisibility(View.GONE);
+            bodyContainer.setBackground(m3Box(M3_CODE_BG, M3_OUTLINE_VARIANT, 1, 8));
+            bodyContainer.setPadding(dp(10), dp(8), dp(10), dp(8));
+            LinearLayout.LayoutParams lpBody = new LinearLayout.LayoutParams(-1, -2);
+            lpBody.setMargins(0, dp(8), 0, 0);
+
+            TextView bodyContent = new TextView(this);
+            bodyContent.setText(content);
+            bodyContent.setTextSize(12);
+            bodyContent.setTextColor(M3_ON_SURFACE_VARIANT);
+            bodyContent.setTypeface(Typeface.MONOSPACE);
+            bodyContent.setTextIsSelectable(true);
+            bodyContainer.addView(bodyContent);
+
+            accordion.addView(bodyContainer, lpBody);
+
+            header.setOnClickListener(v -> {
+                boolean isOpen = (bodyContainer.getVisibility() == View.VISIBLE);
+                bodyContainer.setVisibility(isOpen ? View.GONE : View.VISIBLE);
+                chevron.setText(isOpen ? "▶ " : "▼ ");
+            });
+
+            LinearLayout.LayoutParams lpAcc = new LinearLayout.LayoutParams(-1, -2);
+            lpAcc.setMargins(0, 0, 0, dp(8));
+            monitorTurnsList.addView(accordion, lpAcc);
+            return;
+        }
+
+        // Standard Turn Card for User & Assistant
         LinearLayout turnCard = new LinearLayout(this);
         turnCard.setOrientation(LinearLayout.VERTICAL);
 
-        int bgColor;
-        int borderColor;
-        int accentColor;
-        String roleLabel;
-
-        if ("user".equalsIgnoreCase(role)) {
-            bgColor = M3_PRIMARY_CONTAINER;
-            borderColor = M3_PRIMARY;
-            accentColor = M3_ON_PRIMARY_CONTAINER;
-            roleLabel = "👤 You (Live Session)";
-        } else if ("tool".equalsIgnoreCase(role)) {
-            bgColor = M3_SURFACE_CONTAINER;
-            borderColor = M3_OUTLINE_VARIANT;
-            accentColor = M3_SECONDARY;
-            roleLabel = "🛠 CLI Execution";
-        } else {
-            bgColor = M3_SURFACE_CONTAINER_LOW;
-            borderColor = M3_OUTLINE_VARIANT;
-            accentColor = M3_TERTIARY;
-            roleLabel = "⚡ Antigravity Output";
-        }
+        int bgColor = isUser ? M3_PRIMARY_CONTAINER : M3_SURFACE_CONTAINER_LOW;
+        int borderColor = isUser ? M3_PRIMARY : M3_OUTLINE_VARIANT;
+        int accentColor = isUser ? M3_ON_PRIMARY_CONTAINER : M3_PRIMARY;
+        String roleLabel = isUser ? "👤 You (Live Session)" : "⚡ Antigravity Output";
 
         turnCard.setBackground(m3Box(bgColor, borderColor, 1, 14));
-        turnCard.setPadding(dp(12), dp(10), dp(12), dp(10));
+        turnCard.setPadding(dp(14), dp(10), dp(14), dp(12));
 
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
@@ -951,11 +1121,8 @@ public class MainActivity extends Activity {
         head.addView(tView);
         turnCard.addView(head);
 
-        LinearLayout markdownBody = new LinearLayout(this);
-        markdownBody.setOrientation(LinearLayout.VERTICAL);
-        markdownBody.setPadding(0, dp(4), 0, 0);
-        renderMarkdownBlocks(markdownBody, content, M3_ON_SURFACE);
-        turnCard.addView(markdownBody);
+        // Render Markdown for assistant or user
+        renderMarkdownIntoContainer(turnCard, content, isUser);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, 0, 0, dp(8));
@@ -963,7 +1130,7 @@ public class MainActivity extends Activity {
     }
 
     // ==========================================
-    // TAB 3: SESSION HISTORY & DIRECT CONTINUE
+    // TAB 3: SESSION HISTORY
     // ==========================================
     private void buildHistoryTab(LinearLayout parent) {
         ScrollView scroll = new ScrollView(this);
@@ -974,7 +1141,6 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(0, dp(10), 0, dp(10));
 
-        // History Top Header with Quick Action to Jump to Active Monitor
         LinearLayout histHead = new LinearLayout(this);
         histHead.setOrientation(LinearLayout.HORIZONTAL);
         histHead.setGravity(Gravity.CENTER_VERTICAL);
@@ -1056,7 +1222,7 @@ public class MainActivity extends Activity {
             try {
                 JSONObject s = sessions.getJSONObject(i);
                 final String convId = s.optString("conversationId", "");
-                final String title = s.optString("title", "Session");
+                String title = s.optString("title", "Session");
                 long ts = s.optLong("timestamp", System.currentTimeMillis());
                 String timeStr = fmt.format(new Date(ts));
 
@@ -1078,47 +1244,13 @@ public class MainActivity extends Activity {
 
                 TextView titleV = m3Text(title, 14, M3_ON_SURFACE, true);
                 LinearLayout.LayoutParams lpT = new LinearLayout.LayoutParams(-1, -2);
-                lpT.setMargins(0, dp(4), 0, dp(4));
+                lpT.setMargins(0, dp(4), 0, dp(6));
                 card.addView(titleV, lpT);
 
                 TextView idV = m3Text("ID: " + convId.substring(0, Math.min(16, convId.length())) + "...", 11.5f, M3_ON_SURFACE_VARIANT, false);
                 card.addView(idV);
 
-                // Direct Action Buttons on each Card (View Transcript & Continue Session)
-                LinearLayout cardActions = new LinearLayout(this);
-                cardActions.setOrientation(LinearLayout.HORIZONTAL);
-                cardActions.setGravity(Gravity.CENTER_VERTICAL);
-                LinearLayout.LayoutParams lpAct = new LinearLayout.LayoutParams(-1, -2);
-                lpAct.setMargins(0, dp(8), 0, 0);
-
-                Button viewBtn = new Button(this);
-                viewBtn.setText("👁 Transkrip");
-                viewBtn.setTextSize(11.5f);
-                viewBtn.setAllCaps(false);
-                viewBtn.setTextColor(M3_ON_SURFACE);
-                viewBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 10));
-                viewBtn.setPadding(dp(8), 0, dp(8), 0);
-                viewBtn.setOnClickListener(v -> openSessionTranscriptDialog(convId, title));
-                cardActions.addView(viewBtn, new LinearLayout.LayoutParams(0, dp(32), 1));
-
-                Button contBtn = new Button(this);
-                contBtn.setText("💬 Lanjut Sesi ➔");
-                contBtn.setTextSize(11.5f);
-                contBtn.setAllCaps(false);
-                contBtn.setTextColor(M3_ON_PRIMARY_CONTAINER);
-                contBtn.setBackground(m3Box(M3_PRIMARY_CONTAINER, 0, 0, 10));
-                contBtn.setPadding(dp(8), 0, dp(8), 0);
-                contBtn.setOnClickListener(v -> {
-                    activeConversationId = convId;
-                    switchTab(1);
-                    fetchLiveMonitorData(true);
-                    Toast.makeText(MainActivity.this, "Tersambung ke sesi: " + title, Toast.LENGTH_SHORT).show();
-                });
-                LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(0, dp(32), 1.2f);
-                lpC.setMargins(dp(8), 0, 0, 0);
-                cardActions.addView(contBtn, lpC);
-
-                card.addView(cardActions, lpAct);
+                card.setOnClickListener(v -> openSessionTranscriptDialog(convId, title));
 
                 LinearLayout.LayoutParams lpCard = new LinearLayout.LayoutParams(-1, -2);
                 lpCard.setMargins(0, 0, 0, dp(10));
@@ -1197,33 +1329,63 @@ public class MainActivity extends Activity {
                     String role = m.optString("role", "assistant");
                     String content = m.optString("content", "");
                     String time = m.optString("time", "");
-
-                    LinearLayout card = new LinearLayout(this);
-                    card.setOrientation(LinearLayout.VERTICAL);
+                    String mTitle = m.optString("title", "");
 
                     boolean isUser = "user".equalsIgnoreCase(role);
                     boolean isTool = "tool".equalsIgnoreCase(role);
+                    boolean isThinking = "thinking".equalsIgnoreCase(role);
 
-                    int bg = isUser ? M3_PRIMARY_CONTAINER : (isTool ? M3_SURFACE_CONTAINER_LOW : M3_SURFACE_CONTAINER);
-                    int border = isUser ? M3_PRIMARY : M3_OUTLINE_VARIANT;
-                    card.setBackground(m3Box(bg, border, 1, 12));
-                    card.setPadding(dp(12), dp(8), dp(12), dp(8));
+                    if (isTool || isThinking) {
+                        LinearLayout accordion = new LinearLayout(this);
+                        accordion.setOrientation(LinearLayout.VERTICAL);
+                        accordion.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_OUTLINE_VARIANT, 1, 10));
+                        accordion.setPadding(dp(10), dp(6), dp(10), dp(6));
 
-                    String label = isUser ? "You" : (isTool ? "Execution Tool" : "Antigravity CLI");
-                    int color = isUser ? M3_ON_PRIMARY_CONTAINER : (isTool ? M3_SECONDARY : M3_PRIMARY);
+                        LinearLayout h = new LinearLayout(this);
+                        h.setOrientation(LinearLayout.HORIZONTAL);
+                        final TextView chev = m3Text("▶ ", 11, M3_SECONDARY, true);
+                        h.addView(chev);
+                        TextView t = m3Text((isTool ? "🛠 " : "💭 ") + (mTitle.isEmpty() ? "Tool Action" : mTitle), 12, M3_SECONDARY, true);
+                        h.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+                        accordion.addView(h);
 
-                    TextView authorV = m3Text(label + "  •  " + (time.length() >= 16 ? time.substring(11, 16) : time), 11.5f, color, true);
-                    card.addView(authorV);
+                        final TextView body = new TextView(this);
+                        body.setText(content);
+                        body.setTextSize(11.5f);
+                        body.setTextColor(M3_ON_SURFACE_VARIANT);
+                        body.setTypeface(Typeface.MONOSPACE);
+                        body.setVisibility(View.GONE);
+                        body.setPadding(0, dp(4), 0, 0);
+                        accordion.addView(body);
 
-                    LinearLayout mdBody = new LinearLayout(this);
-                    mdBody.setOrientation(LinearLayout.VERTICAL);
-                    mdBody.setPadding(0, dp(4), 0, 0);
-                    renderMarkdownBlocks(mdBody, content, isUser ? M3_ON_PRIMARY_CONTAINER : M3_ON_SURFACE);
-                    card.addView(mdBody);
+                        h.setOnClickListener(v -> {
+                            boolean open = (body.getVisibility() == View.VISIBLE);
+                            body.setVisibility(open ? View.GONE : View.VISIBLE);
+                            chev.setText(open ? "▶ " : "▼ ");
+                        });
 
-                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-                    lp.setMargins(0, 0, 0, dp(8));
-                    container.addView(card, lp);
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                        lp.setMargins(0, 0, 0, dp(6));
+                        container.addView(accordion, lp);
+                    } else {
+                        LinearLayout card = new LinearLayout(this);
+                        card.setOrientation(LinearLayout.VERTICAL);
+                        int bg = isUser ? M3_PRIMARY_CONTAINER : M3_SURFACE_CONTAINER;
+                        int border = isUser ? M3_PRIMARY : M3_OUTLINE_VARIANT;
+                        card.setBackground(m3Box(bg, border, 1, 12));
+                        card.setPadding(dp(12), dp(8), dp(12), dp(8));
+
+                        String label = isUser ? "You" : "Antigravity CLI";
+                        int color = isUser ? M3_ON_PRIMARY_CONTAINER : M3_PRIMARY;
+                        TextView authorV = m3Text(label + "  •  " + (time.length() >= 16 ? time.substring(11, 16) : time), 11.5f, color, true);
+                        card.addView(authorV);
+
+                        renderMarkdownIntoContainer(card, content, isUser);
+
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                        lp.setMargins(0, 0, 0, dp(8));
+                        container.addView(card, lp);
+                    }
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -1244,268 +1406,9 @@ public class MainActivity extends Activity {
             dialog.dismiss();
             switchTab(1);
             fetchLiveMonitorData(true);
-            Toast.makeText(MainActivity.this, "Switched to session: " + convId.substring(0, 8), Toast.LENGTH_SHORT).show();
+            Toast.makeText(MainActivity.this, "Attached session: " + convId.substring(0, 8), Toast.LENGTH_SHORT).show();
         }));
         dialog.show();
-    }
-
-    // ==========================================
-    // MARKDOWN RENDERING ENGINE (MATERIAL 3)
-    // ==========================================
-    private SpannableStringBuilder formatInlineSpans(String input, int defaultTextColor) {
-        if (input == null) return new SpannableStringBuilder("");
-        SpannableStringBuilder ssb = new SpannableStringBuilder(input);
-
-        // 1. Links [label](url)
-        Pattern linkPattern = Pattern.compile("\\[([^\\]]+)\\]\\(([^\\)]+)\\)");
-        Matcher linkMatcher = linkPattern.matcher(ssb.toString());
-        while (linkMatcher.find()) {
-            int start = linkMatcher.start();
-            int end = linkMatcher.end();
-            String label = linkMatcher.group(1);
-            String url = linkMatcher.group(2);
-            ssb.replace(start, end, label);
-            ssb.setSpan(new URLSpan(url), start, start + label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            ssb.setSpan(new ForegroundColorSpan(M3_PRIMARY), start, start + label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            linkMatcher = linkPattern.matcher(ssb.toString());
-        }
-
-        // 2. Inline Code `code`
-        Pattern codePattern = Pattern.compile("`([^`]+)`");
-        Matcher codeMatcher = codePattern.matcher(ssb.toString());
-        while (codeMatcher.find()) {
-            int start = codeMatcher.start();
-            int end = codeMatcher.end();
-            String codeText = codeMatcher.group(1);
-            ssb.replace(start, end, " " + codeText + " ");
-            int newEnd = start + codeText.length() + 2;
-            ssb.setSpan(new TypefaceSpan("monospace"), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            ssb.setSpan(new BackgroundColorSpan(M3_SURFACE_CONTAINER_HIGH), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            ssb.setSpan(new ForegroundColorSpan(M3_PRIMARY), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            ssb.setSpan(new RelativeSizeSpan(0.92f), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            codeMatcher = codePattern.matcher(ssb.toString());
-        }
-
-        // 3. Bold **bold**
-        Pattern boldPattern = Pattern.compile("\\*\\*([^\\*]+)\\*\\*");
-        Matcher boldMatcher = boldPattern.matcher(ssb.toString());
-        while (boldMatcher.find()) {
-            int start = boldMatcher.start();
-            int end = boldMatcher.end();
-            String boldText = boldMatcher.group(1);
-            ssb.replace(start, end, boldText);
-            ssb.setSpan(new StyleSpan(Typeface.BOLD), start, start + boldText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            boldMatcher = boldPattern.matcher(ssb.toString());
-        }
-
-        // 4. Italic *italic*
-        Pattern italicPattern = Pattern.compile("(?<!\\*)\\*([^\\*]+)\\*(?!\\*)");
-        Matcher italicMatcher = italicPattern.matcher(ssb.toString());
-        while (italicMatcher.find()) {
-            int start = italicMatcher.start();
-            int end = italicMatcher.end();
-            String italicText = italicMatcher.group(1);
-            ssb.replace(start, end, italicText);
-            ssb.setSpan(new StyleSpan(Typeface.ITALIC), start, start + italicText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            italicMatcher = italicPattern.matcher(ssb.toString());
-        }
-
-        return ssb;
-    }
-
-    private void renderMarkdownBlocks(LinearLayout targetLayout, String rawMarkdown, int defaultTextColor) {
-        if (rawMarkdown == null || rawMarkdown.isEmpty()) return;
-
-        String[] lines = rawMarkdown.split("\n");
-        boolean inCode = false;
-        String codeLang = "";
-        StringBuilder codeBuffer = new StringBuilder();
-
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i];
-
-            if (line.trim().startsWith("```")) {
-                if (inCode) {
-                    addCodeBlockView(targetLayout, codeLang, codeBuffer.toString().trim());
-                    inCode = false;
-                    codeLang = "";
-                    codeBuffer.setLength(0);
-                } else {
-                    inCode = true;
-                    codeLang = line.trim().length() > 3 ? line.trim().substring(3).trim() : "CODE";
-                    codeBuffer.setLength(0);
-                }
-                continue;
-            }
-
-            if (inCode) {
-                codeBuffer.append(line).append("\n");
-                continue;
-            }
-
-            String trimmed = line.trim();
-            if (trimmed.isEmpty()) {
-                continue;
-            }
-
-            if (trimmed.startsWith("#")) {
-                if (trimmed.startsWith("### ")) {
-                    TextView h3 = new TextView(this);
-                    h3.setText(formatInlineSpans(trimmed.substring(4), defaultTextColor));
-                    h3.setTextSize(14.5f);
-                    h3.setTextColor(M3_ON_SURFACE);
-                    h3.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-                    LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
-                    lpH.setMargins(0, dp(6), 0, dp(2));
-                    targetLayout.addView(h3, lpH);
-                    continue;
-                } else if (trimmed.startsWith("## ")) {
-                    TextView h2 = new TextView(this);
-                    h2.setText(formatInlineSpans(trimmed.substring(3), defaultTextColor));
-                    h2.setTextSize(15.5f);
-                    h2.setTextColor(M3_PRIMARY);
-                    h2.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-                    LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
-                    lpH.setMargins(0, dp(8), 0, dp(4));
-                    targetLayout.addView(h2, lpH);
-                    continue;
-                } else if (trimmed.startsWith("# ")) {
-                    TextView h1 = new TextView(this);
-                    h1.setText(formatInlineSpans(trimmed.substring(2), defaultTextColor));
-                    h1.setTextSize(17f);
-                    h1.setTextColor(M3_PRIMARY);
-                    h1.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-                    LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
-                    lpH.setMargins(0, dp(10), 0, dp(4));
-                    targetLayout.addView(h1, lpH);
-                    continue;
-                }
-            }
-
-            if (trimmed.equals("---") || trimmed.equals("***") || trimmed.equals("___")) {
-                View divider = new View(this);
-                divider.setBackgroundColor(M3_OUTLINE_VARIANT);
-                LinearLayout.LayoutParams lpDiv = new LinearLayout.LayoutParams(-1, dp(1));
-                lpDiv.setMargins(0, dp(8), 0, dp(8));
-                targetLayout.addView(divider, lpDiv);
-                continue;
-            }
-
-            if (trimmed.startsWith(">")) {
-                LinearLayout quoteBox = new LinearLayout(this);
-                quoteBox.setOrientation(LinearLayout.HORIZONTAL);
-                quoteBox.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, 0, 0, 8));
-                quoteBox.setPadding(dp(10), dp(6), dp(10), dp(6));
-
-                View bar = new View(this);
-                bar.setBackgroundColor(M3_PRIMARY);
-                quoteBox.addView(bar, new LinearLayout.LayoutParams(dp(3), -1));
-
-                TextView qText = new TextView(this);
-                qText.setText(formatInlineSpans(trimmed.substring(1).trim(), M3_ON_SURFACE_VARIANT));
-                qText.setTextSize(13.5f);
-                qText.setTextColor(M3_ON_SURFACE_VARIANT);
-                qText.setTypeface(Typeface.DEFAULT, Typeface.ITALIC);
-                qText.setPadding(dp(8), 0, 0, 0);
-                qText.setTextIsSelectable(true);
-                quoteBox.addView(qText, new LinearLayout.LayoutParams(0, -2, 1));
-
-                LinearLayout.LayoutParams lpQ = new LinearLayout.LayoutParams(-1, -2);
-                lpQ.setMargins(0, dp(4), 0, dp(4));
-                targetLayout.addView(quoteBox, lpQ);
-                continue;
-            }
-
-            if (trimmed.startsWith("* ") || trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
-                LinearLayout bulletRow = new LinearLayout(this);
-                bulletRow.setOrientation(LinearLayout.HORIZONTAL);
-
-                TextView dot = m3Text("•", 14, M3_PRIMARY, true);
-                bulletRow.addView(dot, new LinearLayout.LayoutParams(dp(14), -2));
-
-                TextView itemText = new TextView(this);
-                itemText.setText(formatInlineSpans(trimmed.substring(2).trim(), defaultTextColor));
-                itemText.setTextSize(14);
-                itemText.setTextColor(defaultTextColor);
-                itemText.setLineSpacing(0, 1.2f);
-                itemText.setTextIsSelectable(true);
-                itemText.setMovementMethod(LinkMovementMethod.getInstance());
-                bulletRow.addView(itemText, new LinearLayout.LayoutParams(0, -2, 1));
-
-                LinearLayout.LayoutParams lpB = new LinearLayout.LayoutParams(-1, -2);
-                lpB.setMargins(dp(6), dp(2), 0, dp(2));
-                targetLayout.addView(bulletRow, lpB);
-                continue;
-            }
-
-            TextView para = new TextView(this);
-            para.setText(formatInlineSpans(line, defaultTextColor));
-            para.setTextSize(14);
-            para.setTextColor(defaultTextColor);
-            para.setLineSpacing(0, 1.2f);
-            para.setTextIsSelectable(true);
-            para.setMovementMethod(LinkMovementMethod.getInstance());
-
-            LinearLayout.LayoutParams lpP = new LinearLayout.LayoutParams(-1, -2);
-            lpP.setMargins(0, dp(2), 0, dp(4));
-            targetLayout.addView(para, lpP);
-        }
-
-        if (inCode && codeBuffer.length() > 0) {
-            addCodeBlockView(targetLayout, codeLang, codeBuffer.toString().trim());
-        }
-    }
-
-    private void addCodeBlockView(LinearLayout parent, String lang, final String code) {
-        LinearLayout codeCard = new LinearLayout(this);
-        codeCard.setOrientation(LinearLayout.VERTICAL);
-        codeCard.setBackground(m3Box(M3_SURFACE_CONTAINER_LOW, M3_OUTLINE_VARIANT, 1, 12));
-        codeCard.setPadding(0, 0, 0, 0);
-
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, 0, 0, 12));
-        header.setPadding(dp(12), dp(4), dp(8), dp(4));
-
-        String displayLang = lang.isEmpty() ? "CODE" : lang.toUpperCase();
-        TextView langLabel = m3Text(displayLang, 11, M3_ON_SURFACE_VARIANT, true);
-        header.addView(langLabel, new LinearLayout.LayoutParams(0, -2, 1));
-
-        Button copyBtn = new Button(this);
-        copyBtn.setText("📋 Copy");
-        copyBtn.setTextSize(11);
-        copyBtn.setAllCaps(false);
-        copyBtn.setTextColor(M3_PRIMARY);
-        copyBtn.setBackground(null);
-        copyBtn.setPadding(dp(6), 0, dp(6), 0);
-        copyBtn.setOnClickListener(v -> {
-            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            ClipData cd = ClipData.newPlainText("Code", code);
-            cm.setPrimaryClip(cd);
-            Toast.makeText(MainActivity.this, "Code copied to clipboard", Toast.LENGTH_SHORT).show();
-        });
-        header.addView(copyBtn, new LinearLayout.LayoutParams(-2, dp(30)));
-        codeCard.addView(header);
-
-        HorizontalScrollView hScroll = new HorizontalScrollView(this);
-        hScroll.setPadding(dp(12), dp(8), dp(12), dp(10));
-        hScroll.setHorizontalScrollBarEnabled(false);
-
-        TextView codeView = new TextView(this);
-        codeView.setText(code);
-        codeView.setTextSize(12.5f);
-        codeView.setTextColor(M3_PRIMARY);
-        codeView.setTypeface(Typeface.MONOSPACE);
-        codeView.setLineSpacing(0, 1.15f);
-        codeView.setTextIsSelectable(true);
-        hScroll.addView(codeView);
-
-        codeCard.addView(hScroll);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(6), 0, dp(6));
-        parent.addView(codeCard, lp);
     }
 
     // ==========================================
@@ -1611,25 +1514,8 @@ public class MainActivity extends Activity {
         tokenInput.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 10));
         tokenInput.setPadding(dp(12), dp(10), dp(12), dp(10));
         LinearLayout.LayoutParams lpTok = new LinearLayout.LayoutParams(-1, dp(48));
-        lpTok.setMargins(0, dp(4), 0, dp(12));
+        lpTok.setMargins(0, dp(4), 0, dp(8));
         form.addView(tokenInput, lpTok);
-
-        TextView updateLbl = m3Text("App Version & Updates:", 12.5f, M3_ON_SURFACE_VARIANT, true);
-        form.addView(updateLbl);
-
-        Button updateBtn = new Button(this);
-        updateBtn.setText("📥 Check & Download Latest APK Update");
-        updateBtn.setTextSize(12);
-        updateBtn.setAllCaps(false);
-        updateBtn.setTextColor(M3_PRIMARY);
-        updateBtn.setBackground(m3Box(M3_SURFACE_CONTAINER_HIGH, M3_OUTLINE_VARIANT, 1, 10));
-        updateBtn.setOnClickListener(v -> {
-            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/greedykid/codexcli-remote-app/actions"));
-            startActivity(browserIntent);
-        });
-        LinearLayout.LayoutParams lpUp = new LinearLayout.LayoutParams(-1, dp(42));
-        lpUp.setMargins(0, dp(4), 0, dp(6));
-        form.addView(updateBtn, lpUp);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Remote Gateway Setup")
@@ -1657,7 +1543,12 @@ public class MainActivity extends Activity {
             showConnectionDialog();
             return;
         }
-        if (text.isEmpty() || sendButton.getTag() != null) return;
+        if (text.isEmpty() && chatAttachedServerPath == null) return;
+        if (sendButton.getTag() != null) return;
+
+        final String attachedFile = chatAttachedServerPath;
+        chatAttachedServerPath = null;
+        if (chatAttachmentChip != null) chatAttachmentChip.setVisibility(View.GONE);
 
         final String engine = currentEngine;
         final boolean isAgy = "antigravity".equalsIgnoreCase(engine);
@@ -1673,7 +1564,8 @@ public class MainActivity extends Activity {
         statusDot.setTextColor(isAgy ? M3_PRIMARY : M3_TERTIARY);
         statusText.setText(" " + engineLabel + " processing...");
 
-        addMessage("You", text, true, null);
+        String displayText = (attachedFile != null ? "[📎 " + attachedFile + "]\n" : "") + text;
+        addMessage("You", displayText, true, null);
         promptInput.setText("");
 
         sendProgress = new ProgressBar(this);
@@ -1688,6 +1580,9 @@ public class MainActivity extends Activity {
                 req.put("prompt", text);
                 req.put("engine", engine);
                 req.put("resume", true);
+                if (attachedFile != null) {
+                    req.put("attachedFile", attachedFile);
+                }
 
                 JSONObject res = executePost(endpoint, prefs.getString("token", ""), req);
                 String responseText = res.optString("response", "No output returned.");
@@ -1761,16 +1656,152 @@ public class MainActivity extends Activity {
 
         bubbleCard.addView(headerRow);
 
-        LinearLayout markdownContent = new LinearLayout(this);
-        markdownContent.setOrientation(LinearLayout.VERTICAL);
-        markdownContent.setPadding(0, dp(4), 0, 0);
-        renderMarkdownBlocks(markdownContent, message, isUser ? M3_ON_PRIMARY_CONTAINER : (author.contains("Error") ? M3_RED : M3_ON_SURFACE));
-        bubbleCard.addView(markdownContent);
+        // Render formatted markdown inside container
+        renderMarkdownIntoContainer(bubbleCard, message, isUser);
 
         LinearLayout.LayoutParams lpBubble = new LinearLayout.LayoutParams(-1, -2);
         lpBubble.setMargins(0, 0, 0, dp(10));
         transcript.addView(bubbleCard, lpBubble);
 
         scrollChat.post(() -> scrollChat.fullScroll(View.FOCUS_DOWN));
+    }
+
+    // ==========================================
+    // RICH MARKDOWN FORMATTER & RENDERER
+    // ==========================================
+    private void renderMarkdownIntoContainer(LinearLayout container, String markdown, boolean isUser) {
+        if (markdown == null || markdown.isEmpty()) return;
+
+        String[] sections = markdown.split("```");
+        for (int s = 0; s < sections.length; s++) {
+            if (s % 2 == 1) {
+                // Code block section
+                String block = sections[s];
+                String lang = "";
+                String codeContent = block;
+                int firstLf = block.indexOf("\n");
+                if (firstLf > 0 && firstLf < 20) {
+                    lang = block.substring(0, firstLf).trim();
+                    codeContent = block.substring(firstLf + 1);
+                }
+
+                LinearLayout codeBox = new LinearLayout(this);
+                codeBox.setOrientation(LinearLayout.VERTICAL);
+                codeBox.setBackground(m3Box(M3_CODE_BG, M3_OUTLINE_VARIANT, 1, 10));
+                codeBox.setPadding(dp(12), dp(8), dp(12), dp(8));
+
+                if (!lang.isEmpty()) {
+                    TextView langTag = m3Text(lang.toUpperCase(Locale.ROOT), 10.5f, M3_PRIMARY, true);
+                    langTag.setPadding(0, 0, 0, dp(4));
+                    codeBox.addView(langTag);
+                }
+
+                TextView codeView = new TextView(this);
+                codeView.setText(codeContent.trim());
+                codeView.setTextSize(12.5f);
+                codeView.setTextColor(M3_ON_SURFACE);
+                codeView.setTypeface(Typeface.MONOSPACE);
+                codeView.setTextIsSelectable(true);
+                codeBox.addView(codeView);
+
+                final String copyText = codeContent.trim();
+                codeBox.setOnLongClickListener(v -> {
+                    ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(ClipData.newPlainText("Code snippet", copyText));
+                    Toast.makeText(MainActivity.this, "Code snippet copied", Toast.LENGTH_SHORT).show();
+                    return true;
+                });
+
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                lp.setMargins(0, dp(6), 0, dp(6));
+                container.addView(codeBox, lp);
+            } else {
+                // Normal markdown text lines (Headings, bullet lists, bold, inline code)
+                String text = sections[s];
+                String[] lines = text.split("\n");
+                for (String line : lines) {
+                    if (line.trim().isEmpty()) continue;
+
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("### ")) {
+                        TextView h3 = m3Text(trimmed.substring(4), 14.5f, M3_TERTIARY, true);
+                        h3.setPadding(0, dp(6), 0, dp(2));
+                        container.addView(h3);
+                    } else if (trimmed.startsWith("## ")) {
+                        TextView h2 = m3Text(trimmed.substring(3), 16f, M3_PRIMARY, true);
+                        h2.setPadding(0, dp(8), 0, dp(3));
+                        container.addView(h2);
+                    } else if (trimmed.startsWith("# ")) {
+                        TextView h1 = m3Text(trimmed.substring(2), 18f, M3_PRIMARY, true);
+                        h1.setPadding(0, dp(10), 0, dp(4));
+                        container.addView(h1);
+                    } else if (trimmed.startsWith("---") || trimmed.startsWith("***")) {
+                        View divider = new View(this);
+                        divider.setBackgroundColor(M3_OUTLINE_VARIANT);
+                        LinearLayout.LayoutParams lpDiv = new LinearLayout.LayoutParams(-1, dp(1));
+                        lpDiv.setMargins(0, dp(8), 0, dp(8));
+                        container.addView(divider, lpDiv);
+                    } else {
+                        // Formatted paragraph / bullet item
+                        SpannableStringBuilder span = parseInlineMarkdown(line);
+                        TextView p = new TextView(this);
+                        p.setText(span);
+                        p.setTextSize(13.5f);
+                        p.setTextColor(isUser ? M3_ON_PRIMARY_CONTAINER : M3_ON_SURFACE);
+                        p.setLineSpacing(0, 1.2f);
+                        p.setTextIsSelectable(true);
+                        p.setPadding(0, dp(2), 0, dp(2));
+
+                        final String rawLine = line;
+                        p.setOnLongClickListener(v -> {
+                            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                            cm.setPrimaryClip(ClipData.newPlainText("Chat text", rawLine));
+                            Toast.makeText(MainActivity.this, "Copied to clipboard", Toast.LENGTH_SHORT).show();
+                            return true;
+                        });
+
+                        container.addView(p);
+                    }
+                }
+            }
+        }
+    }
+
+    private SpannableStringBuilder parseInlineMarkdown(String raw) {
+        String line = raw;
+        if (line.trim().startsWith("* ") || line.trim().startsWith("- ")) {
+            line = "  •  " + line.trim().substring(2);
+        }
+
+        SpannableStringBuilder ssb = new SpannableStringBuilder(line);
+
+        // Bold (**bold**)
+        Pattern boldPat = Pattern.compile("\\*\\*(.+?)\\*\\*");
+        Matcher boldMat = boldPat.matcher(ssb.toString());
+        while (boldMat.find()) {
+            int start = boldMat.start();
+            int end = boldMat.end();
+            String inner = boldMat.group(1);
+            ssb.replace(start, end, inner);
+            ssb.setSpan(new StyleSpan(Typeface.BOLD), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            boldMat = boldPat.matcher(ssb.toString());
+        }
+
+        // Inline code (`code`)
+        Pattern codePat = Pattern.compile("`([^`]+)`");
+        Matcher codeMat = codePat.matcher(ssb.toString());
+        while (codeMat.find()) {
+            int start = codeMat.start();
+            int end = codeMat.end();
+            String inner = codeMat.group(1);
+            ssb.replace(start, end, " " + inner + " ");
+            int spanEnd = start + inner.length() + 2;
+            ssb.setSpan(new TypefaceSpan("monospace"), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ssb.setSpan(new BackgroundColorSpan(M3_SURFACE_CONTAINER_HIGH), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ssb.setSpan(new ForegroundColorSpan(M3_SECONDARY), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            codeMat = codePat.matcher(ssb.toString());
+        }
+
+        return ssb;
     }
 }
