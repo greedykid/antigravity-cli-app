@@ -7,6 +7,8 @@
     <color name="text_muted">#9AA7AF</color>
     <color name="amber">#F5B84B</color>
     <color name="amber_dark">#332B1A</color>
+    <color name="cyan">#60CDFF</color>
+    <color name="cyan_dark">#14303A</color>
     <color name="success">#74D39B</color>
     <color name="error">#F28B82</color>
 </resources>

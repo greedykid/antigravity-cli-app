@@ -1,20 +1,22 @@
-# Codex Remote
+# AI CLI Remote (Antigravity & Codex)
 
-Native Android chat client for a user-hosted Codex CLI bridge.
+Native Android chat client for user-hosted Antigravity CLI (`agy`) & OpenAI Codex CLI bridge.
 
-## Build
+## Build APK
 
-Push to GitHub and open **Actions -> Build APK**. The workflow uploads `app-debug.apk` as an artifact.
+Push to GitHub and open **Actions -> Build APK**. The workflow compiles and uploads `codex-remote-debug-apk` containing `app-debug.apk` as an artifact.
 
-## Run the bridge
+## Run the Bridge
 
-On the machine where Codex CLI is installed:
+On the machine where Antigravity CLI and/or Codex CLI are installed:
 
 ```bash
 cd bridge
-REMOTE_TOKEN='replace-with-a-long-random-token' BRIDGE_HOST='100.64.0.10' CODEX_WORKDIR='/path/to/project' node server.js
+REMOTE_TOKEN='your-secret-token' BRIDGE_HOST='0.0.0.0' PORT=8787 CODEX_WORKDIR='/path/to/project' node server.js
 ```
 
-The bridge listens on `127.0.0.1` by default. Set `BRIDGE_HOST` to the machine's private VPN address to reach it from the phone; do not bind it to a public interface. In the app, enter the bridge URL ending in `/api/chat` and the same token.
+In the Android app:
+1. Tap **Connection** and enter the bridge endpoint (e.g. `https://your-tunnel.trycloudflare.com/api/chat`) and the secret Bearer token.
+2. Toggle between **⚡ Antigravity** and **🚀 Codex** directly on the top switcher.
+3. Send prompts to execute remote CLI tasks seamlessly from your phone.
 
-The GitHub token previously pasted into chat must be revoked and must never be committed to this repository.
