@@ -250,20 +250,32 @@ function getTranscript(convId, limit = 1000) {
             let friendlyTitle = "Aksi: " + toolName;
             let addedLines = 0;
             let deletedLines = 0;
+            let targetFile = "";
+            let startLine = 1;
+            let endLine = 1;
+            let targetContent = "";
+            let replacementContent = "";
 
             if (toolName === "run_command") {
               toolTitle = "Bash";
               commandText = (argsObj && argsObj.CommandLine) || "";
               friendlyTitle = "Menjalankan: " + (commandText.length > 35 ? commandText.slice(0, 32) + "..." : commandText);
             } else if (toolName === "replace_file_content" || toolName === "write_to_file") {
-              toolTitle = "Edit file";
-              commandText = (argsObj && (argsObj.TargetFile || argsObj.TargetContent)) || "";
-              friendlyTitle = "Mengedit " + (commandText ? path.basename(commandText) : "file");
+              toolTitle = "Edit";
+              targetFile = (argsObj && (argsObj.TargetFile || argsObj.AbsolutePath)) || "";
+              commandText = targetFile;
+              friendlyTitle = "Mengedit " + (targetFile ? path.basename(targetFile) : "file");
+              
               if (toolName === "replace_file_content" && argsObj) {
-                if (argsObj.ReplacementContent) addedLines = argsObj.ReplacementContent.split("\n").length;
-                if (argsObj.TargetContent) deletedLines = argsObj.TargetContent.split("\n").length;
+                startLine = argsObj.StartLine || 1;
+                endLine = argsObj.EndLine || 1;
+                targetContent = argsObj.TargetContent || "";
+                replacementContent = argsObj.ReplacementContent || "";
+                if (replacementContent) addedLines = replacementContent.split("\n").length;
+                if (targetContent) deletedLines = targetContent.split("\n").length;
               } else if (toolName === "write_to_file" && argsObj && argsObj.CodeContent) {
-                addedLines = argsObj.CodeContent.split("\n").length;
+                replacementContent = argsObj.CodeContent;
+                addedLines = replacementContent.split("\n").length;
               }
             } else if (toolName === "view_file") {
               toolTitle = "Read file";
@@ -284,6 +296,11 @@ function getTranscript(convId, limit = 1000) {
               title: friendlyTitle,
               command: commandText || argsStr,
               content: argsStr || ("Action: " + toolName),
+              targetFile,
+              startLine,
+              endLine,
+              targetContent,
+              replacementContent,
               addedLines,
               deletedLines,
               time: s.created_at,

@@ -2003,11 +2003,20 @@ public class MainActivity extends Activity {
         String outputText = item.optString("content", "");
         String statusText = isRunning ? "Sedang berjalan..." : "Selesai";
 
-        // Top Bar: Back Arrow (<--) + Centered Title ("Bash") + Subtitle ("Selesai")
+        String targetFile = item.optString("targetFile", "");
+        String targetContent = item.optString("targetContent", "");
+        String replacementContent = item.optString("replacementContent", "");
+        int startLine = item.optInt("startLine", 1);
+        int addedLines = item.optInt("addedLines", 0);
+        int deletedLines = item.optInt("deletedLines", 0);
+
+        boolean isEditDiff = "Edit".equalsIgnoreCase(toolTitle) || !targetContent.isEmpty() || !replacementContent.isEmpty() || !targetFile.isEmpty();
+
+        // Top Bar: Back Arrow (<--) + Centered Title ("Edit") + Subtitle ("Selesai")
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(0, 0, 0, dp(16));
+        topBar.setPadding(0, 0, 0, dp(14));
 
         ImageView backBtn = cIconButton(R.drawable.ic_arrow_back, 24, 40, CLAUDE_TEXT_MAIN);
         backBtn.setOnClickListener(v -> {
@@ -2020,7 +2029,7 @@ public class MainActivity extends Activity {
         titleCol.setOrientation(LinearLayout.VERTICAL);
         titleCol.setGravity(Gravity.CENTER_HORIZONTAL);
 
-        TextView titleView = cText(toolTitle, 19f, CLAUDE_TEXT_MAIN, true, false);
+        TextView titleView = cText(isEditDiff ? "Edit" : toolTitle, 19f, CLAUDE_TEXT_MAIN, true, false);
         titleView.setGravity(Gravity.CENTER);
         titleCol.addView(titleView);
 
@@ -2030,7 +2039,7 @@ public class MainActivity extends Activity {
 
         topBar.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1));
 
-        // Right spacer to keep title perfectly centered
+        // Right spacer to keep title centered
         View spacer = new View(this);
         topBar.addView(spacer, new LinearLayout.LayoutParams(dp(40), dp(40)));
         activeBottomSheetDetailView.addView(topBar);
@@ -2042,49 +2051,205 @@ public class MainActivity extends Activity {
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
 
-        // Section 1: "Perintah" / Command Box
-        TextView cmdLabel = cText("Perintah", 13.5f, CLAUDE_TEXT_MUTED, false, false);
-        LinearLayout.LayoutParams lpCmdL = new LinearLayout.LayoutParams(-1, -2);
-        lpCmdL.setMargins(0, 0, 0, dp(8));
-        body.addView(cmdLabel, lpCmdL);
+        if (isEditDiff) {
+            // ============================================================
+            // RICH DIFF VIEW (Exact match to Claude Code screenshot)
+            // ============================================================
+            String fileName = targetFile.isEmpty() ? "file" : new File(targetFile).getName();
+            String dirPath = targetFile.isEmpty() ? "" : targetFile;
 
-        LinearLayout cmdBox = new LinearLayout(this);
-        cmdBox.setOrientation(LinearLayout.VERTICAL);
-        cmdBox.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
-        cmdBox.setPadding(dp(14), dp(12), dp(14), dp(12));
+            // File Meta Bar: filename + truncated path + (+A -B badge)
+            LinearLayout metaBar = new LinearLayout(this);
+            metaBar.setOrientation(LinearLayout.HORIZONTAL);
+            metaBar.setGravity(Gravity.CENTER_VERTICAL);
+            metaBar.setPadding(0, 0, 0, dp(10));
 
-        TextView cmdView = new TextView(this);
-        cmdView.setText(commandText.isEmpty() ? toolTitle : commandText);
-        cmdView.setTextSize(13.5f);
-        cmdView.setTextColor(Color.rgb(255, 204, 128)); // Highlighted amber command syntax
-        cmdView.setTypeface(Typeface.MONOSPACE);
-        cmdView.setTextIsSelectable(true);
-        cmdBox.addView(cmdView);
-        body.addView(cmdBox);
+            TextView fnView = cText(fileName, 14.5f, CLAUDE_TEXT_MAIN, true, false);
+            fnView.setTypeface(Typeface.MONOSPACE);
+            metaBar.addView(fnView);
 
-        // Section 2: "Keluaran" / Output Box
-        TextView outLabel = cText("Keluaran", 13.5f, CLAUDE_TEXT_MUTED, false, false);
-        LinearLayout.LayoutParams lpOutL = new LinearLayout.LayoutParams(-1, -2);
-        lpOutL.setMargins(0, dp(18), 0, dp(8));
-        body.addView(outLabel, lpOutL);
+            TextView pathView = cText("  " + dirPath, 13f, CLAUDE_TEXT_MUTED, false, false);
+            pathView.setSingleLine(true);
+            pathView.setEllipsize(TextUtils.TruncateAt.END);
+            metaBar.addView(pathView, new LinearLayout.LayoutParams(0, -2, 1));
 
-        LinearLayout outBox = new LinearLayout(this);
-        outBox.setOrientation(LinearLayout.VERTICAL);
-        outBox.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
-        outBox.setPadding(dp(14), dp(12), dp(14), dp(12));
+            if (addedLines > 0 || deletedLines > 0) {
+                LinearLayout diffBadge = new LinearLayout(this);
+                diffBadge.setOrientation(LinearLayout.HORIZONTAL);
+                diffBadge.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView outView = new TextView(this);
-        outView.setText(outputText.isEmpty() ? "Tidak ada keluaran" : outputText);
-        outView.setTextSize(12.5f);
-        outView.setTextColor(Color.rgb(240, 240, 245));
-        outView.setTypeface(Typeface.MONOSPACE);
-        outView.setLineSpacing(0, 1.25f);
-        outView.setTextIsSelectable(true);
-        outBox.addView(outView);
-        body.addView(outBox);
+                if (addedLines > 0) {
+                    diffBadge.addView(cText("+" + addedLines + " ", 13.5f, CLAUDE_GREEN, true, false));
+                }
+                if (deletedLines > 0) {
+                    diffBadge.addView(cText("-" + deletedLines, 13.5f, CLAUDE_RED, true, false));
+                }
+                metaBar.addView(diffBadge);
+            }
+            body.addView(metaBar);
+
+            // Diff Code Obsidian Box
+            LinearLayout diffBox = new LinearLayout(this);
+            diffBox.setOrientation(LinearLayout.VERTICAL);
+            diffBox.setBackground(cBox(Color.rgb(18, 19, 22), Color.rgb(38, 40, 46), 1, 10));
+
+            // Top Accordion Header: ^ +N baris
+            LinearLayout topAccordion = new LinearLayout(this);
+            topAccordion.setOrientation(LinearLayout.HORIZONTAL);
+            topAccordion.setGravity(Gravity.CENTER_VERTICAL);
+            topAccordion.setBackgroundColor(Color.rgb(27, 36, 51)); // Dark Navy Slate #1B2433
+            topAccordion.setPadding(dp(12), dp(7), dp(12), dp(7));
+
+            ImageView upIcon = cIcon(R.drawable.ic_expand_more, 16, Color.rgb(138, 153, 173));
+            upIcon.setRotation(180f);
+            topAccordion.addView(upIcon);
+
+            TextView topAccText = cText(" +" + (startLine > 1 ? (startLine - 1) : 1) + " baris", 12.5f, Color.rgb(138, 153, 173), false, false);
+            topAccText.setTypeface(Typeface.MONOSPACE);
+            topAccordion.addView(topAccText);
+            diffBox.addView(topAccordion);
+
+            // Horizontal Scroll for code lines
+            HorizontalScrollView codeHScroll = new HorizontalScrollView(this);
+            codeHScroll.setHorizontalScrollBarEnabled(false);
+
+            LinearLayout linesContainer = new LinearLayout(this);
+            linesContainer.setOrientation(LinearLayout.VERTICAL);
+            linesContainer.setPadding(0, dp(4), dp(16), dp(4));
+
+            int currentLineNum = Math.max(1, startLine);
+
+            // Render Deleted Lines (TargetContent) in Dark Red
+            if (!targetContent.isEmpty()) {
+                String[] delLines = targetContent.split("\n");
+                for (String dl : delLines) {
+                    LinearLayout lineRow = new LinearLayout(this);
+                    lineRow.setOrientation(LinearLayout.HORIZONTAL);
+                    lineRow.setGravity(Gravity.CENTER_VERTICAL);
+                    lineRow.setBackgroundColor(Color.argb(80, 239, 68, 68)); // Red tint #361718
+                    lineRow.setPadding(0, dp(2), dp(8), dp(2));
+
+                    TextView ln = new TextView(this);
+                    ln.setText(String.valueOf(currentLineNum));
+                    ln.setTextSize(12f);
+                    ln.setTextColor(Color.rgb(150, 150, 150));
+                    ln.setTypeface(Typeface.MONOSPACE);
+                    ln.setGravity(Gravity.END);
+                    LinearLayout.LayoutParams lpLn = new LinearLayout.LayoutParams(dp(36), -2);
+                    lpLn.setMargins(0, 0, dp(12), 0);
+                    lineRow.addView(ln, lpLn);
+
+                    TextView codeTxt = new TextView(this);
+                    codeTxt.setText(dl);
+                    codeTxt.setTextSize(13f);
+                    codeTxt.setTextColor(Color.rgb(255, 133, 133)); // Red text
+                    codeTxt.setTypeface(Typeface.MONOSPACE);
+                    lineRow.addView(codeTxt);
+
+                    linesContainer.addView(lineRow, new LinearLayout.LayoutParams(-1, -2));
+                }
+            }
+
+            // Render Added Lines (ReplacementContent) in Dark Green
+            if (!replacementContent.isEmpty()) {
+                String[] addLines = replacementContent.split("\n");
+                for (String al : addLines) {
+                    LinearLayout lineRow = new LinearLayout(this);
+                    lineRow.setOrientation(LinearLayout.HORIZONTAL);
+                    lineRow.setGravity(Gravity.CENTER_VERTICAL);
+                    lineRow.setBackgroundColor(Color.argb(75, 76, 175, 80)); // Green tint #163321
+                    lineRow.setPadding(0, dp(2), dp(8), dp(2));
+
+                    TextView ln = new TextView(this);
+                    ln.setText(String.valueOf(currentLineNum++));
+                    ln.setTextSize(12f);
+                    ln.setTextColor(Color.rgb(150, 150, 150));
+                    ln.setTypeface(Typeface.MONOSPACE);
+                    ln.setGravity(Gravity.END);
+                    LinearLayout.LayoutParams lpLn = new LinearLayout.LayoutParams(dp(36), -2);
+                    lpLn.setMargins(0, 0, dp(12), 0);
+                    lineRow.addView(ln, lpLn);
+
+                    TextView codeTxt = new TextView(this);
+                    codeTxt.setText(al);
+                    codeTxt.setTextSize(13f);
+                    codeTxt.setTextColor(Color.rgb(112, 239, 139)); // Bright green text
+                    codeTxt.setTypeface(Typeface.MONOSPACE);
+                    lineRow.addView(codeTxt);
+
+                    linesContainer.addView(lineRow, new LinearLayout.LayoutParams(-1, -2));
+                }
+            } else if (targetContent.isEmpty()) {
+                // Fallback if no target/replacement parsed
+                TextView fallback = cText(outputText, 13f, CLAUDE_TEXT_MAIN, false, false);
+                fallback.setTypeface(Typeface.MONOSPACE);
+                linesContainer.addView(fallback);
+            }
+
+            codeHScroll.addView(linesContainer);
+            diffBox.addView(codeHScroll);
+
+            // Bottom Accordion Footer: v Perluas
+            LinearLayout btmAccordion = new LinearLayout(this);
+            btmAccordion.setOrientation(LinearLayout.HORIZONTAL);
+            btmAccordion.setGravity(Gravity.CENTER_VERTICAL);
+            btmAccordion.setBackgroundColor(Color.rgb(27, 36, 51)); // Dark Navy Slate #1B2433
+            btmAccordion.setPadding(dp(12), dp(7), dp(12), dp(7));
+
+            ImageView downIcon = cIcon(R.drawable.ic_expand_more, 16, Color.rgb(138, 153, 173));
+            btmAccordion.addView(downIcon);
+
+            TextView btmAccText = cText(" Perluas", 12.5f, Color.rgb(138, 153, 173), false, false);
+            btmAccText.setTypeface(Typeface.MONOSPACE);
+            btmAccordion.addView(btmAccText);
+            diffBox.addView(btmAccordion);
+
+            body.addView(diffBox);
+        } else {
+            // Standard Command & Output Sections
+            TextView cmdLabel = cText("Perintah", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+            LinearLayout.LayoutParams lpCmdL = new LinearLayout.LayoutParams(-1, -2);
+            lpCmdL.setMargins(0, 0, 0, dp(8));
+            body.addView(cmdLabel, lpCmdL);
+
+            LinearLayout cmdBox = new LinearLayout(this);
+            cmdBox.setOrientation(LinearLayout.VERTICAL);
+            cmdBox.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
+            cmdBox.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+            TextView cmdView = new TextView(this);
+            cmdView.setText(commandText.isEmpty() ? toolTitle : commandText);
+            cmdView.setTextSize(13.5f);
+            cmdView.setTextColor(Color.rgb(255, 204, 128)); // Highlighted amber command syntax
+            cmdView.setTypeface(Typeface.MONOSPACE);
+            cmdView.setTextIsSelectable(true);
+            cmdBox.addView(cmdView);
+
+            body.addView(cmdBox);
+
+            TextView outLabel = cText("Keluaran / Respons", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+            LinearLayout.LayoutParams lpOutL = new LinearLayout.LayoutParams(-1, -2);
+            lpOutL.setMargins(0, dp(16), 0, dp(8));
+            body.addView(outLabel, lpOutL);
+
+            LinearLayout outBox = new LinearLayout(this);
+            outBox.setOrientation(LinearLayout.VERTICAL);
+            outBox.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 12));
+            outBox.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+            TextView outView = new TextView(this);
+            outView.setText(outputText.isEmpty() ? "(Tidak ada output teks)" : outputText);
+            outView.setTextSize(13.5f);
+            outView.setTextColor(CLAUDE_TEXT_MAIN);
+            outView.setTypeface(Typeface.MONOSPACE);
+            outView.setTextIsSelectable(true);
+            outBox.addView(outView);
+
+            body.addView(outBox);
+        }
 
         detailScroll.addView(body);
-        activeBottomSheetDetailView.addView(detailScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        activeBottomSheetDetailView.addView(detailScroll, new LinearLayout.LayoutParams(-1, -1));
 
         activeBottomSheetMasterView.setVisibility(View.GONE);
         activeBottomSheetDetailView.setVisibility(View.VISIBLE);
