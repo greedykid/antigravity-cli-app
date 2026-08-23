@@ -719,7 +719,7 @@ public class MainActivity extends Activity {
         ImageView termIc = cIcon(R.drawable.ic_code, 20, Theme.GREEN);
         topBar.addView(termIc);
 
-        TextView title = cText("  Terminal PTY", 18, Color.parseColor("#c9d1d9"), true, false);
+        TextView title = cText("  Terminal PTY", 18f, Color.parseColor("#c9d1d9"), true, false);
         topBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
         ImageView copyBtn = cIconButton(R.drawable.ic_content_copy, 20, 36, Color.parseColor("#8b949e"));
