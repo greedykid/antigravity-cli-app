@@ -64,8 +64,11 @@ jobs:
           APK_FILE=$(find app/build/outputs -name "*.apk" | head -n 1)
           echo "Found APK at: $APK_FILE"
           if [ -n "$APK_FILE" ]; then
+            gh release delete-asset latest app-debug.apk --yes --repo ${{ github.repository }} || true
             gh release upload latest "$APK_FILE" --clobber --repo ${{ github.repository }} || \
-            gh release create latest "$APK_FILE" --title "Antigravity Remote Latest APK" --notes "Latest build APK & IPA" --repo ${{ github.repository }}
+            gh release create latest "$APK_FILE" --title "Antigravity Remote Latest Release" --notes "Latest build APK & IPA" --repo ${{ github.repository }}
+
+            gh release delete-asset v0.3.0 app-debug.apk --yes --repo ${{ github.repository }} || true
             gh release upload v0.3.0 "$APK_FILE" --clobber --repo ${{ github.repository }} || \
             gh release create v0.3.0 "$APK_FILE" --title "Antigravity Remote v0.3.0" --notes "Release v0.3.0 with full Terminal PTY and keyboard auto-resize" --repo ${{ github.repository }}
           fi
