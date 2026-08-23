@@ -1800,8 +1800,8 @@ public class MainActivity extends Activity {
     private JSONArray filterSessionsForEngine(JSONArray sessions) {
         if (sessions == null) return null;
         ArrayList<JSONObject> list = new ArrayList<>();
-        for (int i = 0; i < sessions.length(); i++) {
-            JSONObject s = sessions.optJSONObject(i);
+        for (int i = 0; i < filteredList.size(); i++) {
+            JSONObject s = filteredList.get(i);
             if (s == null) continue;
             String engine = s.optString("engine", "antigravity");
             boolean isCodex = "codex".equalsIgnoreCase(engine);
@@ -1829,12 +1829,39 @@ public class MainActivity extends Activity {
     private void renderTimeGroupedSessions(JSONArray sessions) {
         if (hubLoadingProgress != null) hubLoadingProgress.setVisibility(View.GONE);
         if (hubSessionGroupsContainer != null) hubSessionGroupsContainer.removeAllViews();
+        cachedHubSessionsRaw = sessions;
 
         if (sessions == null || sessions.length() == 0) {
             addTimeSectionHeader("Hari ini");
             addSessionCard("Belum ada sesi " + engineLabel(currentEngine),
                     "Terhubung • " + currentServerHostname, "Baru", null, true);
             return;
+        }
+
+        Set<String> pinnedIds = getPinnedSessionIds();
+        ArrayList<JSONObject> pinnedList = new ArrayList<>();
+        ArrayList<JSONObject> filteredList = new ArrayList<>();
+
+        for (int i = 0; i < sessions.length(); i++) {
+            JSONObject s = sessions.optJSONObject(i);
+            if (s == null) continue;
+            String title = s.optString("title", "").toLowerCase();
+            String convId = s.optString("conversationId", "").toLowerCase();
+            if (!hubSearchQuery.isEmpty() && !title.contains(hubSearchQuery) && !convId.contains(hubSearchQuery)) {
+                continue;
+            }
+            if (pinnedIds.contains(s.optString("conversationId", ""))) {
+                pinnedList.add(s);
+            } else {
+                filteredList.add(s);
+            }
+        }
+
+        if (!pinnedList.isEmpty()) {
+            addTimeSectionHeader("📌 Disematkan");
+            for (JSONObject s : pinnedList) {
+                renderSingleSessionItem(s, false);
+            }
         }
 
         long now = System.currentTimeMillis();
