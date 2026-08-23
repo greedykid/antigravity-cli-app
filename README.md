@@ -20,33 +20,32 @@ Antigravity Remote adalah aplikasi Android native yang memungkinkan Anda mengont
 
 ---
 
-## 🚀 Panduan Setup & Cara Menghubungkan
+## ⚡ Setup Server 1-Perintah (Paling Cepat & Otomatis)
 
-### 1. Prasyarat di Server / VPS / Komputer
-* Node.js v18+ sudah terinstal.
-* Antigravity CLI (`agy`) dan/atau Codex CLI (`codex`) sudah terinstal dan terautentikasi di server.
+Jalankan perintah berikut di terminal VPS / server Linux Anda:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/greedykid/codexcli-remote-app/main/install.sh | bash
+```
+
+Script ini akan secara otomatis:
+1. Menginstall Node.js dan Cloudflared (jika belum ada).
+2. Menyiapkan service server background (`codex-bridge` & `codex-tunnel`) agar selalu aktif otomatis saat booting/restart.
+3. Menghubungkan Cloudflare Tunnel publik secara gratis dan aman.
+4. Menampilkan **QR Code Pairing** di terminal untuk langsung di-scan dari HP Android Anda!
+
+### 🛠️ Perintah Bantuan Terminal (Setelah Install)
+Ketik perintah ini di terminal Anda kapan saja:
+* `codex-remote` atau `agy-remote` : Menampilkan kembali QR Code Pairing & URL.
+* `codex-remote status` : Memeriksa status aktif server & tunnel.
+* `codex-remote logs` : Membuka live monitor logs server.
+* `codex-remote restart` : Merestart server bridge dan tunnel.
 
 ---
 
-### 2. Menjalankan Bridge Server di Server / VPS
+## 🚀 Panduan Setup Manual (Alternatif)
 
-Clone repository dan jalankan Bridge Server:
-
-```bash
-# 1. Masuk ke direktori bridge
-cd /path/to/codexcli-remote-app/bridge
-
-# 2. Install dependensi
-npm install
-
-# 3. Jalankan server bridge
-REMOTE_TOKEN='codex-remote-token-2026' BRIDGE_HOST='127.0.0.1' PORT=8787 node server.js
-```
-
-*(Opsional)* Jalankan sebagai background service systemd agar selalu aktif:
-```bash
-sudo systemctl restart codex-bridge
-```
+Jika Anda ingin menjalankan secara manual tanpa background service:
 
 ---
 
