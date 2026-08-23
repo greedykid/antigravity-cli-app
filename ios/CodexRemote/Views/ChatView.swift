@@ -233,6 +233,9 @@ struct ChatView: View {
                 .clipShape(Capsule())
                 .overlay(Capsule().stroke(palette.border, lineWidth: 1))
         }
+        .buttonStyle(.plain)
+    }
+
     private var slashCommandsView: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {

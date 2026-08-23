@@ -112,6 +112,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.Set;
+import java.util.HashSet;
+import android.text.Editable;
+import android.text.TextWatcher;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
