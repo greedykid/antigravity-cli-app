@@ -3521,21 +3521,15 @@ public class MainActivity extends Activity {
                     if (turns == null) turns = json.optJSONArray("messages");
 
                     StringBuilder out = new StringBuilder();
-                    out.append("# ").append(title != null ? title : "Session").append("
-");
-                    out.append("ID: ").append(convId).append("
-
-");
+                    out.append("# ").append(title != null ? title : "Session").append("\n");
+                    out.append("ID: ").append(convId).append("\n\n");
                     if (turns != null) {
                         for (int i = 0; i < turns.length(); i++) {
                             JSONObject t = turns.optJSONObject(i);
                             if (t == null) continue;
                             String role = t.optString("role", "unknown");
                             String content = t.optString("content", "");
-                            out.append("### ").append(role.toUpperCase()).append(":
-").append(content).append("
-
-");
+                            out.append("### ").append(role.toUpperCase()).append(":\n").append(content).append("\n\n");
                         }
                     }
 
