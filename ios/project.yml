@@ -28,10 +28,14 @@ targets:
       - path: CodexRemote
         excludes:
           - "**/Info.plist"
-    info:
-      path: CodexRemote/Info.plist
+    # Deliberately no `info:` block. Giving XcodeGen an info.path makes it
+    # *generate* the plist there, overwriting the checked-in one — which is how
+    # NSCameraUsageDescription went missing from the built app. Pointing
+    # INFOPLIST_FILE at the committed file uses it verbatim instead.
     settings:
       base:
+        INFOPLIST_FILE: CodexRemote/Info.plist
+        GENERATE_INFOPLIST_FILE: "NO"
         PRODUCT_BUNDLE_IDENTIFIER: com.greedykid.codexremote
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_IDENTITY: ""
