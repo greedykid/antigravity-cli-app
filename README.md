@@ -16,6 +16,7 @@ Antigravity Remote adalah aplikasi Android native yang memungkinkan Anda mengont
 * **📋 1-Tap Clipboard Pairing:** Salin tautan pairing (`agy://connect?...`) atau JSON token di HP, lalu ketuk *Paste from Clipboard*.
 * **🔄 Two-Way Live Terminal Synchronization:** Pantau sesi terminal PC yang sedang berjalan secara langsung di HP (*Live Companion HUD*), atau lanjutkan instruksi dari HP secara bergantian.
 * **🔀 Dual Engine Gateway:** Beralih antara engine **Google Antigravity CLI** dan **OpenAI Codex CLI** dengan 1 ketukan.
+* **🗂️ Riwayat per Engine:** Daftar sesi, "Terbaru" di sidebar, dan pencarian hanya menampilkan sesi milik engine yang sedang aktif — sesi Antigravity dan Codex tidak lagi tercampur.
 * **🎨 Tema per Engine:** Seluruh tampilan berganti mengikuti engine aktif — Antigravity dengan palet hangat terracotta dan tipografi serif, Codex dengan palet slate dingin beraksen teal dan tipografi sans. Wordmark, maskot, warna tombol, blok kode, sampai status bar ikut berubah.
 * **📊 Rich Markdown & Native Tables:** Dukungan format Markdown lengkap dengan tabel horizontal scrollable dan tombol salin kode cepat.
 * **🎙️ Voice Dictation & File Upload:** Dukungan input suara (Speech-to-Text) dan upload file / gambar langsung ke server.
@@ -168,9 +169,9 @@ Semua endpoint (kecuali `/health`) butuh header `Authorization: Bearer <token>`.
 | GET | `/health` | Status server, daftar engine dan fitur |
 | GET | `/api/events` | Stream Server-Sent Events (`task.started`, `cli.event`, `task.finished`) |
 | POST | `/api/chat` | Kirim prompt; `conversationId` melanjutkan sesi lama |
-| GET | `/api/sessions` | Daftar sesi Antigravity + Codex |
+| GET | `/api/sessions` | Daftar sesi; `?engine=` menyaring per CLI |
 | GET | `/api/session/transcript?id=` | Transkrip satu sesi |
-| GET | `/api/search?q=` | Cari di judul dan isi transkrip |
+| GET | `/api/search?q=` | Cari di judul dan isi transkrip; `?engine=` menyaring per CLI |
 | GET | `/api/files?path=` | Daftar isi folder (dikunci di dalam workdir) |
 | GET | `/api/files/read?path=` | Baca file (maks 512 KB, deteksi biner) |
 | GET | `/api/git/status`, `/api/git/diff` | Status dan diff repo |
