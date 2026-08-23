@@ -101,10 +101,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          # Same release as the APK so one page carries both platforms.
-          tag_name: v${{ steps.version.outputs.value }}
-          name: "Antigravity Remote v${{ steps.version.outputs.value }}"
+          tag_name: latest
+          name: "Antigravity Remote Latest Release"
+          body: |
+            Build otomatis dari commit ${{ github.sha }}.
+
+            * `app-debug.apk` — Android, sudah ditandatangani debug key, bisa langsung dipasang.
+            * `CodexRemote.ipa` — iOS, **belum ditandatangani**: pasang lewat AltStore/Sideloadly atau tanda tangani sendiri.
           files: ios/build/CodexRemote.ipa
+          overwrite: true
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

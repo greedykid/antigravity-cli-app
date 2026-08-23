@@ -3397,7 +3397,7 @@ public class MainActivity extends Activity {
         pill.setOnClickListener(v -> openExecutionBottomModal(toolTurns, isActuallyRunning));
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(4), 0, dp(8));
+        lp.setMargins(0, dp(6), 0, dp(14));
         chatMessagesList.addView(pill, lp);
     }
 
@@ -3913,7 +3913,7 @@ public class MainActivity extends Activity {
         chatScroll.setFillViewport(true);
         chatScroll.setVerticalScrollBarEnabled(false);
         chatScroll.setClipToPadding(false);
-        chatScroll.setPadding(0, 0, 0, dp(130));
+        chatScroll.setPadding(0, 0, 0, dp(210));
 
         chatMessagesList = new LinearLayout(this);
         chatMessagesList.setOrientation(LinearLayout.VERTICAL);
@@ -4036,7 +4036,7 @@ public class MainActivity extends Activity {
         });
 
         FrameLayout.LayoutParams lpScrollBtn = new FrameLayout.LayoutParams(dp(42), dp(42), Gravity.BOTTOM | Gravity.END);
-        lpScrollBtn.setMargins(0, 0, dp(20), dp(120));
+        lpScrollBtn.setMargins(0, 0, dp(20), dp(175));
         root.addView(btnScrollToBottom, lpScrollBtn);
 
         // Scroll listener for Top History Load + Scroll-to-Bottom visibility toggle
@@ -6025,7 +6025,7 @@ public class MainActivity extends Activity {
         int scrollHeight = chatScroll.getHeight();
         int contentHeight = chatMessagesList.getHeight();
         int distanceToBottom = contentHeight - (scrollY + scrollHeight);
-        return distanceToBottom <= dp(120);
+        return distanceToBottom <= dp(200);
     }
 
         // ============================================================
@@ -6258,7 +6258,7 @@ public class MainActivity extends Activity {
         pillRow.setOnClickListener(v -> openExecutionBottomModal(steps, isRunning));
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(4), 0, dp(4));
+        lp.setMargins(0, dp(6), 0, dp(14));
         chatMessagesList.addView(pillRow, lp);
     }
 
