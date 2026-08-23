@@ -163,6 +163,7 @@ public class MainActivity extends Activity {
     private volatile boolean isLiveTaskRunning = false;
     private String lastLoadedSessionId = null;
     private int lastLoadedTurnCount = -1;
+    private boolean lastRenderedWasRunning = false;
 
     private boolean isAutoRefreshActive = false;
     private final Runnable autoRefreshRunnable = new Runnable() {
@@ -421,7 +422,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.9.1 • Instant Live Sync", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.9.2 • Instant State Auto-Sync", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -745,6 +746,7 @@ public class MainActivity extends Activity {
         activeSessionTitle = title != null && !title.isEmpty() ? title : "Session";
         lastLoadedSessionId = null;
         lastLoadedTurnCount = -1;
+        lastRenderedWasRunning = false;
 
         if (chatMessagesList != null) chatMessagesList.removeAllViews();
         showEmptyMascotState(false);
@@ -756,6 +758,7 @@ public class MainActivity extends Activity {
         activeSessionTitle = "New session";
         lastLoadedSessionId = null;
         lastLoadedTurnCount = -1;
+        lastRenderedWasRunning = false;
         isLiveTaskRunning = false;
         navigatedFromHub = false;
 
@@ -1426,17 +1429,6 @@ public class MainActivity extends Activity {
         addMessageCard("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
         promptInput.setText("");
 
-        // Show immediate initial running pill
-        ArrayList<JSONObject> initialRunningList = new ArrayList<>();
-        try {
-            JSONObject dummy = new JSONObject();
-            dummy.put("role", "thinking");
-            dummy.put("title", "Starting agent...");
-            dummy.put("content", "Processing instruction and launching tools...");
-            initialRunningList.add(dummy);
-        } catch (Exception ignored) {}
-        addCompactToolsGroupPill(initialRunningList, true);
-
         // Scroll to bottom immediately
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
 
@@ -1584,8 +1576,8 @@ public class MainActivity extends Activity {
             if (turns != null) {
                 int newTurnCount = turns.length();
 
-                // Only skip re-rendering if NOT running AND turn count has not changed
-                if (!isLiveTaskRunning && requestedConvId != null && requestedConvId.equals(lastLoadedSessionId) && newTurnCount == lastLoadedTurnCount) {
+                // Only skip re-rendering if BOTH current and previous state are idle AND turns didn't change
+                if (!isLiveTaskRunning && !lastRenderedWasRunning && requestedConvId != null && requestedConvId.equals(lastLoadedSessionId) && newTurnCount == lastLoadedTurnCount) {
                     return;
                 }
 
@@ -1594,6 +1586,7 @@ public class MainActivity extends Activity {
 
                 lastLoadedSessionId = requestedConvId;
                 lastLoadedTurnCount = newTurnCount;
+                lastRenderedWasRunning = isLiveTaskRunning;
 
                 chatMessagesList.removeAllViews();
                 showEmptyMascotState(turns.length() == 0 && !isLiveTaskRunning);
@@ -1612,18 +1605,20 @@ public class MainActivity extends Activity {
                     } else {
                         // Flush any pending tool & thinking executions as one compact modal pill
                         if (!pendingTools.isEmpty()) {
-                            boolean isGroupActive = (i == turns.length() && isLiveTaskRunning);
-                            addCompactToolsGroupPill(new ArrayList<>(pendingTools), isGroupActive);
+                            // If an assistant/user message follows, this tool group is 100% finished (Done)
+                            addCompactToolsGroupPill(new ArrayList<>(pendingTools), false);
                             pendingTools.clear();
                         }
                         addMessageCard(role, content, time);
                     }
                 }
 
+                // If there are pending tools at the very end of the chat transcript:
                 if (!pendingTools.isEmpty()) {
+                    // It is only actively running if the overall task is currently executing!
                     addCompactToolsGroupPill(pendingTools, isLiveTaskRunning);
                 } else if (isLiveTaskRunning) {
-                    // Show initial working pill while first step is starting
+                    // Show initial thinking indicator while first tool is starting
                     ArrayList<JSONObject> dummy = new ArrayList<>();
                     JSONObject o = new JSONObject();
                     o.put("role", "thinking");
@@ -1660,6 +1655,9 @@ public class MainActivity extends Activity {
     // COMPACT TEXT PILL & FULLY SWIPEABLE / EXPANDABLE FULLSCREEN BOTTOM SHEET
     // ============================================================
     private void addCompactToolsGroupPill(final ArrayList<JSONObject> toolTurns, final boolean isCurrentlyWorking) {
+        // A pill is ONLY active if both requested AND the task is actively running!
+        final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
+
         int toolCount = 0;
         int thinkCount = 0;
         String latestToolName = "";
@@ -1675,20 +1673,20 @@ public class MainActivity extends Activity {
 
         String labelText;
         if (toolCount > 0 && thinkCount > 0) {
-            labelText = (isCurrentlyWorking ? "Working on " : "Worked on ") + (toolCount + thinkCount) + " steps (" + toolCount + " tools, " + thinkCount + " thinking)";
+            labelText = (isActuallyRunning ? "Working on " : "Worked on ") + (toolCount + thinkCount) + " steps (" + toolCount + " tools, " + thinkCount + " thinking)";
         } else if (toolCount > 0) {
-            labelText = (isCurrentlyWorking ? "Executing " : "Executed ") + toolCount + " tool" + (toolCount > 1 ? "s" : "") + (latestToolName.isEmpty() ? "" : ": " + latestToolName);
+            labelText = (isActuallyRunning ? "Executing " : "Executed ") + toolCount + " tool" + (toolCount > 1 ? "s" : "") + (latestToolName.isEmpty() ? "" : ": " + latestToolName);
         } else {
-            labelText = (isCurrentlyWorking ? "Thinking..." : "Viewed thought process (" + thinkCount + " step" + (thinkCount > 1 ? "s" : "") + ")");
+            labelText = (isActuallyRunning ? "Thinking..." : "Viewed thought process (" + thinkCount + " step" + (thinkCount > 1 ? "s" : "") + ")");
         }
 
         LinearLayout pill = new LinearLayout(this);
         pill.setOrientation(LinearLayout.HORIZONTAL);
         pill.setGravity(Gravity.CENTER_VERTICAL);
-        pill.setBackground(cBox(isCurrentlyWorking ? CLAUDE_AMBER_BG : CLAUDE_SURFACE_MUTED, isCurrentlyWorking ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 14));
+        pill.setBackground(cBox(isActuallyRunning ? CLAUDE_AMBER_BG : CLAUDE_SURFACE_MUTED, isActuallyRunning ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 14));
         pill.setPadding(dp(12), dp(9), dp(12), dp(9));
 
-        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isCurrentlyWorking ? CLAUDE_AMBER : CLAUDE_TERRACOTTA);
+        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isActuallyRunning ? CLAUDE_AMBER : CLAUDE_TERRACOTTA);
         pill.addView(actionIcon);
 
         TextView tv = cText("  " + labelText, 13f, CLAUDE_TEXT_MAIN, true, false);
@@ -1699,7 +1697,7 @@ public class MainActivity extends Activity {
         stateBadge.setOrientation(LinearLayout.HORIZONTAL);
         stateBadge.setGravity(Gravity.CENTER_VERTICAL);
 
-        if (isCurrentlyWorking) {
+        if (isActuallyRunning) {
             stateBadge.setBackground(cBox(CLAUDE_AMBER_BG, CLAUDE_AMBER, 1, 6));
             stateBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
             ProgressBar pb = new ProgressBar(this);
@@ -1720,7 +1718,7 @@ public class MainActivity extends Activity {
         chevron.setPadding(dp(4), 0, 0, 0);
         pill.addView(chevron);
 
-        pill.setOnClickListener(v -> openExecutionBottomModal(toolTurns, isCurrentlyWorking));
+        pill.setOnClickListener(v -> openExecutionBottomModal(toolTurns, isActuallyRunning));
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(4), 0, dp(8));
@@ -1728,6 +1726,7 @@ public class MainActivity extends Activity {
     }
 
     private void openExecutionBottomModal(final ArrayList<JSONObject> items, final boolean isCurrentlyWorking) {
+        final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
@@ -1792,7 +1791,7 @@ public class MainActivity extends Activity {
             String itTitle = it.optString("title", "tool".equalsIgnoreCase(role) ? "Executed Tool" : "Thinking Process");
             String content = it.optString("content", "");
             boolean isTool = "tool".equalsIgnoreCase(role);
-            boolean isThisItemRunning = (isCurrentlyWorking && i == items.size() - 1);
+            boolean isThisItemRunning = (isActuallyRunning && i == items.size() - 1);
 
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
