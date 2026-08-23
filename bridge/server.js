@@ -329,29 +329,112 @@ function getCodexUsageStats() {
 // -------------------------------------------------------------
 // NATIVE CODEX SESSION & TRANSCRIPT PARSER
 // -------------------------------------------------------------
+// Codex sessions come from two places that do not overlap.
+//
+// history.jsonl only records interactive runs — `codex exec`, which is what the
+// bridge uses, never appends to it. Every run does leave a rollout file, so the
+// rollouts are the authoritative list; history is merged in for sessions
+// started from a terminal.
+function readRolloutHead(file) {
+  const meta = { id: null, timestamp: 0, title: "" };
+  try {
+    const fd = fs.openSync(file, "r");
+    const buf = Buffer.alloc(64 * 1024);
+    const read = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+
+    for (const line of buf.toString("utf8", 0, read).split("\n")) {
+      if (!line.trim()) continue;
+      let obj;
+      try { obj = JSON.parse(line); } catch (e) { continue; }   // last line may be partial
+
+      if (obj.type === "session_meta" && obj.payload) {
+        meta.id = meta.id || obj.payload.id || obj.payload.session_id || null;
+        const ts = Date.parse(obj.payload.timestamp || "");
+        if (!Number.isNaN(ts)) meta.timestamp = ts;
+      }
+
+      if (!meta.title && obj.type === "response_item" && obj.payload
+          && obj.payload.role === "user") {
+        for (const part of obj.payload.content || []) {
+          const text = (part.text || "").trim();
+          // Skip the harness preamble Codex injects before the real prompt.
+          if (text && !text.startsWith("<")) { meta.title = text; break; }
+        }
+      }
+      if (meta.id && meta.title) break;
+    }
+  } catch (e) {}
+  return meta;
+}
+
+function listCodexRollouts(limit = 200) {
+  const baseDir = path.join(os.homedir(), ".codex/sessions");
+  const files = [];
+  if (!fs.existsSync(baseDir)) return files;
+
+  const stack = [baseDir];
+  while (stack.length && files.length < 4000) {
+    const dir = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { continue; }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.isFile() && entry.name.startsWith("rollout-") && entry.name.endsWith(".jsonl")) {
+        let mtime = 0;
+        try { mtime = fs.statSync(full).mtimeMs; } catch (e) {}
+        files.push({ full, name: entry.name, mtime });
+      }
+    }
+  }
+
+  // Only the newest are parsed; the rest cannot reach the 50-session cap anyway.
+  files.sort((a, b) => b.mtime - a.mtime);
+  return files.slice(0, limit);
+}
+
 function getCodexSessions() {
   const home = os.homedir();
-  const file = path.join(home, ".codex/history.jsonl");
   const map = new Map();
-  if (fs.existsSync(file)) {
-    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+
+  for (const file of listCodexRollouts()) {
+    const meta = readRolloutHead(file.full);
+    // The filename carries the id too, which covers a truncated head.
+    const fromName = file.name.match(/rollout-[\dT:-]*-([0-9a-f-]{36})\.jsonl$/i);
+    const id = meta.id || (fromName ? fromName[1] : null);
+    if (!id || map.has(id)) continue;
+
+    map.set(id, {
+      conversationId: id,
+      title: cleanTitle(meta.title, "Codex " + id.slice(0, 8)).slice(0, 80),
+      timestamp: meta.timestamp || file.mtime || Date.now(),
+      workspace: WORKDIR,
+      engine: "codex",
+      hostname: os.hostname()
+    });
+  }
+
+  const historyFile = path.join(home, ".codex/history.jsonl");
+  if (fs.existsSync(historyFile)) {
+    const lines = fs.readFileSync(historyFile, "utf8").trim().split("\n").filter(Boolean);
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
         const item = JSON.parse(lines[i]);
         const sid = item.session_id || item.conversationId;
-        if (sid && !map.has(sid)) {
-          map.set(sid, {
-            conversationId: sid,
-            title: cleanTitle(item.text || item.title, "Codex " + sid.slice(0, 8)),
-            timestamp: item.ts ? item.ts * 1000 : (item.timestamp || Date.now()),
-            workspace: WORKDIR,
-            engine: "codex",
-            hostname: os.hostname()
-          });
-        }
+        if (!sid || map.has(sid)) continue;
+        map.set(sid, {
+          conversationId: sid,
+          title: cleanTitle(item.text || item.title, "Codex " + sid.slice(0, 8)),
+          timestamp: item.ts ? item.ts * 1000 : (item.timestamp || Date.now()),
+          workspace: WORKDIR,
+          engine: "codex",
+          hostname: os.hostname()
+        });
       } catch (e) {}
     }
   }
+
   return Array.from(map.values());
 }
 

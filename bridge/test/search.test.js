@@ -165,3 +165,14 @@ test("filtering an engine with no matches yields nothing, not everything", () =>
     [src], () => [{ role: "user", content: "khusus agy" }]);
   assert.deepEqual(search.query("khusus agy", 10, "codex"), []);
 });
+
+// Codex sessions are discovered from rollout files because `codex exec` — the
+// mode the bridge runs — never appends to history.jsonl.
+test("a rollout title is cleaned the same way as a history title", () => {
+  const src = sourceFile("rollout-title.jsonl", "x");
+  search.sync({ conversationId: "roll1", title: "buat catatan singkat", engine: "codex", timestamp: 5 },
+    [src], () => [{ role: "user", content: "buat catatan singkat" }]);
+  const hit = search.query("catatan singkat", 10, "codex");
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].title, "buat catatan singkat");
+});
