@@ -44,7 +44,13 @@ jobs:
       - name: Resolve version
         id: version
         run: |
-          VERSION=$(grep -oP "versionName\s+'\K[^']+" app/build.gradle)
+          # BSD grep on the macOS runner has no -P, so use a sed expression
+          # that works on both platforms.
+          VERSION=$(sed -n "s/.*versionName[[:space:]]*'\([^']*\)'.*/\1/p" app/build.gradle | head -n 1)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read versionName from app/build.gradle"
+            exit 1
+          fi
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Product version: $VERSION"
 
