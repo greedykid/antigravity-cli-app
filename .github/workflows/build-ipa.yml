@@ -20,14 +20,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode_15.4.app || sudo xcode-select -switch /Applications/Xcode.app || true
-
       - name: Show toolchain
         run: xcodebuild -version && swift --version
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install xcodegen
 
       - name: Generate Xcode project
         working-directory: ios
