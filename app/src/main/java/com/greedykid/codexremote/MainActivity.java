@@ -5106,27 +5106,99 @@ public class MainActivity extends Activity {
 
         executor.execute(() -> {
             try {
-                JSONObject json = bridge.get("/api/session/export?id=" + BridgeClient.encode(convId), 30000);
+                JSONObject json = bridge.get("/api/session/export?id=" + BridgeClient.encode(convId), 60000);
                 if (!json.optBoolean("ok", false)) {
                     mainHandler.post(() -> Toast.makeText(MainActivity.this,
                             describeApiError(json, "Gagal mengekspor"), Toast.LENGTH_LONG).show());
                     return;
                 }
+
                 final String markdown = json.optString("markdown", "");
                 final String title = json.optString("title", "Sesi");
-                mainHandler.post(() -> {
-                    Intent share = new Intent(Intent.ACTION_SEND);
-                    share.setType("text/plain");
-                    share.putExtra(Intent.EXTRA_SUBJECT, title);
-                    share.putExtra(Intent.EXTRA_TEXT, markdown);
-                    startActivity(Intent.createChooser(share, "Bagikan transkrip"));
-                });
+                final String filename = sanitizeExportName(json.optString("filename", "transkrip.md"));
+
+                // Transcripts on this server reach two megabytes. Handing that to
+                // Intent.putExtra blows past the Binder transaction limit and
+                // takes the process down, so it goes out as a file instead.
+                final File exported = writeExportFile(filename, markdown);
+                if (exported == null) {
+                    mainHandler.post(() -> copyTranscriptToClipboard(title, markdown));
+                    return;
+                }
+                mainHandler.post(() -> shareExportedFile(exported, title));
             } catch (Exception ex) {
-                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+                mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                        "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
     }
 
+    /** Single path segment only — the provider serves that folder directly. */
+    private String sanitizeExportName(String name) {
+        String cleaned = name == null ? "" : name.replaceAll("[^A-Za-z0-9._-]", "-");
+        if (cleaned.isEmpty() || cleaned.startsWith(".")) cleaned = "transkrip.md";
+        if (!cleaned.endsWith(".md")) cleaned = cleaned + ".md";
+        return cleaned.length() > 80 ? cleaned.substring(cleaned.length() - 80) : cleaned;
+    }
+
+    private File writeExportFile(String filename, String markdown) {
+        try {
+            File dir = new File(getCacheDir(), "exports");
+            if (!dir.exists() && !dir.mkdirs()) return null;
+
+            // Earlier exports are throwaway; clear them so the cache does not
+            // accumulate megabyte files.
+            File[] previous = dir.listFiles();
+            if (previous != null) {
+                for (File old : previous) {
+                    if (old.isFile()) old.delete();
+                }
+            }
+
+            File target = new File(dir, filename);
+            FileOutputStream out = new FileOutputStream(target);
+            out.write(markdown.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            out.close();
+            return target;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private void shareExportedFile(File file, String title) {
+        try {
+            Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+
+            Intent share = new Intent(Intent.ACTION_SEND);
+            // text/markdown hides most share targets; the file keeps its .md name.
+            share.setType("text/plain");
+            share.putExtra(Intent.EXTRA_STREAM, uri);
+            share.putExtra(Intent.EXTRA_SUBJECT, title);
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            Intent chooser = Intent.createChooser(share, "Bagikan transkrip");
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(chooser);
+        } catch (Throwable t) {
+            Toast.makeText(this, "Tidak bisa membagikan file: " + t.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // Last resort when the cache is unwritable. The clipboard has limits of its
+    // own, so a very long transcript is cut rather than dropped entirely.
+    private void copyTranscriptToClipboard(String title, String markdown) {
+        String payload = markdown.length() > 100000
+                ? markdown.substring(0, 100000) + "\n\n… dipotong, transkrip terlalu panjang untuk clipboard"
+                : markdown;
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(ClipData.newPlainText(title, payload));
+            Toast.makeText(this, "Transkrip disalin ke clipboard", Toast.LENGTH_LONG).show();
+        } catch (Throwable t) {
+            Toast.makeText(this, "Gagal menyiapkan transkrip", Toast.LENGTH_LONG).show();
+        }
+    }
     // ============================================================
     // WORKSPACE PANELS (implemented in WorkspacePanels.java)
     // ============================================================
