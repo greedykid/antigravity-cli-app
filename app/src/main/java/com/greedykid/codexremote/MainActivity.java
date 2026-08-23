@@ -31,6 +31,7 @@ import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
 import android.text.style.StrikethroughSpan;
 import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
@@ -287,7 +288,6 @@ public class MainActivity extends Activity {
         rootFrame = new FrameLayout(this);
         rootFrame.setBackgroundColor(CLAUDE_BG);
 
-        // 1. Main Screens Container (Hub & Chat)
         mainContentContainer = new LinearLayout(this);
         mainContentContainer.setOrientation(LinearLayout.VERTICAL);
 
@@ -303,7 +303,6 @@ public class MainActivity extends Activity {
 
         rootFrame.addView(mainContentContainer, new FrameLayout.LayoutParams(-1, -1));
 
-        // 2. Sidebar Backdrop Scrim
         sidebarScrim = new View(this);
         sidebarScrim.setBackgroundColor(Color.argb(120, 0, 0, 0));
         sidebarScrim.setVisibility(View.GONE);
@@ -311,7 +310,6 @@ public class MainActivity extends Activity {
         sidebarScrim.setOnClickListener(v -> closeSidebar());
         rootFrame.addView(sidebarScrim, new FrameLayout.LayoutParams(-1, -1));
 
-        // 3. Sidebar Panel
         sidebarPanel = new LinearLayout(this);
         sidebarPanel.setOrientation(LinearLayout.VERTICAL);
         sidebarPanel.setBackgroundColor(CLAUDE_SURFACE);
@@ -428,7 +426,7 @@ public class MainActivity extends Activity {
         scroll.addView(menuItems);
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        TextView ver = cText("v2.9.5 • Claude Floating Composer & Rich Markdown", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.9.6 • Crash-Proof Fast Markdown & Smooth UI", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -821,7 +819,7 @@ public class MainActivity extends Activity {
 
         root.addView(contentLayout, new FrameLayout.LayoutParams(-1, -1));
 
-        // Floating Bottom Composer Card (Pure White with shadow & transparent surrounding margins)
+        // Floating Bottom Composer Card
         LinearLayout floatingWrapper = new LinearLayout(this);
         floatingWrapper.setOrientation(LinearLayout.VERTICAL);
         floatingWrapper.setBackgroundColor(Color.TRANSPARENT);
@@ -2034,10 +2032,11 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // RICH MARKDOWN MESSAGE CARDS & DEDICATED COPY ACTIONS
+    // HIGH-PERFORMANCE CRASH-PROOF MESSAGE RENDERING
     // ============================================================
     private void addMessageCard(String role, String content, String time) {
         boolean isUser = "user".equalsIgnoreCase(role);
+        final String safeContent = (content == null) ? "" : content;
 
         showEmptyMascotState(false);
 
@@ -2058,11 +2057,12 @@ public class MainActivity extends Activity {
         TextView authorV = cText(author, 12.5f, authorColor, true, false);
         head.addView(authorV, new LinearLayout.LayoutParams(0, -2, 1));
 
-        String shortTime = time.contains("T") && time.length() >= 16 ? time.substring(11, 16) : time;
+        String safeTime = (time == null) ? "" : time;
+        String shortTime = safeTime.contains("T") && safeTime.length() >= 16 ? safeTime.substring(11, 16) : safeTime;
         TextView timeV = cText(shortTime, 11, CLAUDE_TEXT_LIGHT, false, false);
         head.addView(timeV);
 
-        final String rawCleanContent = cleanMarkdownForCopy(content);
+        final String rawCleanContent = cleanMarkdownForCopy(safeContent);
         ImageView copyBtn = cIconButton(R.drawable.ic_content_paste, 16, 28, CLAUDE_TEXT_MUTED);
         copyBtn.setOnClickListener(v -> {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -2072,9 +2072,9 @@ public class MainActivity extends Activity {
         head.addView(copyBtn);
         card.addView(head);
 
-        renderMessageContentWithMedia(card, content, isUser);
+        renderMessageContentWithMedia(card, safeContent, isUser);
 
-        if (!isUser && content != null && !content.trim().isEmpty()) {
+        if (!isUser && !safeContent.trim().isEmpty()) {
             LinearLayout botActionRow = new LinearLayout(this);
             botActionRow.setOrientation(LinearLayout.HORIZONTAL);
             botActionRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
@@ -2110,7 +2110,7 @@ public class MainActivity extends Activity {
     private String cleanMarkdownForCopy(String raw) {
         if (raw == null) return "";
         try {
-            return raw.replaceAll("\\\\[File: [^\\\\n\\\\]]+\\\\]\\\\n?", "").trim();
+            return raw.replaceAll("\\[File: [^\\n\\]]+\\]\\n?", "").trim();
         } catch (Exception e) {
             return raw.trim();
         }
@@ -2119,27 +2119,28 @@ public class MainActivity extends Activity {
     private void renderMessageContentWithMedia(LinearLayout container, String text, boolean isUser) {
         if (text == null || text.isEmpty()) return;
 
-        Pattern imgFilePat = Pattern.compile("\\\\[File:\\\\s*([^\\\\]]+\\\\.(?:png|jpg|jpeg|webp|gif|svg))\\\\]", Pattern.CASE_INSENSITIVE);
-        Matcher m = imgFilePat.matcher(text);
-
         String remainingText = text;
+        try {
+            Pattern imgFilePat = Pattern.compile("\\[File:\\s*([^\\]]+\\.(?:png|jpg|jpeg|webp|gif|svg))\\]", Pattern.CASE_INSENSITIVE);
+            Matcher m = imgFilePat.matcher(text);
 
-        if (m.find()) {
-            String filePath = m.group(1).trim();
-            remainingText = text.substring(0, m.start()) + text.substring(m.end());
+            if (m.find()) {
+                String filePath = m.group(1).trim();
+                remainingText = text.substring(0, m.start()) + text.substring(m.end());
 
-            ImageView imgPreview = new ImageView(this);
-            imgPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            imgPreview.setAdjustViewBounds(true);
-            imgPreview.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
-            imgPreview.setPadding(dp(2), dp(2), dp(2), dp(2));
+                ImageView imgPreview = new ImageView(this);
+                imgPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                imgPreview.setAdjustViewBounds(true);
+                imgPreview.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+                imgPreview.setPadding(dp(2), dp(2), dp(2), dp(2));
 
-            LinearLayout.LayoutParams lpImg = new LinearLayout.LayoutParams(-1, -2);
-            lpImg.setMargins(0, dp(8), 0, dp(8));
-            container.addView(imgPreview, lpImg);
+                LinearLayout.LayoutParams lpImg = new LinearLayout.LayoutParams(-1, -2);
+                lpImg.setMargins(0, dp(8), 0, dp(8));
+                container.addView(imgPreview, lpImg);
 
-            loadImageIntoView(filePath, imgPreview);
-        }
+                loadImageIntoView(filePath, imgPreview);
+            }
+        } catch (Throwable ignored) {}
 
         renderMarkdownIntoContainer(container, remainingText.trim(), isUser);
     }
@@ -2186,15 +2187,14 @@ public class MainActivity extends Activity {
         });
     }
 
-    // ============================================================
-    // ADVANCED MARKDOWN FORMATTER (Tables, Headings, Quotes, Lists)
-    // ============================================================
+    // High-performance single-pass markdown renderer
     private void renderMarkdownIntoContainer(LinearLayout container, String markdown, boolean isUser) {
         if (markdown == null || markdown.isEmpty()) return;
 
         String[] sections = markdown.split("```");
         for (int s = 0; s < sections.length; s++) {
             if (s % 2 == 1) {
+                // Code block widget
                 String block = sections[s];
                 String lang = "CODE";
                 String codeContent = block;
@@ -2247,121 +2247,178 @@ public class MainActivity extends Activity {
                 lp.setMargins(0, dp(8), 0, dp(8));
                 container.addView(codeBox, lp);
             } else {
+                // Parse text sections & group tables
                 String text = sections[s];
                 String[] lines = text.split("\n");
                 ArrayList<String> tableBuffer = new ArrayList<>();
-                ArrayList<String> quoteBuffer = new ArrayList<>();
+                SpannableStringBuilder textBlock = new SpannableStringBuilder();
 
                 for (int i = 0; i < lines.length; i++) {
                     String line = lines[i];
                     String trimmed = line.trim();
 
                     if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
-                        flushQuoteBuffer(container, quoteBuffer);
+                        if (textBlock.length() > 0) {
+                            flushTextBlockToContainer(container, textBlock);
+                            textBlock = new SpannableStringBuilder();
+                        }
                         tableBuffer.add(trimmed);
-                    } else if (trimmed.startsWith(">")) {
-                        flushTableBuffer(container, tableBuffer);
-                        quoteBuffer.add(trimmed.substring(1).trim());
                     } else {
-                        flushTableBuffer(container, tableBuffer);
-                        flushQuoteBuffer(container, quoteBuffer);
-                        renderMarkdownLine(container, line);
+                        if (!tableBuffer.isEmpty()) {
+                            renderMarkdownTable(container, new ArrayList<>(tableBuffer));
+                            tableBuffer.clear();
+                        }
+
+                        if (trimmed.startsWith("---") || trimmed.startsWith("***") || trimmed.startsWith("___")) {
+                            if (textBlock.length() > 0) {
+                                flushTextBlockToContainer(container, textBlock);
+                                textBlock = new SpannableStringBuilder();
+                            }
+                            View divider = new View(this);
+                            divider.setBackgroundColor(CLAUDE_BORDER);
+                            LinearLayout.LayoutParams lpDiv = new LinearLayout.LayoutParams(-1, dp(1));
+                            lpDiv.setMargins(0, dp(10), 0, dp(10));
+                            container.addView(divider, lpDiv);
+                        } else {
+                            SpannableStringBuilder lineSpan = parseInlineMarkdownLine(line);
+                            if (textBlock.length() > 0) {
+                                textBlock.append("\n");
+                            }
+                            textBlock.append(lineSpan);
+                        }
                     }
                 }
 
-                flushTableBuffer(container, tableBuffer);
-                flushQuoteBuffer(container, quoteBuffer);
+                if (!tableBuffer.isEmpty()) {
+                    renderMarkdownTable(container, new ArrayList<>(tableBuffer));
+                    tableBuffer.clear();
+                }
+
+                if (textBlock.length() > 0) {
+                    flushTextBlockToContainer(container, textBlock);
+                }
             }
         }
     }
 
-    private void flushTableBuffer(LinearLayout container, ArrayList<String> tableBuffer) {
-        if (!tableBuffer.isEmpty()) {
-            renderMarkdownTable(container, new ArrayList<>(tableBuffer));
-            tableBuffer.clear();
-        }
+    private void flushTextBlockToContainer(LinearLayout container, SpannableStringBuilder ssb) {
+        if (ssb == null || ssb.length() == 0) return;
+        TextView p = new TextView(this);
+        p.setText(ssb);
+        p.setTextSize(14.5f);
+        p.setTextColor(CLAUDE_TEXT_MAIN);
+        p.setLineSpacing(0, 1.25f);
+        p.setTextIsSelectable(true);
+        p.setPadding(0, dp(2), 0, dp(2));
+
+        final String rawText = ssb.toString();
+        p.setOnLongClickListener(v -> {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(ClipData.newPlainText("Chat text", rawText));
+            Toast.makeText(MainActivity.this, "Teks disalin ke clipboard", Toast.LENGTH_SHORT).show();
+            return true;
+        });
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(2), 0, dp(2));
+        container.addView(p, lp);
     }
 
-    private void flushQuoteBuffer(LinearLayout container, ArrayList<String> quoteBuffer) {
-        if (!quoteBuffer.isEmpty()) {
-            LinearLayout quoteBox = new LinearLayout(this);
-            quoteBox.setOrientation(LinearLayout.VERTICAL);
-            quoteBox.setBackground(cBox(CLAUDE_QUOTE_BG, CLAUDE_TERRACOTTA, 0, 8));
-            quoteBox.setPadding(dp(12), dp(8), dp(10), dp(8));
+    private SpannableStringBuilder parseInlineMarkdownLine(String rawLine) {
+        if (rawLine == null || rawLine.isEmpty()) return new SpannableStringBuilder("");
 
-            for (String q : quoteBuffer) {
-                SpannableStringBuilder span = parseInlineMarkdown(q);
-                TextView qv = new TextView(this);
-                qv.setText(span);
-                qv.setTextSize(13.5f);
-                qv.setTextColor(CLAUDE_TEXT_MUTED);
-                qv.setTypeface(Typeface.SERIF, Typeface.ITALIC);
-                qv.setPadding(dp(4), dp(2), 0, dp(2));
-                quoteBox.addView(qv);
-            }
-
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.setMargins(0, dp(6), 0, dp(6));
-            container.addView(quoteBox, lp);
-            quoteBuffer.clear();
-        }
-    }
-
-    private void renderMarkdownLine(LinearLayout container, String line) {
-        if (line.trim().isEmpty()) return;
+        String line = rawLine;
+        float sizeMultiplier = 1.0f;
+        boolean isHeading = false;
 
         String trimmed = line.trim();
         if (trimmed.startsWith("#### ")) {
-            TextView h4 = cText(trimmed.substring(5), 14, CLAUDE_TEXT_MAIN, true, true);
-            h4.setPadding(0, dp(6), 0, dp(2));
-            container.addView(h4);
+            line = trimmed.substring(5);
+            sizeMultiplier = 1.05f;
+            isHeading = true;
         } else if (trimmed.startsWith("### ")) {
-            TextView h3 = cText(trimmed.substring(4), 15.5f, CLAUDE_TEXT_MAIN, true, true);
-            h3.setPadding(0, dp(8), 0, dp(2));
-            container.addView(h3);
+            line = trimmed.substring(4);
+            sizeMultiplier = 1.12f;
+            isHeading = true;
         } else if (trimmed.startsWith("## ")) {
-            TextView h2 = cText(trimmed.substring(3), 17.5f, CLAUDE_TEXT_MAIN, true, true);
-            h2.setPadding(0, dp(10), 0, dp(3));
-            container.addView(h2);
+            line = trimmed.substring(3);
+            sizeMultiplier = 1.22f;
+            isHeading = true;
         } else if (trimmed.startsWith("# ")) {
-            TextView h1 = cText(trimmed.substring(2), 20f, CLAUDE_TEXT_MAIN, true, true);
-            h1.setPadding(0, dp(12), 0, dp(4));
-            container.addView(h1);
-        } else if (trimmed.startsWith("---") || trimmed.startsWith("***") || trimmed.startsWith("___")) {
-            View divider = new View(this);
-            divider.setBackgroundColor(CLAUDE_BORDER);
-            LinearLayout.LayoutParams lpDiv = new LinearLayout.LayoutParams(-1, dp(1));
-            lpDiv.setMargins(0, dp(10), 0, dp(10));
-            container.addView(divider, lpDiv);
-        } else {
-            SpannableStringBuilder span = parseInlineMarkdown(line);
-            TextView p = new TextView(this);
-            p.setText(span);
-            p.setTextSize(14.5f);
-            p.setTextColor(CLAUDE_TEXT_MAIN);
-            p.setLineSpacing(0, 1.28f);
-            p.setTextIsSelectable(true);
-            p.setPadding(0, dp(3), 0, dp(3));
-
-            final String rawLine = line;
-            p.setOnLongClickListener(v -> {
-                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                cm.setPrimaryClip(ClipData.newPlainText("Chat text", rawLine));
-                Toast.makeText(MainActivity.this, "Teks disalin ke clipboard", Toast.LENGTH_SHORT).show();
-                return true;
-            });
-
-            container.addView(p);
+            line = trimmed.substring(2);
+            sizeMultiplier = 1.35f;
+            isHeading = true;
+        } else if (trimmed.startsWith("* ") || trimmed.startsWith("- ") || trimmed.startsWith("+ ")) {
+            line = "  •  " + trimmed.substring(2);
+        } else if (trimmed.startsWith("- [x]") || trimmed.startsWith("* [x]")) {
+            line = "  ☑  " + trimmed.substring(5);
+        } else if (trimmed.startsWith("- [ ]") || trimmed.startsWith("* [ ]")) {
+            line = "  ☐  " + trimmed.substring(5);
+        } else if (trimmed.startsWith("> ")) {
+            line = "▎ " + trimmed.substring(2);
         }
+
+        SpannableStringBuilder ssb = new SpannableStringBuilder(line);
+
+        // 1. Inline Code (`code`)
+        try {
+            Pattern codePat = Pattern.compile("`([^`\n]+)`");
+            Matcher m = codePat.matcher(ssb.toString());
+            while (m.find()) {
+                int start = m.start();
+                int end = m.end();
+                String inner = m.group(1);
+                ssb.replace(start, end, " " + inner + " ");
+                int newEnd = start + inner.length() + 2;
+                ssb.setSpan(new TypefaceSpan("monospace"), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssb.setSpan(new BackgroundColorSpan(CLAUDE_SURFACE_MUTED), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssb.setSpan(new ForegroundColorSpan(CLAUDE_TERRACOTTA), start, newEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                m = codePat.matcher(ssb.toString());
+                if (start >= ssb.length()) break;
+            }
+        } catch (Throwable ignored) {}
+
+        // 2. Bold (**bold**)
+        try {
+            Pattern boldPat = Pattern.compile("\\*\\*([^\\*\n]+)\\*\\*");
+            Matcher m = boldPat.matcher(ssb.toString());
+            while (m.find()) {
+                int start = m.start();
+                int end = m.end();
+                String inner = m.group(1);
+                ssb.replace(start, end, inner);
+                ssb.setSpan(new StyleSpan(Typeface.BOLD), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                m = boldPat.matcher(ssb.toString());
+                if (start >= ssb.length()) break;
+            }
+        } catch (Throwable ignored) {}
+
+        // 3. Strikethrough (~~text~~)
+        try {
+            Pattern strikePat = Pattern.compile("~~([^~\n]+)~~");
+            Matcher m = strikePat.matcher(ssb.toString());
+            while (m.find()) {
+                int start = m.start();
+                int end = m.end();
+                String inner = m.group(1);
+                ssb.replace(start, end, inner);
+                ssb.setSpan(new StrikethroughSpan(), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                m = strikePat.matcher(ssb.toString());
+                if (start >= ssb.length()) break;
+            }
+        } catch (Throwable ignored) {}
+
+        // Heading styling
+        if (isHeading && ssb.length() > 0) {
+            ssb.setSpan(new StyleSpan(Typeface.BOLD), 0, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ssb.setSpan(new RelativeSizeSpan(sizeMultiplier), 0, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+
+        return ssb;
     }
 
     private void renderMarkdownTable(LinearLayout container, ArrayList<String> tableLines) {
-        if (tableLines.size() < 2) {
-            for (String l : tableLines) {
-                renderMarkdownLine(container, l);
-            }
-            return;
-        }
+        if (tableLines.size() < 2) return;
 
         String headerLine = tableLines.get(0);
         String[] headers = splitTableRow(headerLine);
@@ -2408,7 +2465,7 @@ public class MainActivity extends Activity {
 
             for (int c = 0; c < colCount; c++) {
                 String val = c < cells.length ? cells[c] : "";
-                SpannableStringBuilder span = parseInlineMarkdown(val);
+                SpannableStringBuilder span = parseInlineMarkdownLine(val);
                 TextView cell = new TextView(this);
                 cell.setText(span);
                 cell.setTextSize(12.5f);
@@ -2430,71 +2487,11 @@ public class MainActivity extends Activity {
         String trimmed = row.trim();
         if (trimmed.startsWith("|")) trimmed = trimmed.substring(1);
         if (trimmed.endsWith("|")) trimmed = trimmed.substring(0, trimmed.length() - 1);
-        String[] parts = trimmed.split("\\\\|");
+        String[] parts = trimmed.split("\\|");
         for (int i = 0; i < parts.length; i++) {
             parts[i] = parts[i].trim();
         }
         return parts;
-    }
-
-    private SpannableStringBuilder parseInlineMarkdown(String raw) {
-        String line = raw;
-        if (line.trim().startsWith("* ") || line.trim().startsWith("- ") || line.trim().startsWith("+ ")) {
-            line = "  •  " + line.trim().substring(2);
-        } else if (line.trim().startsWith("- [x]") || line.trim().startsWith("* [x]")) {
-            line = "  ☑  " + line.trim().substring(5);
-        } else if (line.trim().startsWith("- [ ]") || line.trim().startsWith("* [ ]")) {
-            line = "  ☐  " + line.trim().substring(5);
-        }
-
-        SpannableStringBuilder ssb = new SpannableStringBuilder(line);
-
-        // Bold (**bold** or __bold__)
-        try {
-            Pattern boldPat = Pattern.compile("(\\\\*\\\\*|__)(.+?)\\\\1");
-            Matcher boldMat = boldPat.matcher(ssb.toString());
-            while (boldMat.find()) {
-                int start = boldMat.start();
-                int end = boldMat.end();
-                String inner = boldMat.group(2);
-                ssb.replace(start, end, inner);
-                ssb.setSpan(new StyleSpan(Typeface.BOLD), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                boldMat = boldPat.matcher(ssb.toString());
-            }
-        } catch (Exception ignored) {}
-
-        // Strikethrough (~~text~~)
-        try {
-            Pattern strikePat = Pattern.compile("~~(.+?)~~");
-            Matcher strikeMat = strikePat.matcher(ssb.toString());
-            while (strikeMat.find()) {
-                int start = strikeMat.start();
-                int end = strikeMat.end();
-                String inner = strikeMat.group(1);
-                ssb.replace(start, end, inner);
-                ssb.setSpan(new StrikethroughSpan(), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                strikeMat = strikePat.matcher(ssb.toString());
-            }
-        } catch (Exception ignored) {}
-
-        // Inline code (`code`)
-        try {
-            Pattern codePat = Pattern.compile("`([^`]+)`");
-            Matcher codeMat = codePat.matcher(ssb.toString());
-            while (codeMat.find()) {
-                int start = codeMat.start();
-                int end = codeMat.end();
-                String inner = codeMat.group(1);
-                ssb.replace(start, end, " " + inner + " ");
-                int spanEnd = start + inner.length() + 2;
-                ssb.setSpan(new TypefaceSpan("monospace"), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                ssb.setSpan(new BackgroundColorSpan(CLAUDE_SURFACE_MUTED), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                ssb.setSpan(new ForegroundColorSpan(CLAUDE_TERRACOTTA), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                codeMat = codePat.matcher(ssb.toString());
-            }
-        } catch (Exception ignored) {}
-
-        return ssb;
     }
 
     // ============================================================
