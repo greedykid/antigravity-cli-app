@@ -81,12 +81,13 @@ jobs:
           if-no-files-found: error
 
       - name: Create Direct IPA Release
+        uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v0.3.0
+          name: "Antigravity Remote v0.3.0"
+          body: "Rilis versi 0.3.0 dengan Terminal PTY layar penuh dan perbaikan keyboard."
+          files: ios/build/CodexRemote.ipa
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload latest ios/build/CodexRemote.ipa --clobber --repo ${{ github.repository }} || \
-          gh release create latest ios/build/CodexRemote.ipa --title "Antigravity Remote Latest APK" --notes "Latest build APK & IPA" --repo ${{ github.repository }}
-          gh release upload v0.3.0 ios/build/CodexRemote.ipa --clobber --repo ${{ github.repository }} || \
-          gh release create v0.3.0 ios/build/CodexRemote.ipa --title "Antigravity Remote v0.3.0" --notes "Release v0.3.0 with full Terminal PTY and keyboard auto-resize" --repo ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

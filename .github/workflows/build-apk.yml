@@ -57,9 +57,12 @@ jobs:
           name: codex-remote-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Create Direct APK Release
+        uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v0.3.0
+          name: "Antigravity Remote v0.3.0"
+          body: "Rilis versi 0.3.0 dengan Terminal PTY layar penuh dan perbaikan keyboard."
+          files: app/build/outputs/apk/debug/app-debug.apk
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload latest app/build/outputs/apk/debug/app-debug.apk --clobber --repo ${{ github.repository }}
-          gh release upload v0.3.0 app/build/outputs/apk/debug/app-debug.apk --clobber --repo ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
