@@ -1276,7 +1276,41 @@ public class MainActivity extends Activity {
 
     private void showUsageStatsBottomSheet() {
         Dialog dialog = createBaseBottomSheet(true);
-        LinearLayout root = createBottomSheetRoot(dialog, "Models & Quota", true);
+        
+        // Custom Root with Title + Refresh Icon + Close Icon in Header
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(cBottomSheetBox(CLAUDE_SURFACE));
+        root.setPadding(dp(20), dp(10), dp(20), dp(24));
+        root.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // Drag Handle Pill
+        LinearLayout dragArea = new LinearLayout(this);
+        dragArea.setOrientation(LinearLayout.VERTICAL);
+        dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
+        dragArea.setPadding(0, dp(4), 0, dp(14));
+
+        View dragHandle = new View(this);
+        dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
+        dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
+        root.addView(dragArea);
+
+        // Header Row: Title + Refresh Button + Close Button
+        LinearLayout headRow = new LinearLayout(this);
+        headRow.setOrientation(LinearLayout.HORIZONTAL);
+        headRow.setGravity(Gravity.CENTER_VERTICAL);
+        headRow.setPadding(0, 0, 0, dp(10));
+
+        TextView titleView = cText("Models & Quota", 18f, CLAUDE_TEXT_MAIN, true, false);
+        headRow.addView(titleView, new LinearLayout.LayoutParams(0, -2, 1));
+
+        final ImageView btnRefresh = cIconButton(R.drawable.ic_refresh, 18, 36, CLAUDE_TEXT_MUTED);
+        headRow.addView(btnRefresh);
+
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 18, 36, CLAUDE_TEXT_MUTED);
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        headRow.addView(closeBtn);
+        root.addView(headRow);
 
         final String userEmail = "rizkiarbi65@gmail.com";
         final TextView sub = cText("Account: " + userEmail, 13.5f, CLAUDE_TEXT_MAIN, true, false);
@@ -1345,9 +1379,12 @@ public class MainActivity extends Activity {
         dialog.setContentView(root);
         dialog.show();
 
-        // Fetch live Antigravity usage stats from server
-        String endpoint = prefs.getString("url", "").trim();
-        if (!endpoint.isEmpty()) {
+        // Refresh action runnable
+        final Runnable fetchUsageRunnable = () -> {
+            String endpoint = prefs.getString("url", "").trim();
+            if (endpoint.isEmpty()) return;
+
+            btnRefresh.setColorFilter(CLAUDE_TERRACOTTA);
             executor.execute(() -> {
                 try {
                     String usageUrl = endpoint.replace("/api/chat", "/api/usage");
@@ -1368,6 +1405,9 @@ public class MainActivity extends Activity {
                         final JSONObject json = new JSONObject(b.toString());
 
                         mainHandler.post(() -> {
+                            btnRefresh.setColorFilter(CLAUDE_GREEN);
+                            mainHandler.postDelayed(() -> btnRefresh.setColorFilter(CLAUDE_TEXT_MUTED), 1500);
+
                             String acc = json.optString("account", userEmail);
                             sub.setText("Account: " + acc);
 
@@ -1404,10 +1444,22 @@ public class MainActivity extends Activity {
                             addStatRow(detailCard, "Tools Invocations", String.format(Locale.getDefault(), "%,d Aksi", json.optInt("totalTools", 1125)));
                             addStatRow(detailCard, "Connected Host", json.optString("hostname", currentServerHostname));
                         });
+                    } else {
+                        mainHandler.post(() -> btnRefresh.setColorFilter(CLAUDE_TEXT_MUTED));
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                    mainHandler.post(() -> btnRefresh.setColorFilter(CLAUDE_TEXT_MUTED));
+                }
             });
-        }
+        };
+
+        btnRefresh.setOnClickListener(v -> {
+            Toast.makeText(MainActivity.this, "Memperbarui kuota...", Toast.LENGTH_SHORT).show();
+            fetchUsageRunnable.run();
+        });
+
+        // Trigger initial fetch
+        fetchUsageRunnable.run();
     }
 
     private void renderModelGroupHeader(LinearLayout container, String groupTitle, String modelsSub) {
@@ -2083,7 +2135,7 @@ public class MainActivity extends Activity {
 
         chatMessagesList = new LinearLayout(this);
         chatMessagesList.setOrientation(LinearLayout.VERTICAL);
-        chatMessagesList.setGravity(Gravity.BOTTOM);
+        chatMessagesList.setGravity(Gravity.NO_GRAVITY);
 
         buildEmptyMascotState();
         chatMessagesList.addView(emptyMascotView);
@@ -3230,14 +3282,14 @@ public class MainActivity extends Activity {
         pillText.setText(label);
         pillText.setTextSize(14f);
         pillText.setTextColor(CLAUDE_TEXT_MUTED);
-        actionHeader.addView(pillText, new LinearLayout.LayoutParams(0, -2, 1));
+        actionHeader.addView(pillText, new LinearLayout.LayoutParams(-2, -2));
 
-        // Fully dynamic diff badge (+added in green, -deleted in red)
+        // Dynamic diff badge (+added in green, -deleted in red)
         if (totalAdded > 0 || totalDeleted > 0) {
             LinearLayout diffBadge = new LinearLayout(this);
             diffBadge.setOrientation(LinearLayout.HORIZONTAL);
             diffBadge.setGravity(Gravity.CENTER_VERTICAL);
-            diffBadge.setPadding(dp(4), 0, dp(4), 0);
+            diffBadge.setPadding(dp(6), 0, dp(2), 0);
 
             if (totalAdded > 0) {
                 TextView addView = cText("+" + totalAdded + " ", 13f, CLAUDE_GREEN, true, false);
@@ -3247,18 +3299,20 @@ public class MainActivity extends Activity {
                 TextView delView = cText("-" + totalDeleted + " ", 13f, CLAUDE_RED, true, false);
                 diffBadge.addView(delView);
             }
-            actionHeader.addView(diffBadge);
+            actionHeader.addView(diffBadge, new LinearLayout.LayoutParams(-2, -2));
         }
 
         if (isRunning) {
             ProgressBar pb = new ProgressBar(this);
             LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(14), dp(14));
-            lpPb.setMargins(0, 0, dp(6), 0);
+            lpPb.setMargins(dp(6), 0, dp(4), 0);
             actionHeader.addView(pb, lpPb);
         }
 
-        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 16, CLAUDE_TEXT_LIGHT);
-        actionHeader.addView(chevron);
+        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 14, CLAUDE_TEXT_LIGHT);
+        LinearLayout.LayoutParams lpChev = new LinearLayout.LayoutParams(dp(14), dp(14));
+        lpChev.setMargins(dp(4), 0, 0, 0);
+        actionHeader.addView(chevron, lpChev);
 
         pillRow.addView(actionHeader);
 

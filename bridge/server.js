@@ -209,7 +209,7 @@ function getSessions() {
   };
 }
 
-function getTranscript(convId, limit = 80) {
+function getTranscript(convId, limit = 1000) {
   if (!convId) return [];
   const home = os.homedir();
   const file = path.join(home, ".gemini/antigravity-cli/brain", convId, ".system_generated/logs/transcript.jsonl");
@@ -454,7 +454,7 @@ const server = http.createServer((req, res) => {
     const proc = getAgyProcess();
     const sData = getSessions();
     const latest = (sData.sessions && sData.sessions[0]) || null;
-    const turns = latest ? getTranscript(latest.conversationId, 40) : [];
+    const turns = latest ? getTranscript(latest.conversationId, 1000) : [];
     return send(res, 200, {
       ok: true,
       hostname: sData.hostname,
@@ -480,7 +480,7 @@ const server = http.createServer((req, res) => {
     if (!convId) {
       return send(res, 400, { error: "Missing session id parameter" });
     }
-    const msgs = getTranscript(convId, 100);
+    const msgs = getTranscript(convId, 1000);
     const sData = getSessions();
     const foundSession = (sData.sessions || []).find(s => s.conversationId === convId) || { conversationId: convId, title: "Session" };
     return send(res, 200, {
@@ -555,7 +555,7 @@ const server = http.createServer((req, res) => {
         const sData = getSessions();
         const latestSession = (sData.sessions && sData.sessions[0]) || null;
         const activeConvId = conversationId || (latestSession ? latestSession.conversationId : null);
-        const updatedTurns = activeConvId ? getTranscript(activeConvId, 40) : [];
+        const updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
 
         send(res, 200, {
           ok: true,
