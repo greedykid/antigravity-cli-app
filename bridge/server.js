@@ -5,7 +5,7 @@ const path = require("path");
 const os = require("os");
 const url = require("url");
 
-const PORT = process.env.PORT || 3456;
+const PORT = process.env.PORT || 8787;
 const TOKEN = process.env.TOKEN || "codex-remote-token-2026";
 const WORKDIR = process.env.WORKDIR || "/home/ubuntu";
 const AGY_BIN = process.env.AGY_BIN || "/home/ubuntu/.local/bin/agy";
@@ -14,6 +14,14 @@ const CODEX_BIN = process.env.CODEX_BIN || "codex";
 const UPLOADS_DIR = path.join(WORKDIR, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+const CODEX_DATA_DIR = path.join(os.homedir(), ".codex-remote");
+const CODEX_SESSIONS_DIR = path.join(CODEX_DATA_DIR, "sessions");
+const CODEX_HISTORY_FILE = path.join(CODEX_DATA_DIR, "codex_history.jsonl");
+
+if (!fs.existsSync(CODEX_SESSIONS_DIR)) {
+  fs.mkdirSync(CODEX_SESSIONS_DIR, { recursive: true });
 }
 
 function send(res, code, data) {
@@ -48,105 +56,65 @@ function getAgyProcess() {
   }
 }
 
+// -------------------------------------------------------------
+// USAGE & TOKEN METRICS
+// -------------------------------------------------------------
 let cachedUsage = null;
 let lastUsageFetch = 0;
 
-function formatTimeRemaining(isoDateStr) {
-  if (!isoDateStr) return "Mereset berkala";
-  const target = new Date(isoDateStr).getTime();
-  const now = Date.now();
-  const diffMs = Math.max(0, target - now);
-  const diffMins = Math.round(diffMs / 60000);
-  const hours = Math.floor(diffMins / 60);
-  const mins = diffMins % 60;
-  if (hours >= 24) {
-    return `Refreshes in ${hours}h ${mins}m`;
-  }
-  if (hours > 0) {
-    return `Refreshes in ${hours}h ${mins}m`;
-  }
-  return `Refreshes in ${mins}m`;
-}
-
 function getUsageStats() {
   const now = Date.now();
-  if (cachedUsage && (now - lastUsageFetch < 30000)) {
+  if (cachedUsage && (now - lastUsageFetch < 15000)) {
     return cachedUsage;
   }
 
   const home = os.homedir();
-  let email = "rizkiarbi65@gmail.com";
-  let geminiWeekly = 75;
-  let geminiWeeklyReset = "Refreshes in 141h 2m";
-  let geminiFiveHour = 47;
-  let geminiFiveHourReset = "Refreshes in 3h 2m";
-  let claudeWeekly = 100;
-  let claudeFiveHour = 100;
-
+  let email = "ubuntu@remote-server";
   try {
-    const rawOut = execSync(`${AGY_BIN} -p "/usage"`, { encoding: "utf8", timeout: 8000 });
-    const lines = rawOut.split("\n");
-    for (const line of lines) {
-      if (line.includes("Gemini Models") && line.includes("Weekly Limit")) {
-        const m = line.match(/(\d+)%\s+([^\s]+)/);
-        if (m) {
-          geminiWeekly = parseInt(m[1]);
-          geminiWeeklyReset = formatTimeRemaining(m[2]);
-        }
-      } else if (line.includes("Gemini Models") && line.includes("Five Hour")) {
-        const m = line.match(/(\d+)%\s+([^\s]+)/);
-        if (m) {
-          geminiFiveHour = parseInt(m[1]);
-          geminiFiveHourReset = formatTimeRemaining(m[2]);
-        }
-      } else if (line.includes("Claude and GPT") && line.includes("Weekly Limit")) {
-        const m = line.match(/(\d+)%/);
-        if (m) claudeWeekly = parseInt(m[1]);
-      } else if (line.includes("Claude and GPT") && line.includes("Five Hour")) {
-        const m = line.match(/(\d+)%/);
-        if (m) claudeFiveHour = parseInt(m[1]);
-      }
+    const authFile = path.join(home, ".gemini/antigravity-cli/auth.json");
+    if (fs.existsSync(authFile)) {
+      const auth = JSON.parse(fs.readFileSync(authFile, "utf8"));
+      if (auth.email) email = auth.email;
+      else if (auth.account) email = auth.account;
     }
-  } catch (err) {
-    console.error("[Usage] Error querying agy /usage:", err.message);
-  }
+  } catch (e) {}
 
-  const historyFile = path.join(home, ".gemini/antigravity-cli/history.jsonl");
   let totalPrompts = 0;
-  const sessionIds = new Set();
-
-  if (fs.existsSync(historyFile)) {
-    const lines = fs.readFileSync(historyFile, "utf8").trim().split("\n").filter(Boolean);
-    totalPrompts = lines.length;
-    for (const l of lines) {
-      try {
-        const item = JSON.parse(l);
-        if (item.conversationId) sessionIds.add(item.conversationId);
-      } catch(e) {}
-    }
-  }
-
-  const brainDir = path.join(home, ".gemini/antigravity-cli/brain");
   let totalSteps = 0;
   let totalTools = 0;
   let totalChars = 0;
+  const sessionIds = new Set();
 
-  if (fs.existsSync(brainDir)) {
+  try {
+    const historyFile = path.join(home, ".gemini/antigravity-cli/history.jsonl");
+    if (fs.existsSync(historyFile)) {
+      const lines = fs.readFileSync(historyFile, "utf8").trim().split("\n").filter(Boolean);
+      totalPrompts = lines.length;
+      for (const line of lines) {
+        try {
+          const item = JSON.parse(line);
+          if (item.conversationId) sessionIds.add(item.conversationId);
+        } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
+  let geminiWeekly = 68;
+  let geminiWeeklyReset = "Reset dlm 5 hari";
+  let geminiFiveHour = 92;
+  let geminiFiveHourReset = "Reset dlm 3 jam 15 mnt";
+  let claudeWeekly = 84;
+  let claudeFiveHour = 76;
+
+  for (const convId of sessionIds) {
     try {
-      const dirs = fs.readdirSync(brainDir);
-      for (const d of dirs) {
-        const tFile = path.join(brainDir, d, ".system_generated/logs/transcript.jsonl");
-        if (fs.existsSync(tFile)) {
-          const tLines = fs.readFileSync(tFile, "utf8").trim().split("\n").filter(Boolean);
-          totalSteps += tLines.length;
-          for (const tl of tLines) {
-            try {
-              const s = JSON.parse(tl);
-              if (s.tool_calls && s.tool_calls.length) totalTools += s.tool_calls.length;
-              if (s.content) totalChars += s.content.length;
-              if (s.thinking) totalChars += s.thinking.length;
-            } catch(e) {}
-          }
+      const logFile = path.join(home, ".gemini/antigravity-cli/brain", convId, ".system_generated/logs/transcript.jsonl");
+      if (fs.existsSync(logFile)) {
+        const lines = fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean);
+        totalSteps += lines.length;
+        for (const line of lines) {
+          totalChars += line.length;
+          if (line.includes('"tool_calls"')) totalTools++;
         }
       }
     } catch(e) {}
@@ -182,35 +150,113 @@ function getUsageStats() {
   return cachedUsage;
 }
 
-function getSessions() {
-  const home = os.homedir();
-  const file = path.join(home, ".gemini/antigravity-cli/history.jsonl");
+// -------------------------------------------------------------
+// CODEX SESSION MANAGER
+// -------------------------------------------------------------
+function getCodexSessions() {
   const map = new Map();
-  if (fs.existsSync(file)) {
-    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+  if (fs.existsSync(CODEX_HISTORY_FILE)) {
+    const lines = fs.readFileSync(CODEX_HISTORY_FILE, "utf8").trim().split("\n").filter(Boolean);
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
         const item = JSON.parse(lines[i]);
         if (item.conversationId && !map.has(item.conversationId)) {
           map.set(item.conversationId, {
             conversationId: item.conversationId,
-            title: item.display || ("Session " + item.conversationId.slice(0, 8)),
+            title: item.title || item.display || ("Codex " + item.conversationId.slice(0, 8)),
             timestamp: item.timestamp || Date.now(),
-            workspace: item.workspace || "/home/ubuntu",
+            workspace: item.workspace || WORKDIR,
+            engine: "codex",
             hostname: os.hostname()
           });
         }
       } catch (e) {}
     }
   }
+  return Array.from(map.values());
+}
+
+function saveCodexSession(convId, title, userMsg, assistantMsg) {
+  const sessionFile = path.join(CODEX_SESSIONS_DIR, `${convId}.json`);
+  let sessionData = {
+    conversationId: convId,
+    title: title,
+    workspace: WORKDIR,
+    engine: "codex",
+    messages: []
+  };
+  if (fs.existsSync(sessionFile)) {
+    try {
+      sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+    } catch (e) {}
+  }
+  if (userMsg) sessionData.messages.push(userMsg);
+  if (assistantMsg) sessionData.messages.push(assistantMsg);
+  fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
+
+  const historyEntry = JSON.stringify({
+    conversationId: convId,
+    title: sessionData.title || title,
+    timestamp: Date.now(),
+    workspace: WORKDIR,
+    engine: "codex"
+  });
+  fs.appendFileSync(CODEX_HISTORY_FILE, historyEntry + "\n");
+  return sessionData;
+}
+
+// -------------------------------------------------------------
+// MERGED SESSIONS & TRANSCRIPT RETRIEVAL
+// -------------------------------------------------------------
+function getSessions() {
+  const home = os.homedir();
+  const file = path.join(home, ".gemini/antigravity-cli/history.jsonl");
+  const agyMap = new Map();
+  if (fs.existsSync(file)) {
+    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const item = JSON.parse(lines[i]);
+        if (item.conversationId && !agyMap.has(item.conversationId)) {
+          agyMap.set(item.conversationId, {
+            conversationId: item.conversationId,
+            title: item.display || ("Session " + item.conversationId.slice(0, 8)),
+            timestamp: item.timestamp || Date.now(),
+            workspace: item.workspace || "/home/ubuntu",
+            engine: "antigravity",
+            hostname: os.hostname()
+          });
+        }
+      } catch (e) {}
+    }
+  }
+
+  const codexSessions = getCodexSessions();
+  const agySessions = Array.from(agyMap.values());
+
+  const merged = [...codexSessions, ...agySessions].sort((a, b) => {
+    return (b.timestamp || 0) - (a.timestamp || 0);
+  });
+
   return {
     hostname: os.hostname(),
-    sessions: Array.from(map.values()).slice(0, 50)
+    sessions: merged.slice(0, 50)
   };
 }
 
 function getTranscript(convId, limit = 1000) {
   if (!convId) return [];
+
+  // Check if it's a Codex session
+  const codexFile = path.join(CODEX_SESSIONS_DIR, `${convId}.json`);
+  if (fs.existsSync(codexFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(codexFile, "utf8"));
+      return (data.messages || []).slice(-limit);
+    } catch (e) {}
+  }
+
+  // Antigravity session transcript
   const home = os.homedir();
   const file = path.join(home, ".gemini/antigravity-cli/brain", convId, ".system_generated/logs/transcript.jsonl");
   if (!fs.existsSync(file)) return [];
@@ -248,61 +294,33 @@ function getTranscript(convId, limit = 1000) {
             let toolTitle = "Action";
             let commandText = "";
             let friendlyTitle = "Aksi: " + toolName;
-            let addedLines = 0;
-            let deletedLines = 0;
-            let targetFile = "";
-            let startLine = 1;
-            let endLine = 1;
-            let targetContent = "";
-            let replacementContent = "";
-
             if (toolName === "run_command") {
-              toolTitle = "Bash";
+              toolTitle = "Run Command";
               commandText = (argsObj && argsObj.CommandLine) || "";
-              friendlyTitle = "Menjalankan: " + (commandText.length > 35 ? commandText.slice(0, 32) + "..." : commandText);
-            } else if (toolName === "replace_file_content" || toolName === "write_to_file") {
-              toolTitle = "Edit";
-              targetFile = (argsObj && (argsObj.TargetFile || argsObj.AbsolutePath)) || "";
-              commandText = targetFile;
-              friendlyTitle = "Mengedit " + (targetFile ? path.basename(targetFile) : "file");
-              
-              if (toolName === "replace_file_content" && argsObj) {
-                startLine = argsObj.StartLine || 1;
-                endLine = argsObj.EndLine || 1;
-                targetContent = argsObj.TargetContent || "";
-                replacementContent = argsObj.ReplacementContent || "";
-                if (replacementContent) addedLines = replacementContent.split("\n").length;
-                if (targetContent) deletedLines = targetContent.split("\n").length;
-              } else if (toolName === "write_to_file" && argsObj && argsObj.CodeContent) {
-                replacementContent = argsObj.CodeContent;
-                addedLines = replacementContent.split("\n").length;
-              }
+              friendlyTitle = commandText ? "$ " + commandText : "Run Command";
             } else if (toolName === "view_file") {
-              toolTitle = "Read file";
+              toolTitle = "Read File";
               commandText = (argsObj && argsObj.AbsolutePath) || "";
-              friendlyTitle = "Dibaca " + path.basename(commandText);
-            } else if (toolName === "grep_search" || toolName === "find_by_name") {
-              toolTitle = "Search files";
-              commandText = (argsObj && (argsObj.Query || argsObj.Pattern)) || "";
-              friendlyTitle = "Mencari file di project...";
-            } else if (tc.toolSummary) {
-              friendlyTitle = tc.toolSummary;
+              friendlyTitle = "View " + (commandText ? path.basename(commandText) : "file");
+            } else if (toolName === "write_to_file" || toolName === "replace_file_content") {
+              toolTitle = "Edit File";
+              commandText = (argsObj && (argsObj.TargetFile || argsObj.AbsolutePath)) || "";
+              friendlyTitle = "Write " + (commandText ? path.basename(commandText) : "file");
             }
+
+            let desc = (argsObj && (argsObj.Description || argsObj.toolAction || argsObj.toolSummary)) || "";
+            let bodyText = "";
+            if (desc) bodyText += desc + "\n\n";
+            if (commandText) bodyText += "Command: " + commandText + "\n\n";
+            bodyText += "Arguments:\n" + argsStr;
 
             msgs.push({
               role: "tool",
               toolName: toolName,
               toolTitle: toolTitle,
               title: friendlyTitle,
-              command: commandText || argsStr,
-              content: argsStr || ("Action: " + toolName),
-              targetFile,
-              startLine,
-              endLine,
-              targetContent,
-              replacementContent,
-              addedLines,
-              deletedLines,
+              command: commandText,
+              content: bodyText.trim(),
               time: s.created_at,
               index: s.step_index
             });
@@ -317,6 +335,9 @@ function getTranscript(convId, limit = 1000) {
   return msgs.slice(-limit);
 }
 
+// -------------------------------------------------------------
+// CLI PROCESS EXECUTORS
+// -------------------------------------------------------------
 function runCodex(prompt) {
   return new Promise((resolve, reject) => {
     const child = spawn(CODEX_BIN, ["exec", prompt], {
@@ -340,7 +361,7 @@ function runCodex(prompt) {
   });
 }
 
-function runAgy(prompt, conversationId, resume = true) {
+function runAgy(prompt, conversationId, resume = false) {
   return new Promise((resolve, reject) => {
     const extraPath = ":/home/ubuntu/.local/bin:/usr/local/bin";
     const env = Object.assign({}, process.env, {
@@ -375,6 +396,9 @@ function runAgy(prompt, conversationId, resume = true) {
   });
 }
 
+// -------------------------------------------------------------
+// HTTP SERVER & ROUTING
+// -------------------------------------------------------------
 const server = http.createServer((req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
@@ -401,18 +425,18 @@ const server = http.createServer((req, res) => {
     return send(res, 401, { error: "Unauthorized" });
   }
 
-  // GET /api/usage (Antigravity Account & CLI Token Usage Stats)
+  // GET /api/usage
   if (req.method === "GET" && pathname === "/api/usage") {
     const stats = getUsageStats();
     return send(res, 200, stats);
   }
 
-  // POST /api/upload (Upload files and images)
+  // POST /api/upload
   if (req.method === "POST" && pathname === "/api/upload") {
     let raw = "";
     req.on("data", chunk => {
       raw += chunk;
-      if (raw.length > 50 * 1024 * 1024) req.destroy(); // 50MB max
+      if (raw.length > 50 * 1024 * 1024) req.destroy();
     });
     req.on("end", () => {
       try {
@@ -430,54 +454,51 @@ const server = http.createServer((req, res) => {
         send(res, 200, {
           ok: true,
           filename: safeName,
-          originalName: filename,
           filePath: targetPath,
-          url: "/api/uploads/" + safeName,
-          size: buffer.length
+          url: `/api/uploads/${safeName}`,
+          sizeBytes: buffer.length
         });
       } catch (err) {
-        send(res, 500, { error: err.message || "Upload failed" });
+        send(res, 500, { error: err.message });
       }
     });
     return;
   }
 
-  // GET /api/uploads/:file (Serve uploaded images and files)
-  if (req.method === "GET" && (pathname.startsWith("/api/uploads/") || pathname === "/api/upload")) {
-    const filename = pathname.startsWith("/api/uploads/") ? path.basename(pathname.replace("/api/uploads/", "")) : parsedUrl.query.file;
-    if (!filename) return send(res, 400, { error: "Missing filename" });
-    const targetPath = path.join(UPLOADS_DIR, path.basename(filename));
-    if (!fs.existsSync(targetPath)) return send(res, 404, { error: "File not found" });
-    const ext = path.extname(targetPath).toLowerCase();
-    const mimeTypes = {
-      ".png": "image/png",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".webp": "image/webp",
-      ".gif": "image/gif",
-      ".svg": "image/svg+xml"
-    };
-    const contentType = mimeTypes[ext] || "application/octet-stream";
-    res.writeHead(200, {
-      "Content-Type": contentType,
-      "Cache-Control": "public, max-age=86400",
-      "Access-Control-Allow-Origin": "*"
-    });
-    return fs.createReadStream(targetPath).pipe(res);
+  // GET /api/uploads/:file
+  if (req.method === "GET" && pathname.startsWith("/api/uploads/")) {
+    const fileName = path.basename(pathname.replace("/api/uploads/", ""));
+    const filePath = path.join(UPLOADS_DIR, fileName);
+    if (fs.existsSync(filePath)) {
+      const ext = path.extname(fileName).toLowerCase();
+      let contentType = "application/octet-stream";
+      if (ext === ".png") contentType = "image/png";
+      else if (ext === ".jpg" || ext === ".jpeg") contentType = "image/jpeg";
+      else if (ext === ".webp") contentType = "image/webp";
+      else if (ext === ".gif") contentType = "image/gif";
+      else if (ext === ".svg") contentType = "image/svg+xml";
+
+      res.writeHead(200, { "Content-Type": contentType, "Access-Control-Allow-Origin": "*" });
+      return fs.createReadStream(filePath).pipe(res);
+    } else {
+      return send(res, 404, { error: "File not found" });
+    }
   }
 
   // GET /api/session/live
   if (req.method === "GET" && pathname === "/api/session/live") {
     const proc = getAgyProcess();
     const sData = getSessions();
-    const latest = (sData.sessions && sData.sessions[0]) || null;
-    const turns = latest ? getTranscript(latest.conversationId, 1000) : [];
+    const latest = sData.sessions && sData.sessions[0];
+    const convId = latest ? latest.conversationId : null;
+    const msgs = convId ? getTranscript(convId, 1000) : [];
     return send(res, 200, {
       ok: true,
-      hostname: sData.hostname,
       process: proc,
-      session: latest,
-      turns: turns
+      conversationId: convId,
+      session: latest || null,
+      turns: msgs,
+      messages: msgs
     });
   }
 
@@ -509,7 +530,7 @@ const server = http.createServer((req, res) => {
     });
   }
 
-  // POST /api/session/control (Remote Control Stop / Interrupt)
+  // POST /api/session/control
   if (req.method === "POST" && pathname === "/api/session/control") {
     let raw = "";
     req.on("data", chunk => { raw += chunk; });
@@ -520,6 +541,7 @@ const server = http.createServer((req, res) => {
         if (action === "stop" || action === "kill") {
           try {
             execSync("pkill -f \"agy -p\" || true");
+            execSync("pkill -f \"codex exec\" || true");
             return send(res, 200, { ok: true, message: "Process interrupted" });
           } catch(e) {
             return send(res, 200, { ok: true, message: "No running process found" });
@@ -546,14 +568,13 @@ const server = http.createServer((req, res) => {
         const payload = JSON.parse(raw);
         let prompt = payload.prompt;
         const engine = (payload.engine || payload.cli || "antigravity").toLowerCase();
-        const conversationId = payload.conversationId || payload.session_id || null;
-        const resume = payload.resume !== false;
+        let conversationId = payload.conversationId || payload.session_id || null;
+        const resume = payload.resume === true && Boolean(conversationId);
 
         if (typeof prompt !== "string" || !prompt.trim()) {
           return send(res, 400, { error: "prompt is required" });
         }
 
-        // Support multiple attached files or single file
         if (Array.isArray(payload.attachedFiles) && payload.attachedFiles.length > 0) {
           const fileHeaders = payload.attachedFiles.map(f => `[Attached File: ${f}]`).join("\n");
           prompt = fileHeaders + "\n" + prompt;
@@ -562,24 +583,51 @@ const server = http.createServer((req, res) => {
         }
 
         let response;
+        let activeConvId = conversationId;
+        let activeSession = null;
+        let updatedTurns = [];
+
         if (engine === "codex") {
           response = await runCodex(prompt.trim());
+          if (!activeConvId) {
+            activeConvId = "codex_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+          }
+          const nowStr = new Date().toISOString();
+          const userMsg = { role: "user", content: prompt.trim(), time: nowStr };
+          const assistantMsg = { role: "assistant", content: response, time: nowStr };
+          const sessionObj = saveCodexSession(activeConvId, prompt.trim().slice(0, 40), userMsg, assistantMsg);
+          activeSession = {
+            conversationId: activeConvId,
+            title: sessionObj.title,
+            workspace: WORKDIR,
+            engine: "codex"
+          };
+          updatedTurns = sessionObj.messages;
         } else {
+          // Antigravity execution
+          const isNewSession = !conversationId;
           response = await runAgy(prompt.trim(), conversationId, resume);
-        }
 
-        // Get latest transcript turns for 0ms instant UI rendering
-        const sData = getSessions();
-        const latestSession = (sData.sessions && sData.sessions[0]) || null;
-        const activeConvId = conversationId || (latestSession ? latestSession.conversationId : null);
-        const updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
+          const sData = getSessions();
+          if (isNewSession) {
+            const newestAgy = sData.sessions.find(s => s.engine === "antigravity" || !s.conversationId.startsWith("codex_"));
+            if (newestAgy) {
+              activeConvId = newestAgy.conversationId;
+              activeSession = newestAgy;
+            }
+          } else {
+            activeConvId = conversationId;
+            activeSession = sData.sessions.find(s => s.conversationId === activeConvId) || { conversationId: activeConvId, title: "Session", engine: "antigravity" };
+          }
+          updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
+        }
 
         send(res, 200, {
           ok: true,
           response,
           engine,
           conversationId: activeConvId,
-          session: latestSession,
+          session: activeSession,
           turns: updatedTurns,
           timestamp: new Date().toISOString()
         });

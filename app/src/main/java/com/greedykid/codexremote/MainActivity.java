@@ -2516,7 +2516,8 @@ public class MainActivity extends Activity {
         prefs.edit().putString("engine", currentEngine).apply();
         updateRepoTag();
         refreshSettingsValues();
-        Toast.makeText(this, "Engine: " + currentEngine, Toast.LENGTH_SHORT).show();
+        startNewSession();
+        Toast.makeText(this, "Engine beralih ke: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Antigravity CLI" : "Codex CLI"), Toast.LENGTH_SHORT).show();
     }
 
     private void showMoreDropdownMenu(View anchorView) {
@@ -3123,10 +3124,11 @@ public class MainActivity extends Activity {
 
         executor.execute(() -> {
             try {
+                boolean isNewSession = (activeConversationId == null || activeConversationId.isEmpty());
                 JSONObject req = new JSONObject();
                 req.put("prompt", promptToSend);
                 req.put("engine", currentEngine);
-                req.put("resume", true);
+                req.put("resume", !isNewSession);
 
                 if (!filePathsToSend.isEmpty()) {
                     JSONArray arr = new JSONArray();
@@ -3135,7 +3137,7 @@ public class MainActivity extends Activity {
                     req.put("attachedFile", filePathsToSend.get(0));
                 }
 
-                if (activeConversationId != null && !activeConversationId.isEmpty()) {
+                if (!isNewSession) {
                     req.put("conversationId", activeConversationId);
                 }
 
