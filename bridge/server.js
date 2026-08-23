@@ -6,6 +6,10 @@ const os = require("os");
 const url = require("url");
 const crypto = require("crypto");
 const config = require("./config");
+const events = require("./events");
+const files = require("./files");
+const git = require("./git");
+const settings = require("./settings");
 
 const PORT = config.port();
 const HOST = config.bindHost();
@@ -459,12 +463,10 @@ function runCodex(prompt, conversationId, model) {
     if (conversationId) {
       args.push("resume", conversationId);
     }
-    args.push(
-      "--output-last-message", tmpOutputFile,
-      "--dangerously-bypass-approvals-and-sandbox",
-      "--skip-git-repo-check",
-      prompt
-    );
+    args.push("--output-last-message", tmpOutputFile);
+    // Sandbox level comes from settings so it can be tightened from the phone.
+    for (const flag of settings.codexSandboxArgs()) args.push(flag);
+    args.push("--skip-git-repo-check", prompt);
 
     const child = spawn(CODEX_BIN, args, {
       cwd: WORKDIR,
@@ -484,6 +486,7 @@ function runCodex(prompt, conversationId, model) {
           const event = JSON.parse(line);
           if (event.type === "thread.started" && event.thread_id) activeCodexSessionId = event.thread_id;
           if (event.type === "session_meta" && event.payload && event.payload.session_id) activeCodexSessionId = event.payload.session_id;
+          events.broadcast("cli.event", { engine: "codex", conversationId: activeCodexSessionId, event });
         } catch (e) {}
       }
     });
@@ -518,7 +521,9 @@ function runCodex(prompt, conversationId, model) {
         }
       }
 
-      let returnedSessionId = conversationId || null;
+      // With --json the id arrives as a thread.started event, not as text.
+      // Falling back to it is what makes resuming a new session possible.
+      let returnedSessionId = conversationId || activeCodexSessionId || null;
       const m = fullOutput.match(/session id:\s*([a-zA-Z0-9_-]+)/i);
       if (m) {
         returnedSessionId = m[1].trim();
@@ -559,7 +564,11 @@ function runAgy(prompt, conversationId, resume = false, model) {
     });
     let output = "";
     let error = "";
-    child.stdout.on("data", chunk => { output += chunk.toString(); });
+    child.stdout.on("data", chunk => {
+      const text = chunk.toString();
+      output += text;
+      events.broadcast("cli.output", { engine: "antigravity", conversationId, chunk: text });
+    });
     child.stderr.on("data", chunk => { error += chunk.toString(); });
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
@@ -572,6 +581,54 @@ function runAgy(prompt, conversationId, resume = false, model) {
       else reject(new Error((error || output || `Antigravity CLI exited with code ${code}`).trim()));
     });
   });
+}
+
+// -------------------------------------------------------------
+// TRANSCRIPT SEARCH
+// -------------------------------------------------------------
+function searchTranscripts(query, limit) {
+  const needle = query.toLowerCase();
+  const sData = getSessions();
+  const results = [];
+
+  for (const session of sData.sessions || []) {
+    if (results.length >= limit) break;
+
+    // A title hit is worth reporting even when no message body matches.
+    if ((session.title || "").toLowerCase().includes(needle)) {
+      results.push({
+        conversationId: session.conversationId,
+        title: session.title,
+        engine: session.engine,
+        timestamp: session.timestamp,
+        matchIn: "title",
+        snippet: session.title
+      });
+      continue;
+    }
+
+    let turns = [];
+    try { turns = getTranscript(session.conversationId, 1000); } catch (e) { continue; }
+
+    for (const turn of turns) {
+      const content = typeof turn.content === "string" ? turn.content : "";
+      const at = content.toLowerCase().indexOf(needle);
+      if (at === -1) continue;
+
+      const start = Math.max(0, at - 60);
+      results.push({
+        conversationId: session.conversationId,
+        title: session.title,
+        engine: session.engine,
+        timestamp: session.timestamp,
+        matchIn: turn.role || "message",
+        snippet: (start > 0 ? "..." : "") + content.slice(start, at + needle.length + 90).replace(/\s+/g, " ").trim()
+      });
+      break;
+    }
+  }
+
+  return { ok: true, query, count: results.length, results };
 }
 
 // -------------------------------------------------------------
@@ -595,12 +652,102 @@ const server = http.createServer((req, res) => {
       ok: true,
       hostname: os.hostname(),
       engines: ["antigravity", "codex"],
-      features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload", "usage_stats"]
+      features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload",
+                 "usage_stats", "sse", "files", "git", "search", "sandbox_modes"],
+      sandboxMode: settings.load().sandboxMode
     });
   }
 
   if (!authorized(req)) {
     return send(res, 401, { error: "Unauthorized" });
+  }
+
+  // GET /api/events  (Server-Sent Events live stream)
+  if (req.method === "GET" && pathname === "/api/events") {
+    events.addClient(req, res);
+    return;
+  }
+
+  // GET /api/settings  |  POST /api/settings
+  if (pathname === "/api/settings") {
+    if (req.method === "GET") {
+      return send(res, 200, {
+        ok: true,
+        settings: settings.load(),
+        sandboxModes: Object.keys(settings.SANDBOX_MODES).map(key => ({
+          key,
+          label: settings.SANDBOX_MODES[key].label
+        }))
+      });
+    }
+    if (req.method === "POST") {
+      let raw = "";
+      req.on("data", chunk => { raw += chunk; });
+      req.on("end", () => {
+        try {
+          const saved = settings.save(JSON.parse(raw || "{}"));
+          events.broadcast("settings.changed", saved);
+          send(res, 200, { ok: true, settings: saved });
+        } catch (err) {
+          send(res, 400, { error: err.message });
+        }
+      });
+      return;
+    }
+  }
+
+  // GET /api/files?path=...
+  if (req.method === "GET" && pathname === "/api/files") {
+    const result = files.list(WORKDIR, parsedUrl.query.path || ".");
+    return send(res, result.error ? 400 : 200, result);
+  }
+
+  // GET /api/files/read?path=...
+  if (req.method === "GET" && pathname === "/api/files/read") {
+    if (!parsedUrl.query.path) return send(res, 400, { error: "Missing path" });
+    const result = files.read(WORKDIR, parsedUrl.query.path);
+    return send(res, result.error ? 400 : 200, result);
+  }
+
+  // GET /api/git/status  |  /api/git/diff
+  if (req.method === "GET" && pathname === "/api/git/status") {
+    const repo = parsedUrl.query.path ? files.safeResolve(WORKDIR, parsedUrl.query.path) : WORKDIR;
+    if (!repo) return send(res, 400, { error: "Path outside workspace" });
+    return send(res, 200, git.status(repo));
+  }
+
+  if (req.method === "GET" && pathname === "/api/git/diff") {
+    const repo = parsedUrl.query.path ? files.safeResolve(WORKDIR, parsedUrl.query.path) : WORKDIR;
+    if (!repo) return send(res, 400, { error: "Path outside workspace" });
+    return send(res, 200, git.diff(repo, parsedUrl.query.file || null));
+  }
+
+  // POST /api/git/commit  |  /api/git/push
+  if (req.method === "POST" && (pathname === "/api/git/commit" || pathname === "/api/git/push")) {
+    let raw = "";
+    req.on("data", chunk => { raw += chunk; });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const repo = payload.path ? files.safeResolve(WORKDIR, payload.path) : WORKDIR;
+        if (!repo) return send(res, 400, { error: "Path outside workspace" });
+        const result = pathname === "/api/git/commit"
+          ? git.commit(repo, payload.message, payload.addAll !== false)
+          : git.push(repo);
+        events.broadcast("git.changed", { path: payload.path || "." });
+        send(res, result.ok ? 200 : 400, result);
+      } catch (err) {
+        send(res, 500, { error: err.message });
+      }
+    });
+    return;
+  }
+
+  // GET /api/search?q=...
+  if (req.method === "GET" && pathname === "/api/search") {
+    const query = (parsedUrl.query.q || "").trim();
+    if (!query) return send(res, 400, { error: "Missing q parameter" });
+    return send(res, 200, searchTranscripts(query, Number(parsedUrl.query.limit) || 40));
   }
 
   // GET /api/usage
@@ -769,6 +916,13 @@ const server = http.createServer((req, res) => {
         let activeSession = null;
         let updatedTurns = [];
 
+        events.broadcast("task.started", {
+          engine,
+          conversationId,
+          prompt: prompt.trim().slice(0, 200),
+          startedAt: new Date().toISOString()
+        });
+
         if (engine === "codex") {
           const result = await runCodex(prompt.trim(), conversationId, model);
           responseText = result.response;
@@ -807,6 +961,15 @@ const server = http.createServer((req, res) => {
           updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
         }
 
+        events.broadcast("task.finished", {
+          ok: true,
+          engine,
+          conversationId: activeConvId,
+          title: activeSession && activeSession.title ? activeSession.title : "Sesi",
+          summary: (responseText || "").slice(0, 200),
+          finishedAt: new Date().toISOString()
+        });
+
         send(res, 200, {
           ok: true,
           response: responseText,
@@ -818,6 +981,13 @@ const server = http.createServer((req, res) => {
           timestamp: new Date().toISOString()
         });
       } catch (err) {
+        events.broadcast("task.finished", {
+          ok: false,
+          engine,
+          conversationId,
+          error: err.message || "Failed to execute command",
+          finishedAt: new Date().toISOString()
+        });
         send(res, 500, { error: err.message || "Failed to execute command" });
       }
     });
