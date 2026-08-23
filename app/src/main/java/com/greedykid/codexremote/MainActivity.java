@@ -2,6 +2,8 @@ package com.greedykid.codexremote;
 
 import android.Manifest;
 import android.animation.Animator;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
 import android.app.Dialog;
@@ -18,8 +20,11 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Color;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.Camera;
 import android.net.Uri;
@@ -46,6 +51,7 @@ import android.text.style.TypefaceSpan;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -53,6 +59,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.EditText;
@@ -86,11 +93,13 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -157,6 +166,8 @@ public class MainActivity extends Activity {
     private TextView sidebarStatusText;
     private TextView sidebarUserEmail;
     private TextView sidebarDeviceHost;
+    private LinearLayout sidebarRecentContainer;
+    private final Map<Integer, LinearLayout> sidebarNavRows = new LinkedHashMap<>();
     private boolean isSidebarOpen = false;
 
     // View Containers (Screen 0: Kode Hub, Screen 1: Chat, Screen 2: Pengaturan)
@@ -179,6 +190,7 @@ public class MainActivity extends Activity {
     private LinearLayout chatSessionLoadingView;
     private FrameLayout btnScrollToBottom;
     private LinearLayout emptyMascotView;
+    private ObjectAnimator mascotFloatAnimator;
     private EditText promptInput;
     private FrameLayout btnSend;
     private ImageView btnAttach;
@@ -394,7 +406,7 @@ public class MainActivity extends Activity {
         sidebarPanel.setVisibility(View.GONE);
         buildSidebarContent(sidebarPanel);
 
-        FrameLayout.LayoutParams lpSide = new FrameLayout.LayoutParams(dp(300), -1);
+        FrameLayout.LayoutParams lpSide = new FrameLayout.LayoutParams(dp(320), -1);
         lpSide.gravity = Gravity.START;
         rootFrame.addView(sidebarPanel, lpSide);
 
@@ -407,138 +419,256 @@ public class MainActivity extends Activity {
     // SMOOTH ANIMATED SIDEBAR NAVIGATION (No Pro Badge)
     // ============================================================
     private void buildSidebarContent(LinearLayout sidebar) {
-        sidebar.setPadding(dp(22), dp(24), dp(22), dp(20));
+        sidebar.setPadding(0, dp(20), 0, dp(8));
+        sidebarNavRows.clear();
 
-        // 1. Account Profile Top Bar (Clean, no Pro badge)
-        LinearLayout profileCard = new LinearLayout(this);
-        profileCard.setOrientation(LinearLayout.HORIZONTAL);
-        profileCard.setGravity(Gravity.CENTER_VERTICAL);
-        profileCard.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 16));
-        profileCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+        int sidePad = dp(18);
 
-        ImageView avatar = cIcon(R.drawable.ic_person, 20, CLAUDE_TERRACOTTA);
-        profileCard.addView(avatar);
+        // 1. Brand wordmark + quick settings
+        LinearLayout brandRow = new LinearLayout(this);
+        brandRow.setOrientation(LinearLayout.HORIZONTAL);
+        brandRow.setGravity(Gravity.CENTER_VERTICAL);
+        brandRow.setPadding(sidePad + dp(6), dp(6), sidePad, dp(18));
 
-        String userEmail = prefs.getString("user_email", "developer@antigravity.ai");
-        sidebarUserEmail = cText("  " + userEmail, 13.5f, CLAUDE_TEXT_MAIN, true, false);
-        sidebarUserEmail.setSingleLine(true);
-        profileCard.addView(sidebarUserEmail, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView wordmark = cText("Antigravity", 30, CLAUDE_TEXT_MAIN, false, true);
+        brandRow.addView(wordmark, new LinearLayout.LayoutParams(0, -2, 1));
 
-        profileCard.setOnClickListener(v -> {
-            closeSidebar();
-            showScreen(2);
-        });
-        sidebar.addView(profileCard);
+        ImageView brandGear = cIconButton(R.drawable.ic_settings, 20, 38, CLAUDE_TEXT_MUTED);
+        brandGear.setOnClickListener(v -> { closeSidebar(); showScreen(2); });
+        brandRow.addView(brandGear);
+        sidebar.addView(brandRow);
 
-        // 2. Gateway Status Pill
-        LinearLayout statusCard = new LinearLayout(this);
-        statusCard.setOrientation(LinearLayout.VERTICAL);
-        statusCard.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
-        statusCard.setPadding(dp(12), dp(10), dp(12), dp(10));
-        LinearLayout.LayoutParams lpSt = new LinearLayout.LayoutParams(-1, -2);
-        lpSt.setMargins(0, dp(14), 0, dp(16));
-
-        LinearLayout stRow = new LinearLayout(this);
-        stRow.setOrientation(LinearLayout.HORIZONTAL);
-        stRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        sidebarStatusDot = new View(this);
-        sidebarStatusDot.setBackground(cBox(CLAUDE_GREEN, 0, 0, 4));
-        LinearLayout.LayoutParams lpDot = new LinearLayout.LayoutParams(dp(8), dp(8));
-        sidebarStatusDot.setLayoutParams(lpDot);
-        stRow.addView(sidebarStatusDot);
-
-        sidebarStatusText = cText("  Gateway Online", 12, CLAUDE_TEXT_MAIN, true, false);
-        stRow.addView(sidebarStatusText);
-        statusCard.addView(stRow);
-
-        sidebarDeviceHost = cText("Host: " + currentServerHostname, 11.5f, CLAUDE_TEXT_MUTED, false, false);
-        sidebarDeviceHost.setSingleLine(true);
-        LinearLayout.LayoutParams lpE = new LinearLayout.LayoutParams(-1, -2);
-        lpE.setMargins(0, dp(4), 0, 0);
-        statusCard.addView(sidebarDeviceHost, lpE);
-        sidebar.addView(statusCard, lpSt);
-
-        // 3. Navigation Menu Items
+        // 2. Scrollable navigation body
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
-        LinearLayout menuItems = new LinearLayout(this);
-        menuItems.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(10), 0, dp(10), dp(10));
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_code, "Kode (All Sessions)", () -> {
-            closeSidebar();
-            showScreen(0);
-        });
-
-        addSidebarMenuItem(menuItems, R.drawable.ic_chat, "Sesi baru (New Chat)", () -> {
+        addSidebarMenuItem(body, R.drawable.ic_add, "Chat baru", null, -1, true, () -> {
             closeSidebar();
             startNewSession();
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_qr_code, "Scan QR Code Pairing", () -> {
+        addSidebarMenuItem(body, R.drawable.ic_chat, "Obrolan", null, 1, false, () -> {
+            closeSidebar();
+            showScreen(1);
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_code, "Kode", null, 0, false, () -> {
+            closeSidebar();
+            showScreen(0);
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_tune, "Kemampuan",
+                "antigravity".equalsIgnoreCase(currentEngine) ? "Agy" : "Codex", -1, false, this::toggleEngine);
+
+        addSidebarMenuItem(body, R.drawable.ic_qr_code, "Scan QR Pairing", null, -1, false, () -> {
             closeSidebar();
             startQrScanner();
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_content_paste, "Paste Pairing dari Clipboard", () -> {
+        addSidebarMenuItem(body, R.drawable.ic_content_paste, "Paste Pairing", null, -1, false, () -> {
             closeSidebar();
             pasteFromClipboard();
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_tune, "Kemampuan (Engine: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Agy" : "Codex") + ")", () -> {
-            toggleEngine();
-        });
-
-        addSidebarMenuItem(menuItems, R.drawable.ic_settings, "Pengaturan (Settings)", () -> {
+        addSidebarMenuItem(body, R.drawable.ic_settings, "Pengaturan", null, 2, false, () -> {
             closeSidebar();
             showScreen(2);
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_stop, "Hentikan Proses CLI", () -> {
+        // 3. Gateway section (replaces the reference's "starred" block)
+        addSidebarDivider(body);
+        addSidebarSectionHeader(body, "Gateway");
+
+        LinearLayout statusRow = new LinearLayout(this);
+        statusRow.setOrientation(LinearLayout.HORIZONTAL);
+        statusRow.setGravity(Gravity.CENTER_VERTICAL);
+        statusRow.setPadding(dp(14), dp(8), dp(12), dp(8));
+
+        sidebarStatusDot = new View(this);
+        sidebarStatusDot.setBackground(cBox(CLAUDE_GREEN, 0, 0, 4));
+        LinearLayout.LayoutParams lpDot = new LinearLayout.LayoutParams(dp(8), dp(8));
+        lpDot.setMargins(dp(6), 0, dp(14), 0);
+        statusRow.addView(sidebarStatusDot, lpDot);
+
+        LinearLayout statusCol = new LinearLayout(this);
+        statusCol.setOrientation(LinearLayout.VERTICAL);
+        sidebarStatusText = cText("Gateway Online", 14, CLAUDE_TEXT_MAIN, false, false);
+        statusCol.addView(sidebarStatusText);
+        sidebarDeviceHost = cText(currentServerHostname, 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        sidebarDeviceHost.setSingleLine(true);
+        sidebarDeviceHost.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        statusCol.addView(sidebarDeviceHost);
+        statusRow.addView(statusCol, new LinearLayout.LayoutParams(0, -2, 1));
+        body.addView(statusRow, new LinearLayout.LayoutParams(-1, -2));
+
+        addSidebarMenuItem(body, R.drawable.ic_refresh, "Test Ping & Health", null, -1, false, this::checkHealth);
+        addSidebarMenuItem(body, R.drawable.ic_stop, "Hentikan Proses CLI", null, -1, false, () -> {
             closeSidebar();
             stopRunningCliProcess();
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_refresh, "Test Ping & Health", () -> {
-            checkHealth();
-        });
+        // 4. Recent sessions, filled in by fetchHubSessions()
+        addSidebarDivider(body);
+        addSidebarSectionHeader(body, "Terbaru");
+        sidebarRecentContainer = new LinearLayout(this);
+        sidebarRecentContainer.setOrientation(LinearLayout.VERTICAL);
+        body.addView(sidebarRecentContainer, new LinearLayout.LayoutParams(-1, -2));
+        renderSidebarRecent(null);
 
-        scroll.addView(menuItems);
+        scroll.addView(body);
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        TextView ver = cText("Antigravity Remote v2.9.9", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
-        ver.setGravity(Gravity.CENTER);
-        ver.setPadding(0, dp(10), 0, 0);
-        sidebar.addView(ver);
+        // 5. Account footer
+        View footRule = new View(this);
+        footRule.setBackgroundColor(CLAUDE_BORDER);
+        LinearLayout.LayoutParams lpFr = new LinearLayout.LayoutParams(-1, dp(1));
+        lpFr.setMargins(sidePad, 0, sidePad, dp(8));
+        sidebar.addView(footRule, lpFr);
+
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        footer.setPadding(sidePad, dp(8), sidePad - dp(6), dp(8));
+
+        String userEmail = prefs.getString("user_email", "developer@antigravity.ai");
+        footer.addView(buildAvatarBadge(userEmail), new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+        sidebarUserEmail = cText(shortUserName(userEmail), 15, CLAUDE_TEXT_MAIN, false, false);
+        sidebarUserEmail.setSingleLine(true);
+        sidebarUserEmail.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams lpEmail = new LinearLayout.LayoutParams(0, -2, 1);
+        lpEmail.setMargins(dp(12), 0, dp(8), 0);
+        footer.addView(sidebarUserEmail, lpEmail);
+
+        ImageView footGear = cIconButton(R.drawable.ic_settings, 20, 40, CLAUDE_TEXT_MUTED);
+        footGear.setOnClickListener(v -> { closeSidebar(); showScreen(2); });
+        footer.addView(footGear);
+
+        footer.setOnClickListener(v -> { closeSidebar(); showScreen(2); });
+        sidebar.addView(footer);
+
+        updateSidebarActiveState();
     }
 
-    private void addSidebarMenuItem(LinearLayout container, int iconRes, String title, final Runnable action) {
+    // Circular initials badge, e.g. "equinox@..." -> "EQ".
+    private FrameLayout buildAvatarBadge(String email) {
+        FrameLayout frame = new FrameLayout(this);
+        GradientDrawable circle = new GradientDrawable();
+        circle.setShape(GradientDrawable.OVAL);
+        circle.setColor(CLAUDE_TERRACOTTA);
+        frame.setBackground(circle);
+
+        String name = shortUserName(email);
+        String initials = name.length() >= 2 ? name.substring(0, 2) : (name.isEmpty() ? "?" : name);
+        TextView tv = cText(initials.toUpperCase(Locale.ROOT), 13.5f, Color.WHITE, true, false);
+        tv.setGravity(Gravity.CENTER);
+        frame.addView(tv, new FrameLayout.LayoutParams(-1, -1));
+        return frame;
+    }
+
+    private String shortUserName(String email) {
+        if (email == null || email.trim().isEmpty()) return "user";
+        int at = email.indexOf('@');
+        return at > 0 ? email.substring(0, at) : email;
+    }
+
+    private void addSidebarDivider(LinearLayout container) {
+        View v = new View(this);
+        v.setBackgroundColor(CLAUDE_BORDER);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(1));
+        lp.setMargins(dp(8), dp(14), dp(8), dp(12));
+        container.addView(v, lp);
+    }
+
+    private void addSidebarSectionHeader(LinearLayout container, String title) {
+        TextView tv = cText(title, 13f, CLAUDE_TEXT_LIGHT, false, false);
+        tv.setPadding(dp(14), 0, 0, dp(6));
+        container.addView(tv, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    // screenIndex >= 0 marks this row as the active tab for that screen; accent = terracotta styling.
+    private void addSidebarMenuItem(LinearLayout container, int iconRes, String title, String badge,
+                                    int screenIndex, boolean accent, final Runnable action) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(8), dp(11), dp(8), dp(11));
-        row.setBackground(cBox(Color.TRANSPARENT, 0, 0, 10));
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        row.setBackground(cBox(Color.TRANSPARENT, 0, 0, 26));
 
-        ImageView ic = cIcon(iconRes, 22, CLAUDE_TEXT_MAIN);
+        int tint = accent ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MAIN;
+        ImageView ic = cIcon(iconRes, 22, tint);
         row.addView(ic);
 
-        TextView label = cText(title, 14, CLAUDE_TEXT_MAIN, false, false);
-        label.setPadding(dp(14), 0, 0, 0);
+        TextView label = cText(title, 15.5f, tint, false, false);
+        label.setPadding(dp(16), 0, 0, 0);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
         row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+
+        if (badge != null && !badge.isEmpty()) {
+            TextView chip = cText(badge, 11.5f, CLAUDE_TERRACOTTA, true, false);
+            chip.setBackground(cBox(CLAUDE_SURFACE_MUTED, 0, 0, 12));
+            chip.setPadding(dp(10), dp(4), dp(10), dp(4));
+            row.addView(chip, new LinearLayout.LayoutParams(-2, -2));
+        }
 
         row.setOnClickListener(v -> action.run());
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, 0, 0, dp(2));
         container.addView(row, lp);
+
+        if (screenIndex >= 0) sidebarNavRows.put(screenIndex, row);
+    }
+
+    private void updateSidebarActiveState() {
+        for (Map.Entry<Integer, LinearLayout> e : sidebarNavRows.entrySet()) {
+            boolean active = e.getKey() == currentScreen;
+            e.getValue().setBackground(cBox(active ? CLAUDE_BG : Color.TRANSPARENT, 0, 0, 26));
+        }
+    }
+
+    private void renderSidebarRecent(JSONArray sessions) {
+        if (sidebarRecentContainer == null) return;
+        sidebarRecentContainer.removeAllViews();
+
+        if (sessions == null || sessions.length() == 0) {
+            TextView empty = cText("Belum ada sesi", 14, CLAUDE_TEXT_LIGHT, false, false);
+            empty.setPadding(dp(14), dp(8), dp(14), dp(8));
+            sidebarRecentContainer.addView(empty);
+            return;
+        }
+
+        int max = Math.min(6, sessions.length());
+        for (int i = 0; i < max; i++) {
+            JSONObject s = sessions.optJSONObject(i);
+            if (s == null) continue;
+            final String convId = s.optString("conversationId", "");
+            final String title = s.optString("title", "Sesi");
+
+            TextView tv = cText(title, 15, CLAUDE_TEXT_MAIN, false, false);
+            tv.setSingleLine(true);
+            tv.setEllipsize(TextUtils.TruncateAt.END);
+            tv.setPadding(dp(14), dp(11), dp(14), dp(11));
+            tv.setBackground(cBox(Color.TRANSPARENT, 0, 0, 26));
+            tv.setOnClickListener(v -> {
+                closeSidebar();
+                navigatedFromHub = true;
+                openSpecificSession(convId, title);
+            });
+            sidebarRecentContainer.addView(tv, new LinearLayout.LayoutParams(-1, -2));
+        }
     }
 
     private void openSidebar() {
         if (isSidebarOpen) return;
         isSidebarOpen = true;
 
-        final int panelWidth = sidebarPanel.getWidth() > 0 ? sidebarPanel.getWidth() : dp(300);
+        final int panelWidth = sidebarPanel.getWidth() > 0 ? sidebarPanel.getWidth() : dp(320);
 
         sidebarScrim.setVisibility(View.VISIBLE);
         sidebarScrim.animate()
@@ -562,7 +692,7 @@ public class MainActivity extends Activity {
         if (!isSidebarOpen) return;
         isSidebarOpen = false;
 
-        final int panelWidth = sidebarPanel.getWidth() > 0 ? sidebarPanel.getWidth() : dp(300);
+        final int panelWidth = sidebarPanel.getWidth() > 0 ? sidebarPanel.getWidth() : dp(320);
 
         sidebarScrim.animate()
                 .setListener(null)
@@ -597,6 +727,7 @@ public class MainActivity extends Activity {
 
     private void showScreen(int screenIndex) {
         currentScreen = screenIndex;
+        updateSidebarActiveState();
         viewHubContainer.setVisibility(screenIndex == 0 ? View.VISIBLE : View.GONE);
         viewChatContainer.setVisibility(screenIndex == 1 ? View.VISIBLE : View.GONE);
         viewSettingsContainer.setVisibility(screenIndex == 2 ? View.VISIBLE : View.GONE);
@@ -776,7 +907,8 @@ public class MainActivity extends Activity {
                     mainHandler.post(() -> {
                         if (hubDeviceHostText != null) hubDeviceHostText.setText(currentServerHostname);
                         if (hubDeviceStatusText != null) hubDeviceStatusText.setText("Terhubung");
-                        if (sidebarDeviceHost != null) sidebarDeviceHost.setText("Host: " + currentServerHostname);
+                        if (sidebarDeviceHost != null) sidebarDeviceHost.setText(currentServerHostname);
+                        renderSidebarRecent(sessions);
                         renderTimeGroupedSessions(sessions);
                     });
                 }
@@ -2539,21 +2671,42 @@ public class MainActivity extends Activity {
         emptyMascotView = new LinearLayout(this);
         emptyMascotView.setOrientation(LinearLayout.VERTICAL);
         emptyMascotView.setGravity(Gravity.CENTER);
-        emptyMascotView.setPadding(dp(20), dp(80), dp(20), dp(80));
+        emptyMascotView.setPadding(dp(24), dp(56), dp(24), dp(56));
 
-        ImageView spark = cIcon(R.drawable.ic_spark, 56, CLAUDE_TERRACOTTA);
-        emptyMascotView.addView(spark);
+        ImageView mascot = new ImageView(this);
+        mascot.setImageResource(R.drawable.ic_mascot_character);
+        mascot.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams lpMascot = new LinearLayout.LayoutParams(dp(148), dp(148));
+        emptyMascotView.addView(mascot, lpMascot);
 
-        TextView brandName = cText("Antigravity Code", 16, CLAUDE_TEXT_MAIN, true, true);
+        // Gentle idle float so the empty session does not feel static.
+        mascotFloatAnimator = ObjectAnimator.ofFloat(mascot, "translationY", dp(6), dp(-6));
+        mascotFloatAnimator.setDuration(1700);
+        mascotFloatAnimator.setRepeatCount(ValueAnimator.INFINITE);
+        mascotFloatAnimator.setRepeatMode(ValueAnimator.REVERSE);
+        mascotFloatAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+
+        TextView brandName = cText("Antigravity Code", 19, CLAUDE_TEXT_MAIN, true, true);
         brandName.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpBn = new LinearLayout.LayoutParams(-1, -2);
-        lpBn.setMargins(0, dp(14), 0, 0);
+        lpBn.setMargins(0, dp(18), 0, 0);
         emptyMascotView.addView(brandName, lpBn);
+
+        TextView tagline = cText("Siap membantu. Ketik perintah untuk memulai sesi.", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        tagline.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lpTag = new LinearLayout.LayoutParams(-1, -2);
+        lpTag.setMargins(dp(20), dp(8), dp(20), 0);
+        emptyMascotView.addView(tagline, lpTag);
     }
 
     private void showEmptyMascotState(boolean show) {
         if (emptyMascotView != null) {
             emptyMascotView.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+        // Only run the float animation while the mascot is on screen.
+        if (mascotFloatAnimator != null) {
+            if (show && !mascotFloatAnimator.isStarted()) mascotFloatAnimator.start();
+            else if (!show && mascotFloatAnimator.isStarted()) mascotFloatAnimator.cancel();
         }
     }
 
@@ -2608,12 +2761,13 @@ public class MainActivity extends Activity {
 
     private void showMoreDropdownMenu(View anchorView) {
         PopupMenu popup = new PopupMenu(this, anchorView);
-        popup.getMenu().add(0, 1, 0, "Scan QR Code Pairing");
-        popup.getMenu().add(0, 2, 0, "Paste from Clipboard");
-        popup.getMenu().add(0, 3, 0, "Pengaturan (Settings)");
-        popup.getMenu().add(0, 4, 0, "Interrupt / Stop Task");
-        popup.getMenu().add(0, 5, 0, "Refresh Transcript");
-        popup.getMenu().add(0, 6, 0, "Clear to New Session");
+        addDropdownItem(popup, 1, "Scan QR Code Pairing", R.drawable.ic_qr_code, CLAUDE_TEXT_MAIN);
+        addDropdownItem(popup, 2, "Paste from Clipboard", R.drawable.ic_content_paste, CLAUDE_TEXT_MAIN);
+        addDropdownItem(popup, 3, "Pengaturan (Settings)", R.drawable.ic_settings, CLAUDE_TEXT_MAIN);
+        addDropdownItem(popup, 4, "Interrupt / Stop Task", R.drawable.ic_stop, CLAUDE_RED);
+        addDropdownItem(popup, 5, "Refresh Transcript", R.drawable.ic_refresh, CLAUDE_TEXT_MAIN);
+        addDropdownItem(popup, 6, "Clear to New Session", R.drawable.ic_add, CLAUDE_TERRACOTTA);
+        forceShowPopupIcons(popup);
 
         popup.setOnMenuItemClickListener(item -> {
             int id = item.getItemId();
@@ -2626,6 +2780,32 @@ public class MainActivity extends Activity {
             return true;
         });
         popup.show();
+    }
+
+    private void addDropdownItem(PopupMenu popup, int id, String title, int iconRes, int tint) {
+        MenuItem item = popup.getMenu().add(0, id, id, title);
+        Drawable icon = getResources().getDrawable(iconRes, getTheme());
+        if (icon != null) {
+            icon = icon.mutate();
+            icon.setColorFilter(new PorterDuffColorFilter(tint, PorterDuff.Mode.SRC_IN));
+            item.setIcon(icon);
+        }
+    }
+
+    // PopupMenu hides icons by default; setForceShowIcon only exists from API 29.
+    private void forceShowPopupIcons(PopupMenu popup) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            popup.setForceShowIcon(true);
+            return;
+        }
+        try {
+            Field field = PopupMenu.class.getDeclaredField("mPopup");
+            field.setAccessible(true);
+            Object helper = field.get(popup);
+            helper.getClass()
+                    .getDeclaredMethod("setForceShowIcon", boolean.class)
+                    .invoke(helper, true);
+        } catch (Throwable ignored) {}
     }
 
     private void startQrScanner() {
