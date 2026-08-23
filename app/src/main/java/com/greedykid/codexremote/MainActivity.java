@@ -764,8 +764,7 @@ public class MainActivity extends Activity {
                 try {
                     JSONObject req = new JSONObject();
                     req.put("command", cmd);
-                    JSONObject res = executePost(prefs.getString("url", "").replace("/api/chat", "/api/terminal/exec"),
-                            prefs.getString("token", ""), req);
+                    JSONObject res = bridge.post("/api/terminal/exec", req);
                     final String output = res.optString("output", "");
                     mainHandler.post(() -> {
                         outView.append(output.isEmpty() ? "(Selesai tanpa output)\n" : output + "\n");
@@ -809,40 +808,6 @@ public class MainActivity extends Activity {
         dialog.show();
     }
 
-
-    private void showSessionOptionsDialog(final String convId, final String title) {
-        final Dialog dialog = new Dialog(this);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 20));
-        root.setPadding(dp(20), dp(16), dp(20), dp(16));
-
-        TextView t = cText(title, 15f, Theme.TEXT_MAIN, true, false);
-        root.addView(t);
-
-        boolean isPinned = getPinnedSessionIds().contains(convId);
-        LinearLayout optPin = createAttachmentOptionRow(isPinned ? "❌  Batal Sematkan Sesi" : "📌  Sematkan Sesi ke Paling Atas", "Tetap berada di bagian atas daftar");
-        optPin.setOnClickListener(v -> {
-            dialog.dismiss();
-            togglePinSession(convId);
-        });
-        root.addView(optPin);
-
-        LinearLayout optRename = createAttachmentOptionRow("✏️  Ubah Nama Sesi", "Ganti judul sesi ini");
-        optRename.setOnClickListener(v -> {
-            dialog.dismiss();
-            showRenameSessionDialog(convId, title);
-        });
-        root.addView(optRename);
-
-        dialog.setContentView(root);
-        dialog.show();
-    }
 
     // Multi-File Attachment Model
     public static class AttachedMedia {
@@ -1647,7 +1612,7 @@ public class MainActivity extends Activity {
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 hubSearchQuery = s.toString().trim().toLowerCase();
                 if (cachedHubSessionsRaw != null) {
-                    renderHubSessionGroups(cachedHubSessionsRaw);
+                    renderTimeGroupedSessions(cachedHubSessionsRaw);
                 }
             }
             @Override public void afterTextChanged(Editable s) {}
