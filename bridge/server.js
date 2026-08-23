@@ -432,6 +432,28 @@ function getCodexTranscript(sessionId, limit = 1000) {
 // -------------------------------------------------------------
 // SESSIONS & TRANSCRIPT RETRIEVAL
 // -------------------------------------------------------------
+function findLatestAgyConversationId(sinceMs = 0) {
+  const home = os.homedir();
+  const brainDir = path.join(home, ".gemini/antigravity-cli/brain");
+  if (!fs.existsSync(brainDir)) return null;
+  let newestId = null;
+  let newestTime = sinceMs;
+  try {
+    const entries = fs.readdirSync(brainDir, { withFileTypes: true });
+    for (const ent of entries) {
+      if (ent.isDirectory() && ent.name.length >= 8) {
+        const full = path.join(brainDir, ent.name);
+        const stat = fs.statSync(full);
+        if (stat.mtimeMs > newestTime) {
+          newestTime = stat.mtimeMs;
+          newestId = ent.name;
+        }
+      }
+    }
+  } catch (e) {}
+  return newestId;
+}
+
 function getSessions(engineFilter) {
   const home = os.homedir();
   const file = path.join(home, ".gemini/antigravity-cli/history.jsonl");
@@ -453,6 +475,59 @@ function getSessions(engineFilter) {
         }
       } catch (e) {}
     }
+  }
+
+  // Also scan all sessions in ~/.gemini/antigravity-cli/brain/
+  const brainDir = path.join(home, ".gemini/antigravity-cli/brain");
+  if (fs.existsSync(brainDir)) {
+    try {
+      const entries = fs.readdirSync(brainDir, { withFileTypes: true });
+      for (const ent of entries) {
+        if (ent.isDirectory() && ent.name.length >= 8) {
+          const convId = ent.name;
+          const transcriptFile = path.join(brainDir, convId, ".system_generated/logs/transcript.jsonl");
+          let mtime = 0;
+          let title = "Session " + convId.slice(0, 8);
+          try {
+            if (fs.existsSync(transcriptFile)) {
+              const stat = fs.statSync(transcriptFile);
+              mtime = stat.mtimeMs;
+              const fd = fs.openSync(transcriptFile, "r");
+              const buf = Buffer.alloc(4096);
+              const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
+              fs.closeSync(fd);
+              const headText = buf.toString("utf8", 0, bytesRead);
+              const m = headText.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+              if (m && m[1].trim()) {
+                title = m[1].trim().slice(0, 60);
+              }
+            } else {
+              const stat = fs.statSync(path.join(brainDir, convId));
+              mtime = stat.mtimeMs;
+            }
+          } catch (e) {}
+
+          if (!agyMap.has(convId)) {
+            agyMap.set(convId, {
+              conversationId: convId,
+              title: title,
+              timestamp: mtime || Date.now(),
+              workspace: WORKDIR || "/home/ubuntu",
+              engine: "antigravity",
+              hostname: os.hostname()
+            });
+          } else {
+            const existing = agyMap.get(convId);
+            if (mtime && mtime > (existing.timestamp || 0)) {
+              existing.timestamp = mtime;
+            }
+            if (title && !title.startsWith("Session ") && existing.title.startsWith("Session ")) {
+              existing.title = title;
+            }
+          }
+        }
+      }
+    } catch (e) {}
   }
 
   const codexSessions = getCodexSessions();
@@ -701,6 +776,9 @@ function runAgy(prompt, conversationId, resume = false, model, job) {
     args.push("-p", prompt, "--dangerously-skip-permissions");
     if (model && model !== "auto" && model !== "default") args.push("--model", model);
 
+    const startTime = Date.now();
+    let discoveredConvId = conversationId || null;
+
     const child = spawn(AGY_BIN, args, {
       cwd: WORKDIR,
       env,
@@ -713,10 +791,18 @@ function runAgy(prompt, conversationId, resume = false, model, job) {
       lastActivity = Date.now();
       const text = chunk.toString();
       output += text;
+
+      if (!discoveredConvId) {
+        discoveredConvId = findLatestAgyConversationId(startTime - 3000);
+        if (discoveredConvId && job) {
+          jobs.update(job.id, { conversationId: discoveredConvId });
+        }
+      }
+
       events.broadcast("cli.output", {
         jobId: job ? job.id : null,
         engine: "antigravity",
-        conversationId,
+        conversationId: discoveredConvId || conversationId,
         chunk: text
       });
     });
@@ -740,8 +826,20 @@ function runAgy(prompt, conversationId, resume = false, model, job) {
     });
     child.on("close", code => {
       clearInterval(timer);
-      if (code === 0) resolve(output.trim());
-      else reject(new Error((error || output || `Antigravity CLI exited with code ${code}`).trim()));
+      if (!discoveredConvId) {
+        discoveredConvId = findLatestAgyConversationId(startTime - 5000);
+      }
+      if (discoveredConvId && job) {
+        jobs.update(job.id, { conversationId: discoveredConvId });
+      }
+      if (code === 0 || output.trim().length > 0) {
+        resolve({
+          response: output.trim() || "Done.",
+          sessionId: discoveredConvId
+        });
+      } else {
+        reject(new Error((error || output || `Antigravity CLI exited with code ${code}`).trim()));
+      }
     });
   });
 }
@@ -881,21 +979,27 @@ async function runChatJob(job, payload) {
       }
     } else {
       const isNewSession = !conversationId;
-      responseText = await runAgy(prompt, conversationId, resume, model, job);
+      const startTime = Date.now();
+      const result = await runAgy(prompt, conversationId, resume, model, job);
+      responseText = typeof result === "object" ? result.response : result;
+      activeConvId = (typeof result === "object" && result.sessionId) ? result.sessionId : (isNewSession ? findLatestAgyConversationId(startTime - 10000) : conversationId);
 
       const sData = getSessions();
-      if (isNewSession) {
-        const newestAgy = sData.sessions.find(s => s.engine === "antigravity" || !s.conversationId.startsWith("01a02"));
-        if (newestAgy) {
-          activeConvId = newestAgy.conversationId;
-          activeSession = newestAgy;
-        }
-      } else {
-        activeConvId = conversationId;
-        activeSession = sData.sessions.find(s => s.conversationId === activeConvId)
-          || { conversationId: activeConvId, title: "Session", engine: "antigravity" };
+      if (!activeConvId && isNewSession) {
+        const newestAgy = sData.sessions.find(s => s.engine === "antigravity");
+        if (newestAgy) activeConvId = newestAgy.conversationId;
       }
+
+      activeSession = (activeConvId && sData.sessions.find(s => s.conversationId === activeConvId))
+        || { conversationId: activeConvId || "new", title: prompt.slice(0, 40), workspace: WORKDIR, engine: "antigravity" };
+
       updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
+      if (updatedTurns.length === 0) {
+        updatedTurns = [
+          { role: "user", content: prompt, time: new Date(startTime).toISOString() },
+          { role: "assistant", content: responseText, time: new Date().toISOString() }
+        ];
+      }
     }
 
     const result = {

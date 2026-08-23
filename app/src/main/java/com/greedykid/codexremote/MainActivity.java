@@ -6643,7 +6643,6 @@ public class MainActivity extends Activity {
                 mainHandler.post(() -> {
                     activeJobId = null;
                     isLiveTaskRunning = false;
-                    pendingOptimisticUserPrompt = null;
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
@@ -6654,8 +6653,28 @@ public class MainActivity extends Activity {
                     }
                     // The user may have opened another session while this ran;
                     // painting the result now would swap the transcript underneath them.
-                    if (epochAtSend != sessionEpoch) return;
+                    if (epochAtSend != sessionEpoch) {
+                        pendingOptimisticUserPrompt = null;
+                        return;
+                    }
+                    if (!activeId.isEmpty()) {
+                        adoptConversationId(activeId);
+                    }
+                    if (finalRes.has("session")) {
+                        JSONObject sessObj = finalRes.optJSONObject("session");
+                        if (sessObj != null) {
+                            String sTitle = sessObj.optString("title", "");
+                            if (!sTitle.isEmpty()) {
+                                activeSessionTitle = sTitle;
+                                chatTopTitle.setText(activeSessionTitle);
+                            }
+                        }
+                    } else if (activeSessionTitle == null || activeSessionTitle.equals("New session") || activeSessionTitle.isEmpty()) {
+                        activeSessionTitle = promptToSend.length() > 36 ? promptToSend.substring(0, 36) + "..." : promptToSend;
+                        chatTopTitle.setText(activeSessionTitle);
+                    }
                     renderActiveSessionTurns(activeConversationId, finalRes, false);
+                    pendingOptimisticUserPrompt = null;
                 });
             } catch (Exception e) {
                 final String err = e.getMessage() != null ? e.getMessage() : "Koneksi gateway terputus.";
@@ -6898,6 +6917,22 @@ public class MainActivity extends Activity {
             JSONArray turns = json.optJSONArray("turns");
             if (turns == null) {
                 turns = json.optJSONArray("messages");
+            }
+            if ((turns == null || turns.length() == 0) && json.has("response")) {
+                String resp = json.optString("response", "").trim();
+                if (!resp.isEmpty()) {
+                    turns = new JSONArray();
+                    if (pendingOptimisticUserPrompt != null && !pendingOptimisticUserPrompt.isEmpty()) {
+                        JSONObject u = new JSONObject();
+                        u.put("role", "user");
+                        u.put("content", pendingOptimisticUserPrompt);
+                        turns.put(u);
+                    }
+                    JSONObject a = new JSONObject();
+                    a.put("role", "assistant");
+                    a.put("content", resp);
+                    turns.put(a);
+                }
             }
 
             if (turns != null) {
