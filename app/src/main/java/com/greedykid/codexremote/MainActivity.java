@@ -91,28 +91,28 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    // Claude Warm Ivory & Terracotta Color Palette
-    private static final int CLAUDE_BG = Color.rgb(251, 251, 249);             // #FBFBF9 Warm Ivory
-    private static final int CLAUDE_SURFACE = Color.rgb(255, 255, 255);        // #FFFFFF Pure White
-    private static final int CLAUDE_SURFACE_MUTED = Color.rgb(243, 243, 240);  // #F3F3F0 Light Warm Grey
-    private static final int CLAUDE_BORDER = Color.rgb(235, 234, 229);         // #EBEAE5 Subtle Border
-    private static final int CLAUDE_BORDER_DARK = Color.rgb(218, 216, 209);    // #DAD8D1
-    private static final int CLAUDE_CODE_BG = Color.rgb(24, 25, 28);           // #18191C Dark Code Box
-    private static final int CLAUDE_QUOTE_BG = Color.rgb(249, 248, 245);       // #F9F8F5 Warm Quote
+    // Claude Dark Code Theme Palette (Exact Match to Official Claude App)
+    private static final int CLAUDE_BG = Color.rgb(24, 24, 23);               // #181817 Dark Obsidian BG
+    private static final int CLAUDE_SURFACE = Color.rgb(33, 32, 30);          // #21201E Dark Card Surface
+    private static final int CLAUDE_SURFACE_MUTED = Color.rgb(42, 41, 38);    // #2A2926 Dark Badge / Chip
+    private static final int CLAUDE_BORDER = Color.rgb(48, 46, 43);           // #302E2B Subtle Dark Border
+    private static final int CLAUDE_BORDER_DARK = Color.rgb(62, 60, 56);      // #3E3C38
+    private static final int CLAUDE_CODE_BG = Color.rgb(18, 18, 18);          // #121212 Dark Code Box
 
-    private static final int CLAUDE_TEXT_MAIN = Color.rgb(26, 25, 24);         // #1A1918 Deep Charcoal
-    private static final int CLAUDE_TEXT_MUTED = Color.rgb(112, 111, 108);     // #706F6C Slate Grey
-    private static final int CLAUDE_TEXT_LIGHT = Color.rgb(150, 149, 145);     // #969591 Light Slate
+    private static final int CLAUDE_TEXT_MAIN = Color.rgb(237, 236, 232);     // #EDECE8 Warm White
+    private static final int CLAUDE_TEXT_MUTED = Color.rgb(158, 157, 153);    // #9E9D99 Warm Slate Grey
+    private static final int CLAUDE_TEXT_LIGHT = Color.rgb(112, 111, 108);    // #706F6C Deep Slate
 
     private static final int CLAUDE_TERRACOTTA = Color.rgb(217, 107, 67);      // #D96B43 Claude Terracotta Orange
-    private static final int CLAUDE_TERRACOTTA_LIGHT = Color.rgb(250, 235, 229); // #FAECE5 Light Peach
-    private static final int CLAUDE_GREEN = Color.rgb(46, 125, 50);            // #2E7D32 Emerald Green
-    private static final int CLAUDE_GREEN_BG = Color.rgb(234, 247, 237);       // #EAF7ED Light Mint
-    private static final int CLAUDE_AMBER = Color.rgb(230, 124, 0);            // #E67C00 Amber
-    private static final int CLAUDE_AMBER_BG = Color.rgb(254, 243, 224);       // #FEF3E0 Light Amber
-    private static final int CLAUDE_RED = Color.rgb(198, 40, 40);              // #C62828 Ruby Red
+    private static final int CLAUDE_TERRACOTTA_LIGHT = Color.rgb(56, 36, 29); // #38241D Dark Peach Tint
+    private static final int CLAUDE_GREEN = Color.rgb(76, 175, 80);            // #4CAF50 Emerald Green
+    private static final int CLAUDE_GREEN_BG = Color.rgb(27, 48, 30);          // #1B301E Dark Mint
+    private static final int CLAUDE_AMBER = Color.rgb(245, 158, 11);           // #F59E0B Amber
+    private static final int CLAUDE_AMBER_BG = Color.rgb(51, 38, 15);          // #33260F Dark Amber
+    private static final int CLAUDE_RED = Color.rgb(239, 68, 68);              // #EF4444 Red
+    private static final int CLAUDE_BLUE = Color.rgb(59, 130, 246);            // #3B82F6 Active Blue Dot
 
-    private static final int REQ_PICK_FILE = 1001;
+    private static final int REQ_PICK_FILES = 1001;
     private static final int REQ_VOICE_SPEECH = 1002;
     private static final int REQ_CAMERA_PERMISSION = 2001;
 
@@ -122,6 +122,23 @@ public class MainActivity extends Activity {
 
     // Image Bitmap Memory Cache
     private final ConcurrentHashMap<String, Bitmap> imageCache = new ConcurrentHashMap<>();
+
+    // Multi-File Attachment Model
+    public static class AttachedMedia {
+        public String serverPath;
+        public String fileName;
+        public Bitmap bitmap;
+        public boolean isImage;
+
+        public AttachedMedia(String serverPath, String fileName, Bitmap bitmap, boolean isImage) {
+            this.serverPath = serverPath;
+            this.fileName = fileName;
+            this.bitmap = bitmap;
+            this.isImage = isImage;
+        }
+    }
+
+    private final List<AttachedMedia> attachedMediaList = new ArrayList<>();
 
     // Root Frame & Sidebar Navigation
     private FrameLayout rootFrame;
@@ -134,13 +151,13 @@ public class MainActivity extends Activity {
 
     // View Containers (Screen 0: Hub, Screen 1: Chat)
     private LinearLayout mainContentContainer;
-    private LinearLayout viewHubContainer;
+    private FrameLayout viewHubContainer;
     private FrameLayout viewChatContainer;
 
-    // Hub View Components
-    private LinearLayout hubReadyList;
-    private LinearLayout hubActiveList;
-    private LinearLayout hubIdleList;
+    // Hub View Components (Claude Code Sessions)
+    private TextView hubDeviceHostText;
+    private TextView hubDeviceStatusText;
+    private LinearLayout hubSessionGroupsContainer;
     private ProgressBar hubLoadingProgress;
 
     // Chat View Components
@@ -155,17 +172,15 @@ public class MainActivity extends Activity {
     private ImageView btnEnginePill;
     private ImageView btnVoice;
     private TextView repoTagLabel;
-    private LinearLayout attachmentChip;
-    private ImageView attachmentThumb;
-    private TextView attachmentText;
+    private HorizontalScrollView attachmentScrollContainer;
+    private LinearLayout attachmentChipsList;
 
     // Active Session State
     private String activeConversationId = null;
     private String activeSessionTitle = "New session";
     private String currentEngine = "antigravity";
-    private String attachedServerPath = null;
-    private Bitmap attachedLocalBitmap = null;
-    private int currentScreen = 1;
+    private String currentServerHostname = "VM-0-4-ubuntu";
+    private int currentScreen = 0; // Default to Hub
     private boolean navigatedFromHub = false;
 
     // Live Execution & Real-time Sync State
@@ -224,8 +239,8 @@ public class MainActivity extends Activity {
         } else if (currentScreen == 1 && navigatedFromHub) {
             navigatedFromHub = false;
             showScreen(0);
-        } else if (currentScreen == 0) {
-            startNewSession();
+        } else if (currentScreen == 1) {
+            showScreen(0);
         } else {
             super.onBackPressed();
         }
@@ -291,8 +306,7 @@ public class MainActivity extends Activity {
         mainContentContainer = new LinearLayout(this);
         mainContentContainer.setOrientation(LinearLayout.VERTICAL);
 
-        viewHubContainer = new LinearLayout(this);
-        viewHubContainer.setOrientation(LinearLayout.VERTICAL);
+        viewHubContainer = new FrameLayout(this);
         buildHubScreen(viewHubContainer);
         mainContentContainer.addView(viewHubContainer, new LinearLayout.LayoutParams(-1, -1));
 
@@ -304,7 +318,7 @@ public class MainActivity extends Activity {
         rootFrame.addView(mainContentContainer, new FrameLayout.LayoutParams(-1, -1));
 
         sidebarScrim = new View(this);
-        sidebarScrim.setBackgroundColor(Color.argb(120, 0, 0, 0));
+        sidebarScrim.setBackgroundColor(Color.argb(160, 0, 0, 0));
         sidebarScrim.setVisibility(View.GONE);
         sidebarScrim.setAlpha(0f);
         sidebarScrim.setOnClickListener(v -> closeSidebar());
@@ -322,7 +336,7 @@ public class MainActivity extends Activity {
 
         setContentView(rootFrame);
 
-        startNewSession();
+        showScreen(0);
     }
 
     // ============================================================
@@ -397,7 +411,7 @@ public class MainActivity extends Activity {
             startNewSession();
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_history, "All Sessions (Code Hub)", () -> {
+        addSidebarMenuItem(menuItems, R.drawable.ic_history, "All Sessions (Kode)", () -> {
             closeSidebar();
             showScreen(0);
         });
@@ -426,7 +440,7 @@ public class MainActivity extends Activity {
         scroll.addView(menuItems);
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        TextView ver = cText("v2.9.6 • Crash-Proof Fast Markdown & Smooth UI", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.9.7 • Claude Kode Hub & Multi-Upload", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -549,88 +563,105 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SCREEN 1: "Code" SESSIONS HUB
+    // SCREEN 1: CLAUDE CODE SESSIONS HUB ("Kode" UI matching screenshot)
     // ============================================================
-    private void buildHubScreen(LinearLayout parent) {
-        parent.setPadding(dp(18), dp(14), dp(18), dp(16));
+    private void buildHubScreen(FrameLayout root) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(12), dp(18), dp(0));
 
+        // 1. Top Header Bar: Menu + Title "Kode" + Tune/Filter Icon
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(0, dp(4), 0, dp(12));
+        topBar.setPadding(0, dp(4), 0, dp(14));
 
         ImageView menuIcon = cIconButton(R.drawable.ic_menu, 24, 40, CLAUDE_TEXT_MAIN);
         menuIcon.setOnClickListener(v -> openSidebar());
         topBar.addView(menuIcon);
 
-        View spacer = new View(this);
-        topBar.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
+        TextView headerTitle = cText("Kode", 22, CLAUDE_TEXT_MAIN, true, false);
+        headerTitle.setPadding(dp(12), 0, 0, 0);
+        topBar.addView(headerTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
-        LinearLayout qrBtn = new LinearLayout(this);
-        qrBtn.setOrientation(LinearLayout.HORIZONTAL);
-        qrBtn.setGravity(Gravity.CENTER_VERTICAL);
-        qrBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 18));
-        qrBtn.setPadding(dp(12), dp(8), dp(14), dp(8));
-        qrBtn.addView(cIcon(R.drawable.ic_qr_code, 18, CLAUDE_TEXT_MAIN));
-        TextView qrLabel = cText(" QR", 13.5f, CLAUDE_TEXT_MAIN, true, false);
-        qrBtn.addView(qrLabel);
-        qrBtn.setOnClickListener(v -> startQrScanner());
-        LinearLayout.LayoutParams lpQr = new LinearLayout.LayoutParams(-2, -2);
-        lpQr.setMargins(0, 0, dp(10), 0);
-        topBar.addView(qrBtn, lpQr);
+        ImageView tuneBtn = cIconButton(R.drawable.ic_tune, 22, 40, CLAUDE_TEXT_MUTED);
+        tuneBtn.setOnClickListener(v -> showMoreDropdownMenu(tuneBtn));
+        topBar.addView(tuneBtn);
+        content.addView(topBar);
 
-        LinearLayout newBtnTop = new LinearLayout(this);
-        newBtnTop.setOrientation(LinearLayout.HORIZONTAL);
-        newBtnTop.setGravity(Gravity.CENTER_VERTICAL);
-        newBtnTop.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, 0, 0, 18));
-        newBtnTop.setPadding(dp(12), dp(8), dp(14), dp(8));
-        newBtnTop.addView(cIcon(R.drawable.ic_add, 18, CLAUDE_TERRACOTTA));
-        TextView newLabel = cText(" New", 13.5f, CLAUDE_TERRACOTTA, true, false);
-        newBtnTop.addView(newLabel);
-        newBtnTop.setOnClickListener(v -> startNewSession());
-        topBar.addView(newBtnTop);
-        parent.addView(topBar);
-
-        TextView headerTitle = cText("Code", 36, CLAUDE_TEXT_MAIN, true, true);
-        LinearLayout.LayoutParams lpTitle = new LinearLayout.LayoutParams(-1, -2);
-        lpTitle.setMargins(0, dp(4), 0, dp(20));
-        parent.addView(headerTitle, lpTitle);
-
+        // 2. Scrollable Hub Content
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
+        scroll.setClipToPadding(false);
+        scroll.setPadding(0, 0, 0, dp(90)); // Underlay for FAB
 
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout scrollBody = new LinearLayout(this);
+        scrollBody.setOrientation(LinearLayout.VERTICAL);
+
+        // Perangkat (Devices) Section
+        TextView devTitle = cText("Perangkat", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lpDevT = new LinearLayout.LayoutParams(-1, -2);
+        lpDevT.setMargins(0, dp(6), 0, dp(10));
+        scrollBody.addView(devTitle, lpDevT);
+
+        LinearLayout deviceCard = new LinearLayout(this);
+        deviceCard.setOrientation(LinearLayout.VERTICAL);
+        deviceCard.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 16));
+        deviceCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+
+        ImageView laptopIcon = cIcon(R.drawable.ic_laptop, 22, CLAUDE_TEXT_MAIN);
+        deviceCard.addView(laptopIcon);
+
+        hubDeviceHostText = cText("VM-0-4-ubuntu", 15, CLAUDE_TEXT_MAIN, true, false);
+        LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-2, -2);
+        lpH.setMargins(0, dp(12), 0, 0);
+        deviceCard.addView(hubDeviceHostText, lpH);
+
+        hubDeviceStatusText = cText("Terhubung", 12.5f, CLAUDE_GREEN, false, false);
+        LinearLayout.LayoutParams lpS = new LinearLayout.LayoutParams(-2, -2);
+        lpS.setMargins(0, dp(4), 0, 0);
+        deviceCard.addView(hubDeviceStatusText, lpS);
+
+        LinearLayout.LayoutParams lpDevCard = new LinearLayout.LayoutParams(dp(160), -2);
+        lpDevCard.setMargins(0, 0, 0, dp(10));
+        scrollBody.addView(deviceCard, lpDevCard);
 
         hubLoadingProgress = new ProgressBar(this);
-        content.addView(hubLoadingProgress, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        hubLoadingProgress.setVisibility(View.GONE);
+        scrollBody.addView(hubLoadingProgress, new LinearLayout.LayoutParams(dp(28), dp(28)));
 
-        content.addView(createSectionHeader("Ready"));
-        hubReadyList = new LinearLayout(this);
-        hubReadyList.setOrientation(LinearLayout.VERTICAL);
-        content.addView(hubReadyList);
+        // Time-grouped sessions container
+        hubSessionGroupsContainer = new LinearLayout(this);
+        hubSessionGroupsContainer.setOrientation(LinearLayout.VERTICAL);
+        scrollBody.addView(hubSessionGroupsContainer);
 
-        content.addView(createSectionHeader("Live & Active"));
-        hubActiveList = new LinearLayout(this);
-        hubActiveList.setOrientation(LinearLayout.VERTICAL);
-        content.addView(hubActiveList);
+        scroll.addView(scrollBody);
+        content.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        root.addView(content, new FrameLayout.LayoutParams(-1, -1));
 
-        content.addView(createSectionHeader("Idle"));
-        hubIdleList = new LinearLayout(this);
-        hubIdleList.setOrientation(LinearLayout.VERTICAL);
-        content.addView(hubIdleList);
+        // 3. Floating Action Button: "+ Sesi baru" (Bottom Right)
+        LinearLayout fabNew = new LinearLayout(this);
+        fabNew.setOrientation(LinearLayout.HORIZONTAL);
+        fabNew.setGravity(Gravity.CENTER_VERTICAL);
+        fabNew.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 26));
+        fabNew.setPadding(dp(18), dp(12), dp(20), dp(12));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            fabNew.setElevation(dp(8));
+        }
 
-        scroll.addView(content);
-        parent.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-    }
+        ImageView plusIc = cIcon(R.drawable.ic_add, 18, Color.WHITE);
+        fabNew.addView(plusIc);
 
-    private TextView createSectionHeader(String title) {
-        TextView v = cText(title, 13, CLAUDE_TEXT_MUTED, false, false);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(18), 0, dp(8));
-        v.setLayoutParams(lp);
-        return v;
+        TextView fabLabel = cText(" Sesi baru", 14.5f, Color.WHITE, true, false);
+        fabNew.addView(fabLabel);
+
+        fabNew.setOnClickListener(v -> startNewSession());
+
+        FrameLayout.LayoutParams lpFab = new FrameLayout.LayoutParams(-2, -2);
+        lpFab.gravity = Gravity.BOTTOM | Gravity.END;
+        lpFab.setMargins(0, 0, dp(18), dp(20));
+        root.addView(fabNew, lpFab);
     }
 
     private void fetchHubSessions() {
@@ -657,84 +688,184 @@ public class MainActivity extends Activity {
                     String line;
                     while ((line = r.readLine()) != null) b.append(line);
                     JSONObject json = new JSONObject(b.toString());
-                    JSONArray sessions = json.optJSONArray("sessions");
+                    final String hostname = json.optString("hostname", "VM-0-4-ubuntu");
+                    final JSONArray sessions = json.optJSONArray("sessions");
 
-                    mainHandler.post(() -> renderHubSessions(sessions));
+                    mainHandler.post(() -> {
+                        currentServerHostname = hostname;
+                        if (hubDeviceHostText != null) hubDeviceHostText.setText(hostname);
+                        if (hubDeviceStatusText != null) hubDeviceStatusText.setText("Terhubung");
+                        renderTimeGroupedSessions(sessions);
+                    });
                 }
             } catch (Exception e) {
                 mainHandler.post(() -> {
                     if (hubLoadingProgress != null) hubLoadingProgress.setVisibility(View.GONE);
+                    if (hubDeviceStatusText != null) hubDeviceStatusText.setText("Terputus");
                 });
             }
         });
     }
 
-    private void renderHubSessions(JSONArray sessions) {
+    private void renderTimeGroupedSessions(JSONArray sessions) {
         if (hubLoadingProgress != null) hubLoadingProgress.setVisibility(View.GONE);
-        if (hubReadyList != null) hubReadyList.removeAllViews();
-        if (hubActiveList != null) hubActiveList.removeAllViews();
-        if (hubIdleList != null) hubIdleList.removeAllViews();
+        if (hubSessionGroupsContainer != null) hubSessionGroupsContainer.removeAllViews();
 
         if (sessions == null || sessions.length() == 0) {
-            addSessionItemToHub(hubReadyList, "Start a new coding task", "google/antigravity-cli", null, false);
+            addTimeSectionHeader("Hari ini");
+            addSessionCard("Mulai sesi koding baru", "Terhubung • " + currentServerHostname, "Baru", null, true);
             return;
         }
 
-        for (int i = 0; i < sessions.length(); i++) {
-            try {
-                JSONObject s = sessions.getJSONObject(i);
-                final String convId = s.optString("conversationId", "");
-                String title = s.optString("title", "Session");
-                String workspace = s.optString("workspace", "/home/ubuntu");
-                String repoTag = workspace.endsWith("codexcli-remote-app") ? "anthropic/claude-code" : "google/antigravity-cli";
+        long now = System.currentTimeMillis();
+        long oneDay = 24 * 60 * 60 * 1000L;
+        long oneWeek = 7 * oneDay;
+        long oneMonth = 30 * oneDay;
 
-                boolean isMostRecent = (i == 0);
-                if (isMostRecent) {
-                    addSessionItemToHub(hubActiveList, title, repoTag, convId, true);
-                } else if (i < 3) {
-                    addSessionItemToHub(hubReadyList, title, repoTag, convId, false);
-                } else {
-                    addSessionItemToHub(hubIdleList, title, repoTag, convId, false);
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
+        ArrayList<JSONObject> groupToday = new ArrayList<>();
+        ArrayList<JSONObject> groupLastWeek = new ArrayList<>();
+        ArrayList<JSONObject> groupThisMonth = new ArrayList<>();
+        ArrayList<JSONObject> groupOlder = new ArrayList<>();
+
+        for (int i = 0; i < sessions.length(); i++) {
+            JSONObject s = sessions.optJSONObject(i);
+            if (s == null) continue;
+            long ts = s.optLong("timestamp", now - (i * oneDay));
+            long diff = now - ts;
+
+            if (diff < 2 * oneDay) {
+                groupToday.add(s);
+            } else if (diff < oneWeek * 2) {
+                groupLastWeek.add(s);
+            } else if (diff < oneMonth * 2) {
+                groupThisMonth.add(s);
+            } else {
+                groupOlder.add(s);
+            }
+        }
+
+        boolean isFirst = true;
+
+        if (!groupToday.isEmpty()) {
+            addTimeSectionHeader("Hari ini");
+            for (JSONObject s : groupToday) {
+                renderSingleSessionItem(s, isFirst);
+                isFirst = false;
+            }
+        }
+
+        if (!groupLastWeek.isEmpty()) {
+            addTimeSectionHeader("Minggu lalu");
+            for (JSONObject s : groupLastWeek) {
+                renderSingleSessionItem(s, isFirst);
+                isFirst = false;
+            }
+        }
+
+        if (!groupThisMonth.isEmpty()) {
+            addTimeSectionHeader("Bulan ini");
+            for (JSONObject s : groupThisMonth) {
+                renderSingleSessionItem(s, isFirst);
+                isFirst = false;
+            }
+        }
+
+        if (!groupOlder.isEmpty()) {
+            addTimeSectionHeader("Bulan lalu");
+            for (JSONObject s : groupOlder) {
+                renderSingleSessionItem(s, isFirst);
+                isFirst = false;
             }
         }
     }
 
-    private void addSessionItemToHub(LinearLayout container, final String title, String repoTag, final String convId, boolean isOpenBadge) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(0, dp(8), 0, dp(10));
+    private void renderSingleSessionItem(JSONObject s, boolean isMostRecent) {
+        final String convId = s.optString("conversationId", "");
+        String title = s.optString("title", "Sesi");
+        long ts = s.optLong("timestamp", System.currentTimeMillis());
 
-        LinearLayout topRow = new LinearLayout(this);
-        topRow.setOrientation(LinearLayout.HORIZONTAL);
-        topRow.setGravity(Gravity.CENTER_VERTICAL);
+        SimpleDateFormat sdf = new SimpleDateFormat("d MMM", new Locale("id", "ID"));
+        String dateStr = sdf.format(new Date(ts));
 
-        TextView titleView = cText(title, 16, CLAUDE_TEXT_MAIN, true, false);
-        titleView.setLineSpacing(0, 1.15f);
-        topRow.addView(titleView, new LinearLayout.LayoutParams(0, -2, 1));
+        String subText = isMostRecent ? ("Terhubung • " + currentServerHostname) : "Terputus • Kendali jarak jauh";
+        addSessionCard(title, subText, dateStr, convId, isMostRecent);
+    }
 
-        if (isOpenBadge) {
-            TextView openBadge = cText("Open", 11.5f, CLAUDE_GREEN, true, false);
-            openBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
-            openBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
-            topRow.addView(openBadge);
+    private void addTimeSectionHeader(String title) {
+        TextView v = cText(title, 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(18), 0, dp(10));
+        hubSessionGroupsContainer.addView(v, lp);
+    }
+
+    private void addSessionCard(final String title, String subText, String dateStr, final String convId, boolean isConnected) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+        card.setPadding(dp(14), dp(12), dp(16), dp(12));
+
+        // Left Code Icon Badge with optional blue indicator dot
+        FrameLayout badgeFrame = new FrameLayout(this);
+        LinearLayout.LayoutParams lpBadge = new LinearLayout.LayoutParams(dp(42), dp(42));
+        badgeFrame.setLayoutParams(lpBadge);
+
+        View badgeBg = new View(this);
+        badgeBg.setBackground(cBox(CLAUDE_SURFACE_MUTED, 0, 0, 12));
+        badgeFrame.addView(badgeBg, new FrameLayout.LayoutParams(-1, -1));
+
+        ImageView codeIcon = cIcon(R.drawable.ic_code, 20, CLAUDE_TEXT_MUTED);
+        FrameLayout.LayoutParams lpCode = new FrameLayout.LayoutParams(dp(20), dp(20));
+        lpCode.gravity = Gravity.CENTER;
+        badgeFrame.addView(codeIcon, lpCode);
+
+        if (isConnected) {
+            View blueDot = new View(this);
+            blueDot.setBackground(cBox(CLAUDE_BLUE, 0, 0, 4));
+            FrameLayout.LayoutParams lpDot = new FrameLayout.LayoutParams(dp(8), dp(8));
+            lpDot.gravity = Gravity.TOP | Gravity.END;
+            lpDot.setMargins(0, dp(2), dp(2), 0);
+            badgeFrame.addView(blueDot, lpDot);
         }
 
-        row.addView(topRow);
+        card.addView(badgeFrame);
 
-        TextView repoView = cText(repoTag, 13, CLAUDE_TEXT_MUTED, false, false);
-        LinearLayout.LayoutParams lpR = new LinearLayout.LayoutParams(-1, -2);
-        lpR.setMargins(0, dp(2), 0, 0);
-        row.addView(repoView, lpR);
+        // Middle title & status column
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setPadding(dp(12), 0, dp(8), 0);
 
-        row.setOnClickListener(v -> {
+        TextView titleView = cText(title, 14.5f, CLAUDE_TEXT_MAIN, true, false);
+        titleView.setSingleLine(true);
+        textCol.addView(titleView);
+
+        LinearLayout statusRow = new LinearLayout(this);
+        statusRow.setOrientation(LinearLayout.HORIZONTAL);
+        statusRow.setGravity(Gravity.CENTER_VERTICAL);
+        statusRow.setPadding(0, dp(3), 0, 0);
+
+        ImageView statIcon = cIcon(isConnected ? R.drawable.ic_laptop : R.drawable.ic_link_off, 13, isConnected ? CLAUDE_GREEN : CLAUDE_TEXT_MUTED);
+        statusRow.addView(statIcon);
+
+        TextView subView = cText(" " + subText, 12.5f, isConnected ? CLAUDE_GREEN : CLAUDE_TEXT_MUTED, false, false);
+        subView.setSingleLine(true);
+        statusRow.addView(subView);
+
+        textCol.addView(statusRow);
+        card.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1));
+
+        // Right date text
+        TextView dateView = cText(dateStr, 12f, CLAUDE_TEXT_MUTED, false, false);
+        card.addView(dateView);
+
+        card.setOnClickListener(v -> {
             navigatedFromHub = true;
             openSpecificSession(convId, title);
         });
 
-        container.addView(row);
+        LinearLayout.LayoutParams lpCard = new LinearLayout.LayoutParams(-1, -2);
+        lpCard.setMargins(0, 0, 0, dp(10));
+        hubSessionGroupsContainer.addView(card, lpCard);
     }
 
     private void openSpecificSession(String convId, String title) {
@@ -764,7 +895,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SCREEN 2: CHAT VIEW (Floating Composer & Smooth Scroll Underlay)
+    // SCREEN 2: CHAT VIEW (Floating Composer & Multi-Attachment Tray)
     // ============================================================
     private void buildChatScreen(FrameLayout root) {
         LinearLayout contentLayout = new LinearLayout(this);
@@ -776,9 +907,9 @@ public class MainActivity extends Activity {
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setPadding(0, dp(2), 0, dp(8));
 
-        chatNavIcon = cIconButton(R.drawable.ic_menu, 24, 40, CLAUDE_TEXT_MAIN);
+        chatNavIcon = cIconButton(R.drawable.ic_arrow_back, 24, 40, CLAUDE_TEXT_MAIN);
         chatNavIcon.setOnClickListener(v -> {
-            if (navigatedFromHub) {
+            if (navigatedFromHub || currentScreen == 1) {
                 navigatedFromHub = false;
                 showScreen(0);
             } else {
@@ -805,7 +936,7 @@ public class MainActivity extends Activity {
         chatScroll.setFillViewport(true);
         chatScroll.setVerticalScrollBarEnabled(false);
         chatScroll.setClipToPadding(false);
-        chatScroll.setPadding(0, 0, 0, dp(120));
+        chatScroll.setPadding(0, 0, 0, dp(130));
 
         chatMessagesList = new LinearLayout(this);
         chatMessagesList.setOrientation(LinearLayout.VERTICAL);
@@ -819,13 +950,24 @@ public class MainActivity extends Activity {
 
         root.addView(contentLayout, new FrameLayout.LayoutParams(-1, -1));
 
-        // Floating Bottom Composer Card
+        // Floating Bottom Composer Card & Multi-Attachment Tray
         LinearLayout floatingWrapper = new LinearLayout(this);
         floatingWrapper.setOrientation(LinearLayout.VERTICAL);
         floatingWrapper.setBackgroundColor(Color.TRANSPARENT);
 
-        attachmentChip = createAttachmentChip();
-        floatingWrapper.addView(attachmentChip);
+        // Multi-Attachment Horizontal Scroll Tray
+        attachmentScrollContainer = new HorizontalScrollView(this);
+        attachmentScrollContainer.setHorizontalScrollBarEnabled(false);
+        attachmentScrollContainer.setVisibility(View.GONE);
+
+        attachmentChipsList = new LinearLayout(this);
+        attachmentChipsList.setOrientation(LinearLayout.HORIZONTAL);
+        attachmentChipsList.setGravity(Gravity.CENTER_VERTICAL);
+        attachmentScrollContainer.addView(attachmentChipsList, new ViewGroup.LayoutParams(-2, -2));
+
+        LinearLayout.LayoutParams lpAtt = new LinearLayout.LayoutParams(-1, -2);
+        lpAtt.setMargins(0, 0, 0, dp(8));
+        floatingWrapper.addView(attachmentScrollContainer, lpAtt);
 
         LinearLayout composerCard = new LinearLayout(this);
         composerCard.setOrientation(LinearLayout.VERTICAL);
@@ -861,7 +1003,7 @@ public class MainActivity extends Activity {
         bottomRow.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
 
         btnAttach = cIconButton(R.drawable.ic_add, 22, 38, CLAUDE_TEXT_MAIN);
-        btnAttach.setOnClickListener(v -> openFilePicker());
+        btnAttach.setOnClickListener(v -> openMultiFilePicker());
         bottomRow.addView(btnAttach);
 
         btnEnginePill = cIconButton(R.drawable.ic_cloud, 22, 38, CLAUDE_TEXT_MAIN);
@@ -891,43 +1033,6 @@ public class MainActivity extends Activity {
         lpFloat.gravity = Gravity.BOTTOM;
         lpFloat.setMargins(dp(14), 0, dp(14), dp(10));
         root.addView(floatingWrapper, lpFloat);
-    }
-
-    private LinearLayout createAttachmentChip() {
-        LinearLayout chip = new LinearLayout(this);
-        chip.setOrientation(LinearLayout.HORIZONTAL);
-        chip.setGravity(Gravity.CENTER_VERTICAL);
-        chip.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_TERRACOTTA, 1, 16));
-        chip.setPadding(dp(8), dp(6), dp(8), dp(6));
-        chip.setVisibility(View.GONE);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            chip.setElevation(dp(4));
-        }
-
-        attachmentThumb = new ImageView(this);
-        attachmentThumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        attachmentThumb.setBackground(cBox(CLAUDE_SURFACE_MUTED, 0, 0, 8));
-        LinearLayout.LayoutParams lpTh = new LinearLayout.LayoutParams(dp(36), dp(36));
-        attachmentThumb.setLayoutParams(lpTh);
-        chip.addView(attachmentThumb);
-
-        attachmentText = cText(" File Ready", 12.5f, CLAUDE_TERRACOTTA, true, false);
-        attachmentText.setPadding(dp(8), 0, dp(8), 0);
-        attachmentText.setSingleLine(true);
-        chip.addView(attachmentText, new LinearLayout.LayoutParams(0, -2, 1));
-
-        ImageView close = cIconButton(R.drawable.ic_close, 18, 28, CLAUDE_RED);
-        close.setOnClickListener(v -> {
-            chip.setVisibility(View.GONE);
-            attachedServerPath = null;
-            attachedLocalBitmap = null;
-        });
-        chip.addView(close);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(8));
-        chip.setLayoutParams(lp);
-        return chip;
     }
 
     private void buildEmptyMascotState() {
@@ -1342,14 +1447,15 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // ATTACHMENT & IMAGE PREVIEW HANDLING
+    // MULTI-FILE & MULTI-IMAGE SELECTION & TRAY PREVIEW
     // ============================================================
-    private void openFilePicker() {
+    private void openMultiFilePicker() {
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
         intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         try {
-            startActivityForResult(Intent.createChooser(intent, "Select Image or File to Upload"), REQ_PICK_FILE);
+            startActivityForResult(Intent.createChooser(intent, "Pilih Gambar atau File (Bisa Banyak)"), REQ_PICK_FILES);
         } catch (Exception e) {
             Toast.makeText(this, "No file picker available", Toast.LENGTH_SHORT).show();
         }
@@ -1371,8 +1477,21 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode == RESULT_OK && data != null) {
-            if (requestCode == REQ_PICK_FILE && data.getData() != null) {
-                uploadSelectedFile(data.getData());
+            if (requestCode == REQ_PICK_FILES) {
+                ArrayList<Uri> uris = new ArrayList<>();
+                ClipData clipData = data.getClipData();
+                if (clipData != null && clipData.getItemCount() > 0) {
+                    for (int i = 0; i < clipData.getItemCount(); i++) {
+                        ClipData.Item item = clipData.getItemAt(i);
+                        if (item.getUri() != null) uris.add(item.getUri());
+                    }
+                } else if (data.getData() != null) {
+                    uris.add(data.getData());
+                }
+
+                if (!uris.isEmpty()) {
+                    uploadMultipleSelectedFiles(uris);
+                }
             } else if (requestCode == REQ_VOICE_SPEECH) {
                 ArrayList<String> matches = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
                 if (matches != null && !matches.isEmpty()) {
@@ -1384,90 +1503,138 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void uploadSelectedFile(final Uri uri) {
+    private void uploadMultipleSelectedFiles(final List<Uri> uris) {
         String endpoint = prefs.getString("url", "").trim();
         if (endpoint.isEmpty()) {
             showConnectionDialog();
             return;
         }
 
-        Toast.makeText(this, "Uploading file to server...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Mengupload " + uris.size() + " file...", Toast.LENGTH_SHORT).show();
 
-        executor.execute(() -> {
-            try {
-                String fileName = getFileNameFromUri(uri);
-                InputStream is = getContentResolver().openInputStream(uri);
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int len;
-                while ((len = is.read(buf)) != -1) {
-                    bos.write(buf, 0, len);
-                }
-                is.close();
-
-                byte[] fileBytes = bos.toByteArray();
-                String base64Data = Base64.encodeToString(fileBytes, Base64.NO_WRAP);
-
-                Bitmap thumbBmp = null;
+        for (final Uri uri : uris) {
+            executor.execute(() -> {
                 try {
-                    BitmapFactory.Options opts = new BitmapFactory.Options();
-                    opts.inSampleSize = 4;
-                    thumbBmp = BitmapFactory.decodeByteArray(fileBytes, 0, fileBytes.length, opts);
-                } catch (Exception ignored) {}
+                    String fileName = getFileNameFromUri(uri);
+                    InputStream is = getContentResolver().openInputStream(uri);
+                    ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = is.read(buf)) != -1) {
+                        bos.write(buf, 0, len);
+                    }
+                    is.close();
 
-                final Bitmap finalThumb = thumbBmp;
+                    byte[] fileBytes = bos.toByteArray();
+                    String base64Data = Base64.encodeToString(fileBytes, Base64.NO_WRAP);
 
-                String uploadUrl = endpoint.replace("/api/chat", "/api/upload");
-                HttpURLConnection c = (HttpURLConnection) new URL(uploadUrl).openConnection();
-                c.setRequestMethod("POST");
-                c.setConnectTimeout(15000);
-                c.setReadTimeout(60000);
-                c.setDoOutput(true);
-                c.setRequestProperty("Content-Type", "application/json");
-                String token = prefs.getString("token", "");
-                if (!token.isEmpty()) {
-                    c.setRequestProperty("Authorization", "Bearer " + token);
-                }
-
-                JSONObject req = new JSONObject();
-                req.put("filename", fileName);
-                req.put("data", base64Data);
-                c.getOutputStream().write(req.toString().getBytes(StandardCharsets.UTF_8));
-
-                int code = c.getResponseCode();
-                if (code == 200) {
-                    BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
-                    StringBuilder out = new StringBuilder();
-                    String line;
-                    while ((line = r.readLine()) != null) out.append(line);
-                    JSONObject res = new JSONObject(out.toString());
-                    final String serverPath = res.optString("filePath", "");
-                    final String savedName = res.optString("filename", fileName);
-
-                    if (finalThumb != null) {
-                        imageCache.put(serverPath, finalThumb);
-                        imageCache.put(savedName, finalThumb);
+                    Bitmap thumbBmp = null;
+                    boolean isImg = fileName.toLowerCase().matches(".*\\.(png|jpg|jpeg|webp|gif|svg)$");
+                    if (isImg) {
+                        try {
+                            BitmapFactory.Options opts = new BitmapFactory.Options();
+                            opts.inSampleSize = 4;
+                            thumbBmp = BitmapFactory.decodeByteArray(fileBytes, 0, fileBytes.length, opts);
+                        } catch (Exception ignored) {}
                     }
 
-                    mainHandler.post(() -> {
-                        attachedServerPath = serverPath;
-                        attachedLocalBitmap = finalThumb;
-                        attachmentText.setText(" " + savedName);
+                    final Bitmap finalThumb = thumbBmp;
+                    final boolean finalIsImg = isImg;
+
+                    String uploadUrl = endpoint.replace("/api/chat", "/api/upload");
+                    HttpURLConnection c = (HttpURLConnection) new URL(uploadUrl).openConnection();
+                    c.setRequestMethod("POST");
+                    c.setConnectTimeout(15000);
+                    c.setReadTimeout(60000);
+                    c.setDoOutput(true);
+                    c.setRequestProperty("Content-Type", "application/json");
+                    String token = prefs.getString("token", "");
+                    if (!token.isEmpty()) {
+                        c.setRequestProperty("Authorization", "Bearer " + token);
+                    }
+
+                    JSONObject req = new JSONObject();
+                    req.put("filename", fileName);
+                    req.put("data", base64Data);
+                    c.getOutputStream().write(req.toString().getBytes(StandardCharsets.UTF_8));
+
+                    int code = c.getResponseCode();
+                    if (code == 200) {
+                        BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
+                        StringBuilder out = new StringBuilder();
+                        String line;
+                        while ((line = r.readLine()) != null) out.append(line);
+                        JSONObject res = new JSONObject(out.toString());
+                        final String serverPath = res.optString("filePath", "");
+                        final String savedName = res.optString("filename", fileName);
+
                         if (finalThumb != null) {
-                            attachmentThumb.setImageBitmap(finalThumb);
-                            attachmentThumb.setVisibility(View.VISIBLE);
-                        } else {
-                            attachmentThumb.setImageResource(R.drawable.ic_attach_file);
-                            attachmentThumb.setVisibility(View.VISIBLE);
+                            imageCache.put(serverPath, finalThumb);
+                            imageCache.put(savedName, finalThumb);
                         }
-                        attachmentChip.setVisibility(View.VISIBLE);
-                        Toast.makeText(MainActivity.this, "File attached successfully", Toast.LENGTH_SHORT).show();
-                    });
+
+                        mainHandler.post(() -> {
+                            AttachedMedia media = new AttachedMedia(serverPath, savedName, finalThumb, finalIsImg);
+                            attachedMediaList.add(media);
+                            refreshAttachmentTray();
+                        });
+                    }
+                } catch (Exception e) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Upload error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                 }
-            } catch (Exception e) {
-                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Upload error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            });
+        }
+    }
+
+    private void refreshAttachmentTray() {
+        if (attachmentChipsList == null || attachmentScrollContainer == null) return;
+        attachmentChipsList.removeAllViews();
+
+        if (attachedMediaList.isEmpty()) {
+            attachmentScrollContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        attachmentScrollContainer.setVisibility(View.VISIBLE);
+
+        for (int i = 0; i < attachedMediaList.size(); i++) {
+            final AttachedMedia m = attachedMediaList.get(i);
+
+            LinearLayout chip = new LinearLayout(this);
+            chip.setOrientation(LinearLayout.HORIZONTAL);
+            chip.setGravity(Gravity.CENTER_VERTICAL);
+            chip.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_TERRACOTTA, 1, 14));
+            chip.setPadding(dp(6), dp(4), dp(8), dp(4));
+
+            if (m.isImage && m.bitmap != null) {
+                ImageView thumb = new ImageView(this);
+                thumb.setImageBitmap(m.bitmap);
+                thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                thumb.setBackground(cBox(CLAUDE_SURFACE_MUTED, 0, 0, 8));
+                LinearLayout.LayoutParams lpTh = new LinearLayout.LayoutParams(dp(30), dp(30));
+                thumb.setLayoutParams(lpTh);
+                chip.addView(thumb);
+            } else {
+                ImageView docIcon = cIcon(R.drawable.ic_attach_file, 20, CLAUDE_TERRACOTTA);
+                chip.addView(docIcon);
             }
-        });
+
+            TextView nameView = cText(" " + (m.fileName.length() > 18 ? m.fileName.substring(0, 15) + "..." : m.fileName), 12f, CLAUDE_TERRACOTTA, true, false);
+            nameView.setPadding(dp(4), 0, dp(4), 0);
+            nameView.setSingleLine(true);
+            chip.addView(nameView);
+
+            ImageView closeBtn = cIconButton(R.drawable.ic_close, 14, 24, CLAUDE_TEXT_MUTED);
+            closeBtn.setOnClickListener(v -> {
+                attachedMediaList.remove(m);
+                refreshAttachmentTray();
+            });
+            chip.addView(closeBtn);
+
+            LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(-2, -2);
+            lpC.setMargins(0, 0, dp(8), 0);
+            attachmentChipsList.addView(chip, lpC);
+        }
     }
 
     private String getFileNameFromUri(Uri uri) {
@@ -1489,7 +1656,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // REAL-TIME LIVE CHAT EXECUTION & INSTANT RESPONSE RENDERING
+    // REAL-TIME LIVE CHAT EXECUTION & MULTI-ATTACHMENT DISPATCH
     // ============================================================
     private void sendClaudePrompt() {
         String text = promptInput.getText().toString().trim();
@@ -1498,13 +1665,19 @@ public class MainActivity extends Activity {
             showConnectionDialog();
             return;
         }
-        if (text.isEmpty() && attachedServerPath == null) return;
+        if (text.isEmpty() && attachedMediaList.isEmpty()) return;
         if (btnSend.getTag() != null) return;
 
-        final String file = attachedServerPath;
-        attachedServerPath = null;
-        attachedLocalBitmap = null;
-        if (attachmentChip != null) attachmentChip.setVisibility(View.GONE);
+        final ArrayList<String> filePathsToSend = new ArrayList<>();
+        final StringBuilder fileHeaders = new StringBuilder();
+
+        for (AttachedMedia m : attachedMediaList) {
+            filePathsToSend.add(m.serverPath);
+            fileHeaders.append("[File: ").append(m.serverPath).append("]\n");
+        }
+
+        attachedMediaList.clear();
+        refreshAttachmentTray();
 
         showEmptyMascotState(false);
 
@@ -1513,7 +1686,7 @@ public class MainActivity extends Activity {
         promptInput.setEnabled(false);
         isLiveTaskRunning = true;
 
-        String displayText = (file != null ? "[File: " + file + "]\n" : "") + text;
+        String displayText = (fileHeaders.length() > 0 ? fileHeaders.toString() : "") + text;
         addMessageCard("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
         promptInput.setText("");
 
@@ -1522,7 +1695,6 @@ public class MainActivity extends Activity {
         startAutoRefresh();
 
         final String promptToSend = text;
-        final String fileToSend = file;
 
         executor.execute(() -> {
             try {
@@ -1530,9 +1702,14 @@ public class MainActivity extends Activity {
                 req.put("prompt", promptToSend);
                 req.put("engine", currentEngine);
                 req.put("resume", true);
-                if (fileToSend != null) {
-                    req.put("attachedFile", fileToSend);
+
+                if (!filePathsToSend.isEmpty()) {
+                    JSONArray arr = new JSONArray();
+                    for (String f : filePathsToSend) arr.put(f);
+                    req.put("attachedFiles", arr);
+                    req.put("attachedFile", filePathsToSend.get(0));
                 }
+
                 if (activeConversationId != null && !activeConversationId.isEmpty()) {
                     req.put("conversationId", activeConversationId);
                 }
@@ -2124,9 +2301,9 @@ public class MainActivity extends Activity {
             Pattern imgFilePat = Pattern.compile("\\[File:\\s*([^\\]]+\\.(?:png|jpg|jpeg|webp|gif|svg))\\]", Pattern.CASE_INSENSITIVE);
             Matcher m = imgFilePat.matcher(text);
 
-            if (m.find()) {
+            while (m.find()) {
                 String filePath = m.group(1).trim();
-                remainingText = text.substring(0, m.start()) + text.substring(m.end());
+                remainingText = remainingText.replace(m.group(0), "");
 
                 ImageView imgPreview = new ImageView(this);
                 imgPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -2460,7 +2637,7 @@ public class MainActivity extends Activity {
 
             LinearLayout dataRow = new LinearLayout(this);
             dataRow.setOrientation(LinearLayout.HORIZONTAL);
-            dataRow.setBackgroundColor(r % 2 == 0 ? CLAUDE_SURFACE : Color.rgb(250, 250, 248));
+            dataRow.setBackgroundColor(r % 2 == 0 ? CLAUDE_SURFACE : Color.rgb(38, 37, 34));
             dataRow.setPadding(dp(8), dp(6), dp(8), dp(6));
 
             for (int c = 0; c < colCount; c++) {

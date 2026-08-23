@@ -5,28 +5,25 @@ const path = require("path");
 const os = require("os");
 const url = require("url");
 
-const PORT = Number(process.env.PORT || 8787);
-const HOST = process.env.BRIDGE_HOST || "0.0.0.0";
-const TOKEN = process.env.REMOTE_TOKEN || "";
+const PORT = process.env.PORT || 3456;
+const TOKEN = process.env.TOKEN || "codex-remote-token-2026";
+const WORKDIR = process.env.WORKDIR || "/home/ubuntu";
+const AGY_BIN = process.env.AGY_BIN || "/home/ubuntu/.local/bin/agy";
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
-const AGY_BIN = process.env.AGY_BIN || "agy";
-const WORKDIR = process.env.CODEX_WORKDIR || process.cwd();
-const UPLOADS_DIR = path.join(os.homedir(), "uploads");
 
+const UPLOADS_DIR = path.join(WORKDIR, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {
-  try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (e) {}
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-function send(res, status, body) {
-  const data = JSON.stringify(body);
-  res.writeHead(status, {
+function send(res, code, data) {
+  res.writeHead(code, {
     "Content-Type": "application/json",
-    "Content-Length": Buffer.byteLength(data),
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
   });
-  res.end(data);
+  res.end(JSON.stringify(data));
 }
 
 function authorized(req) {
@@ -54,23 +51,28 @@ function getAgyProcess() {
 function getSessions() {
   const home = os.homedir();
   const file = path.join(home, ".gemini/antigravity-cli/history.jsonl");
-  if (!fs.existsSync(file)) return [];
-  const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
   const map = new Map();
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try {
-      const item = JSON.parse(lines[i]);
-      if (item.conversationId && !map.has(item.conversationId)) {
-        map.set(item.conversationId, {
-          conversationId: item.conversationId,
-          title: item.display || ("Session " + item.conversationId.slice(0, 8)),
-          timestamp: item.timestamp || Date.now(),
-          workspace: item.workspace || "/home/ubuntu"
-        });
-      }
-    } catch (e) {}
+  if (fs.existsSync(file)) {
+    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const item = JSON.parse(lines[i]);
+        if (item.conversationId && !map.has(item.conversationId)) {
+          map.set(item.conversationId, {
+            conversationId: item.conversationId,
+            title: item.display || ("Session " + item.conversationId.slice(0, 8)),
+            timestamp: item.timestamp || Date.now(),
+            workspace: item.workspace || "/home/ubuntu",
+            hostname: os.hostname()
+          });
+        }
+      } catch (e) {}
+    }
   }
-  return Array.from(map.values()).slice(0, 30);
+  return {
+    hostname: os.hostname(),
+    sessions: Array.from(map.values()).slice(0, 50)
+  };
 }
 
 function getTranscript(convId, limit = 80) {
@@ -143,7 +145,7 @@ function getTranscript(convId, limit = 80) {
 
 function runCodex(prompt) {
   return new Promise((resolve, reject) => {
-    const child = spawn(CODEX_BIN, ["exec", "--skip-git-repo-check", prompt], {
+    const child = spawn(CODEX_BIN, ["exec", prompt], {
       cwd: WORKDIR,
       env: process.env
     });
@@ -215,8 +217,9 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && (pathname === "/health" || pathname === "/api/health")) {
     return send(res, 200, {
       ok: true,
+      hostname: os.hostname(),
       engines: ["antigravity", "codex"],
-      features: ["chat", "live_monitor", "session_history", "remote_control", "upload"]
+      features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload"]
     });
   }
 
@@ -286,11 +289,12 @@ const server = http.createServer((req, res) => {
   // GET /api/session/live
   if (req.method === "GET" && pathname === "/api/session/live") {
     const proc = getAgyProcess();
-    const sessions = getSessions();
-    const latest = sessions[0] || null;
+    const sData = getSessions();
+    const latest = (sData.sessions && sData.sessions[0]) || null;
     const turns = latest ? getTranscript(latest.conversationId, 40) : [];
     return send(res, 200, {
       ok: true,
+      hostname: sData.hostname,
       process: proc,
       session: latest,
       turns: turns
@@ -299,10 +303,11 @@ const server = http.createServer((req, res) => {
 
   // GET /api/sessions
   if (req.method === "GET" && pathname === "/api/sessions") {
-    const sessions = getSessions();
+    const sData = getSessions();
     return send(res, 200, {
       ok: true,
-      sessions: sessions
+      hostname: sData.hostname,
+      sessions: sData.sessions || []
     });
   }
 
@@ -313,8 +318,8 @@ const server = http.createServer((req, res) => {
       return send(res, 400, { error: "Missing session id parameter" });
     }
     const msgs = getTranscript(convId, 100);
-    const sessions = getSessions();
-    const foundSession = sessions.find(s => s.conversationId === convId) || { conversationId: convId, title: "Session" };
+    const sData = getSessions();
+    const foundSession = (sData.sessions || []).find(s => s.conversationId === convId) || { conversationId: convId, title: "Session" };
     return send(res, 200, {
       ok: true,
       conversationId: convId,
@@ -368,7 +373,11 @@ const server = http.createServer((req, res) => {
           return send(res, 400, { error: "prompt is required" });
         }
 
-        if (payload.attachedFile) {
+        // Support multiple attached files or single file
+        if (Array.isArray(payload.attachedFiles) && payload.attachedFiles.length > 0) {
+          const fileHeaders = payload.attachedFiles.map(f => `[Attached File: ${f}]`).join("\n");
+          prompt = fileHeaders + "\n" + prompt;
+        } else if (payload.attachedFile) {
           prompt = `[Attached File: ${payload.attachedFile}]\n` + prompt;
         }
 
@@ -379,34 +388,23 @@ const server = http.createServer((req, res) => {
           response = await runAgy(prompt.trim(), conversationId, resume);
         }
 
-        const sessions = getSessions();
-        const activeConvId = conversationId || (sessions[0] ? sessions[0].conversationId : null);
-        let turns = activeConvId ? getTranscript(activeConvId, 80) : [];
-        if (turns.length === 0 && response) {
-          turns = [
-            { role: "user", content: prompt, time: new Date().toISOString() },
-            { role: "assistant", content: response, time: new Date().toISOString() }
-          ];
-        } else if (turns.length > 0 && response) {
-          const lastTurn = turns[turns.length - 1];
-          if (lastTurn.role !== "assistant") {
-            turns.push({ role: "assistant", content: response, time: new Date().toISOString() });
-          }
-        }
-
-        const foundSession = sessions.find(s => s.conversationId === activeConvId) || { conversationId: activeConvId, title: "Session" };
+        // Get latest transcript turns for 0ms instant UI rendering
+        const sData = getSessions();
+        const latestSession = (sData.sessions && sData.sessions[0]) || null;
+        const activeConvId = conversationId || (latestSession ? latestSession.conversationId : null);
+        const updatedTurns = activeConvId ? getTranscript(activeConvId, 40) : [];
 
         send(res, 200, {
           ok: true,
           response,
+          engine,
           conversationId: activeConvId,
-          session: foundSession,
-          turns: turns,
-          messages: turns,
-          engine: engine === "codex" ? "codex" : "antigravity"
+          session: latestSession,
+          turns: updatedTurns,
+          timestamp: new Date().toISOString()
         });
-      } catch (error) {
-        send(res, 500, { error: error.message || "Internal server error" });
+      } catch (err) {
+        send(res, 500, { error: err.message || "Failed to execute command" });
       }
     });
     return;
@@ -415,6 +413,8 @@ const server = http.createServer((req, res) => {
   send(res, 404, { error: "Not found" });
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`AI CLI bridge listening on ${HOST}:${PORT} (engines: Antigravity, Codex; Uploads: ${UPLOADS_DIR})`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`[Antigravity Remote Bridge] Listening on http://0.0.0.0:${PORT}`);
+  console.log(`[Config] Engine: agy / codex | Workdir: ${WORKDIR}`);
+  console.log(`[Security] Token protection: ${TOKEN ? "ENABLED" : "DISABLED"}`);
 });
