@@ -43,8 +43,7 @@ jobs:
         with:
           gradle-version: '8.7'
       - name: Build debug APK
-        run: |
-          ./gradle_build.sh || (cat /tmp/gradle_output.txt && exit 1)
+        run: gradle --no-daemon assembleDebug
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:

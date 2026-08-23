@@ -1766,8 +1766,8 @@ public class MainActivity extends Activity {
     private JSONArray filterSessionsForEngine(JSONArray sessions) {
         if (sessions == null) return null;
         ArrayList<JSONObject> list = new ArrayList<>();
-        for (int i = 0; i < filteredList.size(); i++) {
-            JSONObject s = filteredList.get(i);
+        for (int i = 0; i < sessions.length(); i++) {
+            JSONObject s = sessions.optJSONObject(i);
             if (s == null) continue;
             String engine = s.optString("engine", "antigravity");
             boolean isCodex = "codex".equalsIgnoreCase(engine);
@@ -1840,8 +1840,8 @@ public class MainActivity extends Activity {
         ArrayList<JSONObject> groupThisMonth = new ArrayList<>();
         ArrayList<JSONObject> groupOlder = new ArrayList<>();
 
-        for (int i = 0; i < sessions.length(); i++) {
-            JSONObject s = sessions.optJSONObject(i);
+        for (int i = 0; i < filteredList.size(); i++) {
+            JSONObject s = filteredList.get(i);
             if (s == null) continue;
             long ts = s.optLong("timestamp", now - (i * oneDay));
             long diff = now - ts;
