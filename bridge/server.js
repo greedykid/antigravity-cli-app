@@ -13,6 +13,7 @@ const settings = require("./settings");
 const jobs = require("./jobs");
 const auditLog = require("./audit");
 const searchIndex = require("./search");
+const quota = require("./quota");
 
 const PORT = config.port();
 const HOST = config.bindHost();
@@ -156,6 +157,9 @@ function getUsageStats() {
     } catch (e) {}
   }
 
+  const quotaResult = quota.get(AGY_BIN);
+  const quotaGroups = quotaResult.groups || [];
+
   const freeMem = Math.round(os.freemem() / (1024 * 1024));
   const totalMem = Math.round(os.totalmem() / (1024 * 1024));
 
@@ -177,10 +181,14 @@ function getUsageStats() {
     promptsLast24h: countRecentPrompts(prompts, 24 * 60 * 60 * 1000, now),
     promptsLast7d: countRecentPrompts(prompts, 7 * 24 * 60 * 60 * 1000, now),
 
-    // The CLI exposes no provider quota locally, so say so instead of
-    // shipping a plausible-looking percentage.
-    quotaKnown: false,
-    quotaStatus: "Kuota provider tidak tersedia dari CLI lokal",
+    // Real remaining limits, straight from `agy -p "/usage"`.
+    quotaKnown: quotaGroups.length > 0,
+    quotaGroups,
+    quotaStale: quotaResult.stale,
+    quotaCheckedAt: quotaResult.cachedAt || null,
+    quotaStatus: quotaGroups.length
+        ? "Sisa kuota dari akun Antigravity"
+        : "Kuota provider tidak bisa dibaca dari CLI saat ini",
 
     memoryUsage: `${totalMem - freeMem} MB / ${totalMem} MB`,
     hostname: os.hostname(),
@@ -1078,6 +1086,10 @@ const server = http.createServer((req, res) => {
 
   // GET /api/usage
   if (req.method === "GET" && pathname === "/api/usage") {
+    if (parsedUrl.query.refresh === "1") {
+      cachedUsage = null;
+      quota.reset();
+    }
     const stats = parsedUrl.query.engine === "codex" ? getCodexUsageStats() : getUsageStats();
     return send(res, 200, stats);
   }

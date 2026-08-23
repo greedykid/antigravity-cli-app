@@ -105,6 +105,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.TimeZone;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -1832,18 +1833,27 @@ public class MainActivity extends Activity {
         dialog.show();
 
         // Refresh action runnable
+        // Reading the quota runs the CLI, so opening the sheet uses the server's
+        // cached answer and only the refresh button forces a fresh read.
+        final boolean[] forceQuotaRefresh = { false };
+
         final Runnable fetchUsageRunnable = () -> {
             String endpoint = prefs.getString("url", "").trim();
             if (endpoint.isEmpty()) return;
 
+            final boolean force = forceQuotaRefresh[0];
+            forceQuotaRefresh[0] = false;
+
             btnRefresh.setColorFilter(Theme.ACCENT);
             executor.execute(() -> {
                 try {
-                    String usageUrl = endpoint.replace("/api/chat", "/api/usage") + "?engine=" + currentEngine;
+                    String usageUrl = endpoint.replace("/api/chat", "/api/usage")
+                            + "?engine=" + currentEngine + (force ? "&refresh=1" : "");
                     HttpURLConnection c = (HttpURLConnection) new URL(usageUrl).openConnection();
                     c.setRequestMethod("GET");
-                    c.setConnectTimeout(5000);
-                    c.setReadTimeout(5000);
+                    c.setConnectTimeout(8000);
+                    // A forced read waits on the CLI, which takes seconds.
+                    c.setReadTimeout(force ? 60000 : 12000);
                     String token = prefs.getString("token", "");
                     if (!token.isEmpty()) {
                         c.setRequestProperty("Authorization", "Bearer " + token);
@@ -1875,10 +1885,21 @@ public class MainActivity extends Activity {
                             addStatRow(geminiGroup, "7 hari terakhir", json.optInt("promptsLast7d", 0) + " prompt");
 
                             claudeGroup.removeAllViews();
-                            if (!quotaKnown) {
-                                renderModelGroupHeader(claudeGroup, "KUOTA PROVIDER", "Tidak tersedia dari CLI lokal");
+                            JSONArray quotaGroups = json.optJSONArray("quotaGroups");
+                            if (quotaKnown && quotaGroups != null && quotaGroups.length() > 0) {
+                                renderModelGroupHeader(claudeGroup, "KUOTA PROVIDER",
+                                        json.optBoolean("quotaStale", false)
+                                                ? "Angka terakhir yang berhasil dibaca"
+                                                : "Sisa kuota akun Antigravity");
+                                for (int g = 0; g < quotaGroups.length(); g++) {
+                                    JSONObject group = quotaGroups.optJSONObject(g);
+                                    if (group == null) continue;
+                                    renderQuotaGroup(claudeGroup, group, g > 0);
+                                }
+                            } else {
+                                renderModelGroupHeader(claudeGroup, "KUOTA PROVIDER", "Tidak bisa dibaca saat ini");
                                 TextView note = cText(json.optString("quotaStatus",
-                                                "CLI tidak mengekspos sisa kuota provider, jadi angkanya tidak ditampilkan."),
+                                                "CLI tidak mengembalikan sisa kuota."),
                                         12.5f, Theme.TEXT_MUTED, false, false);
                                 note.setPadding(0, dp(6), 0, 0);
                                 claudeGroup.addView(note);
@@ -1916,12 +1937,106 @@ public class MainActivity extends Activity {
         };
 
         btnRefresh.setOnClickListener(v -> {
-            Toast.makeText(MainActivity.this, "Memperbarui kuota...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(MainActivity.this, "Membaca ulang kuota dari CLI...", Toast.LENGTH_SHORT).show();
+            forceQuotaRefresh[0] = true;
             fetchUsageRunnable.run();
         });
 
         // Trigger initial fetch
         fetchUsageRunnable.run();
+    }
+
+    /** One quota group ("Gemini Models") with a bar per limit it reports. */
+    private void renderQuotaGroup(LinearLayout container, JSONObject group, boolean withSpacer) {
+        if (withSpacer) {
+            View spacer = new View(this);
+            container.addView(spacer, new LinearLayout.LayoutParams(-1, dp(16)));
+        }
+
+        TextView name = cText(group.optString("group", "Model"), 12.5f, Theme.TEXT_MAIN, true, false);
+        name.setPadding(0, 0, 0, dp(8));
+        container.addView(name);
+
+        JSONArray limits = group.optJSONArray("limits");
+        if (limits == null) return;
+
+        for (int i = 0; i < limits.length(); i++) {
+            JSONObject limit = limits.optJSONObject(i);
+            if (limit == null) continue;
+            renderQuotaBar(container,
+                    limit.optString("label", "Limit"),
+                    limit.optInt("percent", 0),
+                    limit.isNull("resetAt") ? "" : limit.optString("resetAt", ""),
+                    i > 0);
+        }
+    }
+
+    private void renderQuotaBar(LinearLayout container, String label, int percent, String resetAt, boolean withSpacer) {
+        if (withSpacer) {
+            View spacer = new View(this);
+            container.addView(spacer, new LinearLayout.LayoutParams(-1, dp(12)));
+        }
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(cText(label, 13f, Theme.TEXT_MUTED, false, false), new LinearLayout.LayoutParams(0, -2, 1));
+
+        // Remaining quota: green when there is room, amber when it is getting
+        // thin, red when nearly gone.
+        final int fill = percent <= 10 ? Theme.RED : (percent <= 30 ? Theme.AMBER : Theme.GREEN);
+        row.addView(cText(percent + "%", 13.5f, fill, true, false));
+        container.addView(row, new LinearLayout.LayoutParams(-1, -2));
+
+        FrameLayout track = new FrameLayout(this);
+        track.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 4));
+        LinearLayout.LayoutParams lpTrack = new LinearLayout.LayoutParams(-1, dp(7));
+        lpTrack.setMargins(0, dp(7), 0, 0);
+        container.addView(track, lpTrack);
+
+        final View bar = new View(this);
+        bar.setBackground(cBox(fill, 0, 0, 4));
+        track.addView(bar, new FrameLayout.LayoutParams(0, -1));
+
+        // The track has no width until it is laid out, so size the fill then.
+        final int pct = Math.max(0, Math.min(100, percent));
+        track.post(() -> {
+            int width = track.getWidth();
+            if (width <= 0) return;
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) bar.getLayoutParams();
+            lp.width = Math.max(pct > 0 ? dp(4) : 0, Math.round(width * pct / 100f));
+            bar.setLayoutParams(lp);
+        });
+
+        String reset = formatQuotaReset(resetAt);
+        if (!reset.isEmpty()) {
+            TextView resetView = cText(reset, 11.5f, Theme.TEXT_LIGHT, false, false);
+            resetView.setPadding(0, dp(5), 0, 0);
+            container.addView(resetView);
+        }
+    }
+
+    /** "Reset dalam 3 jam 12 mnt" — more useful than a raw timestamp. */
+    private String formatQuotaReset(String isoTimestamp) {
+        if (isoTimestamp == null || isoTimestamp.isEmpty()) return "";
+        try {
+            SimpleDateFormat parser = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+            parser.setTimeZone(TimeZone.getTimeZone("UTC"));
+            long resetAt = parser.parse(isoTimestamp).getTime();
+            long remaining = resetAt - System.currentTimeMillis();
+            if (remaining <= 0) return "Sudah direset";
+
+            long minutes = remaining / 60000;
+            long days = minutes / (60 * 24);
+            long hours = (minutes % (60 * 24)) / 60;
+            long mins = minutes % 60;
+
+            if (days > 0) return "Reset dalam " + days + " hari " + hours + " jam";
+            if (hours > 0) return "Reset dalam " + hours + " jam " + mins + " mnt";
+            return "Reset dalam " + mins + " mnt";
+        } catch (Throwable t) {
+            return "";
+        }
     }
 
     private void renderModelGroupHeader(LinearLayout container, String groupTitle, String modelsSub) {
