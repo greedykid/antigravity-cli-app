@@ -924,6 +924,18 @@ public class MainActivity extends Activity {
         hubSessionGroupsContainer.addView(card, lpCard);
     }
 
+    private void hideSessionLoading() {
+        if (chatSessionLoadingView != null && chatSessionLoadingView.getVisibility() == View.VISIBLE) {
+            chatSessionLoadingView.animate().alpha(0f).setDuration(160)
+                    .withEndAction(() -> {
+                        if (chatSessionLoadingView != null) {
+                            chatSessionLoadingView.setVisibility(View.GONE);
+                            chatSessionLoadingView.setAlpha(1f);
+                        }
+                    }).start();
+        }
+    }
+
     private void openSpecificSession(String convId, String title) {
         activeConversationId = convId;
         activeSessionTitle = title != null && !title.isEmpty() ? title : "Session";
@@ -937,6 +949,7 @@ public class MainActivity extends Activity {
             chatSessionLoadingView.setVisibility(View.VISIBLE);
             chatSessionLoadingView.setAlpha(1f);
         }
+        mainHandler.postDelayed(this::hideSessionLoading, 4000);
         showScreen(1);
     }
 
@@ -949,6 +962,7 @@ public class MainActivity extends Activity {
         isLiveTaskRunning = false;
         navigatedFromHub = false;
 
+        hideSessionLoading();
         if (chatMessagesList != null) chatMessagesList.removeAllViews();
         showEmptyMascotState(true);
         showScreen(1);
@@ -2452,13 +2466,20 @@ public class MainActivity extends Activity {
         chatSessionLoadingView.setVisibility(View.GONE);
 
         ProgressBar loadPb = new ProgressBar(this);
-        chatSessionLoadingView.addView(loadPb, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(36), dp(36));
+        lpPb.gravity = Gravity.CENTER_HORIZONTAL;
+        chatSessionLoadingView.addView(loadPb, lpPb);
 
         TextView loadText = cText("Memuat percakapan...", 13.5f, CLAUDE_TEXT_MUTED, false, false);
-        loadText.setPadding(0, dp(12), 0, 0);
-        chatSessionLoadingView.addView(loadText);
+        loadText.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lpText = new LinearLayout.LayoutParams(-2, -2);
+        lpText.gravity = Gravity.CENTER_HORIZONTAL;
+        lpText.setMargins(0, dp(12), 0, 0);
+        chatSessionLoadingView.addView(loadText, lpText);
 
-        root.addView(chatSessionLoadingView, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout.LayoutParams lpLoadingRoot = new FrameLayout.LayoutParams(-1, -1);
+        lpLoadingRoot.gravity = Gravity.CENTER;
+        root.addView(chatSessionLoadingView, lpLoadingRoot);
     }
 
     private void buildEmptyMascotState() {
@@ -3146,7 +3167,10 @@ public class MainActivity extends Activity {
 
     private void syncLiveExecution() {
         String endpoint = prefs.getString("url", "").trim();
-        if (endpoint.isEmpty()) return;
+        if (endpoint.isEmpty()) {
+            mainHandler.post(this::hideSessionLoading);
+            return;
+        }
 
         executor.execute(() -> {
             try {
@@ -3176,14 +3200,19 @@ public class MainActivity extends Activity {
                     JSONObject json = new JSONObject(b.toString());
 
                     mainHandler.post(() -> {
+                        hideSessionLoading();
                         String newId = json.optString("conversationId", "");
                         if (activeConversationId == null && !newId.isEmpty()) {
                             activeConversationId = newId;
                         }
                         renderActiveSessionTurns(activeConversationId, json, false);
                     });
+                } else {
+                    mainHandler.post(this::hideSessionLoading);
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                mainHandler.post(this::hideSessionLoading);
+            }
         });
     }
 
@@ -3225,6 +3254,7 @@ public class MainActivity extends Activity {
 
     private void renderActiveSessionTurns(String requestedConvId, JSONObject json, boolean showToast) {
         try {
+            hideSessionLoading();
             if (json == null) return;
 
             JSONObject session = json.optJSONObject("session");
