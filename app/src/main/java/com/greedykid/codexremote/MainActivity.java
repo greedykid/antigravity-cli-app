@@ -186,12 +186,21 @@ public class MainActivity extends Activity {
         return quickActionScroll;
     }
 
-    private void addQuickChip(LinearLayout parent, String label, final String promptToInsert) {
-        TextView chip = cText(label, 12f, Theme.TEXT_MAIN, true, false);
+    private void addQuickChip(LinearLayout parent, int iconRes, String label, final String promptToInsert) {
+        LinearLayout chip = new LinearLayout(this);
+        chip.setOrientation(LinearLayout.HORIZONTAL);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
         chip.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
-        chip.setPadding(dp(11), dp(5), dp(11), dp(5));
+        chip.setPadding(dp(10), dp(5), dp(11), dp(5));
         chip.setClickable(true);
         chip.setFocusable(true);
+
+        ImageView ic = cIcon(iconRes, 14, Theme.ACCENT);
+        chip.addView(ic);
+
+        TextView tv = cText(" " + label, 12f, Theme.TEXT_MAIN, true, false);
+        chip.addView(tv);
+
         chip.setOnClickListener(v -> {
             vibrateTick();
             String current = promptInput.getText().toString();
