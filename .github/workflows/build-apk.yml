@@ -45,7 +45,12 @@ jobs:
       - name: Test Compile Java
         run: |
           find app/src/main/java -name "*.java" > sources.txt
-          javac -d /tmp -cp "$ANDROID_HOME/platforms/android-35/android.jar:app/libs/*" @sources.txt
+          javac -d /tmp -cp "$ANDROID_HOME/platforms/android-35/android.jar:app/libs/*" @sources.txt 2> /tmp/javac_err.txt || {
+            ERR=$(cat /tmp/javac_err.txt | tr '\n' ' ' | cut -c 1-500)
+            echo "::error title=Javac Error::$ERR"
+            cat /tmp/javac_err.txt >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
