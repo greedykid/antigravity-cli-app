@@ -318,7 +318,7 @@ public class WorkspacePanels {
         lpC.setMargins(0, 0, dp(8), 0);
         actions.addView(cancel, lpC);
 
-        TextView save = cText("Simpan", 14f, Color.WHITE, true, false);
+        TextView save = cText("Simpan", 14f, Theme.ON_ACCENT, true, false);
         save.setGravity(Gravity.CENTER);
         save.setPadding(dp(16), dp(13), dp(16), dp(13));
         save.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
@@ -518,7 +518,7 @@ public class WorkspacePanels {
     }
 
     private TextView buildGitButton(String label, int color, final Runnable action) {
-        TextView btn = cText(label, 14f, color == Theme.ACCENT ? Color.WHITE : Theme.TEXT_MAIN, true, false);
+        TextView btn = cText(label, 14f, color == Theme.ACCENT ? Theme.ON_ACCENT : Theme.TEXT_MAIN, true, false);
         btn.setGravity(Gravity.CENTER);
         btn.setPadding(dp(16), dp(12), dp(16), dp(12));
         btn.setBackground(cBox(color, Theme.BORDER, color == Theme.ACCENT ? 0 : 1, 12));
@@ -871,7 +871,7 @@ public class WorkspacePanels {
         lpP.setMargins(0, 0, 0, dp(14));
         root.addView(pathInput, lpP);
 
-        TextView save = cText("Simpan", 14.5f, Color.WHITE, true, false);
+        TextView save = cText("Simpan", 14.5f, Theme.ON_ACCENT, true, false);
         save.setGravity(Gravity.CENTER);
         save.setPadding(dp(16), dp(14), dp(16), dp(14));
         save.setBackground(cBox(Theme.ACCENT, 0, 0, 14));

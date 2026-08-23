@@ -40,6 +40,12 @@ public final class Theme {
     public static int ACCENT;
     /** Tinted background that pairs with {@link #ACCENT}. */
     public static int ACCENT_SOFT;
+    /**
+     * Label colour for text sitting on an {@link #ACCENT} fill. White reads
+     * fine on terracotta but only reaches 3.2:1 on the Codex green, so that
+     * engine uses a near-black label instead (5.95:1).
+     */
+    public static int ON_ACCENT;
 
     public static int GREEN;
     public static int GREEN_BG;
@@ -86,6 +92,7 @@ public final class Theme {
 
         ACCENT = Color.rgb(217, 107, 67);         // #D96B43
         ACCENT_SOFT = Color.rgb(56, 36, 29);      // #38241D
+        ON_ACCENT = Color.WHITE;
 
         GREEN = Color.rgb(76, 175, 80);
         GREEN_BG = Color.rgb(27, 48, 30);
@@ -110,6 +117,7 @@ public final class Theme {
 
         ACCENT = Color.rgb(16, 163, 127);         // #10A37F
         ACCENT_SOFT = Color.rgb(14, 42, 36);      // #0E2A24
+        ON_ACCENT = Color.rgb(8, 18, 15);         // #08120F
 
         GREEN = Color.rgb(52, 199, 137);
         GREEN_BG = Color.rgb(13, 43, 33);

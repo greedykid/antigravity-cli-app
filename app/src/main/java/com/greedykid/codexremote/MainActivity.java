@@ -622,7 +622,7 @@ public class MainActivity extends Activity {
 
         String name = shortUserName(email);
         String initials = name.length() >= 2 ? name.substring(0, 2) : (name.isEmpty() ? "?" : name);
-        TextView tv = cText(initials.toUpperCase(Locale.ROOT), 13.5f, Color.WHITE, true, false);
+        TextView tv = cText(initials.toUpperCase(Locale.ROOT), 13.5f, Theme.ON_ACCENT, true, false);
         tv.setGravity(Gravity.CENTER);
         frame.addView(tv, new FrameLayout.LayoutParams(-1, -1));
         return frame;
@@ -917,10 +917,10 @@ public class MainActivity extends Activity {
             fabNew.setElevation(dp(8));
         }
 
-        ImageView plusIc = cIcon(R.drawable.ic_add, 18, Color.WHITE);
+        ImageView plusIc = cIcon(R.drawable.ic_add, 18, Theme.ON_ACCENT);
         fabNew.addView(plusIc);
 
-        TextView fabLabel = cText(" Sesi baru", 14.5f, Color.WHITE, true, false);
+        TextView fabLabel = cText(" Sesi baru", 14.5f, Theme.ON_ACCENT, true, false);
         fabNew.addView(fabLabel);
 
         fabNew.setOnClickListener(v -> startNewSession());
@@ -1018,7 +1018,7 @@ public class MainActivity extends Activity {
         card.addView(cText(detail, 13f, Theme.TEXT_MUTED, false, false));
 
         if (offerPairing) {
-            TextView action = cText("Scan QR Pairing", 14f, Color.WHITE, true, false);
+            TextView action = cText("Scan QR Pairing", 14f, Theme.ON_ACCENT, true, false);
             action.setGravity(Gravity.CENTER);
             action.setPadding(dp(16), dp(12), dp(16), dp(12));
             action.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
@@ -1537,7 +1537,7 @@ public class MainActivity extends Activity {
         lpIn.setMargins(0, dp(14), 0, dp(14));
         root.addView(input, lpIn);
 
-        TextView save = cText("Simpan", 14.5f, Color.WHITE, true, false);
+        TextView save = cText("Simpan", 14.5f, Theme.ON_ACCENT, true, false);
         save.setGravity(Gravity.CENTER);
         save.setPadding(dp(16), dp(14), dp(16), dp(14));
         save.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
@@ -1635,7 +1635,7 @@ public class MainActivity extends Activity {
         btnSave.setGravity(Gravity.CENTER);
         btnSave.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
-        btnSave.addView(cText("Simpan Perubahan", 14f, Color.WHITE, true, false));
+        btnSave.addView(cText("Simpan Perubahan", 14f, Theme.ON_ACCENT, true, false));
         btnSave.setOnClickListener(v -> {
             String em = input.getText().toString().trim();
             if (!em.isEmpty()) {
@@ -1672,7 +1672,7 @@ public class MainActivity extends Activity {
         btnSave.setGravity(Gravity.CENTER);
         btnSave.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
-        btnSave.addView(cText("Simpan Nama Perangkat", 14f, Color.WHITE, true, false));
+        btnSave.addView(cText("Simpan Nama Perangkat", 14f, Theme.ON_ACCENT, true, false));
         btnSave.setOnClickListener(v -> {
             String name = input.getText().toString().trim();
             if (!name.isEmpty()) {
@@ -1947,7 +1947,7 @@ public class MainActivity extends Activity {
         btnEdit.setGravity(Gravity.CENTER);
         btnEdit.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         btnEdit.setPadding(dp(16), dp(12), dp(16), dp(12));
-        btnEdit.addView(cText("Ganti Token di Konektor", 14f, Color.WHITE, true, false));
+        btnEdit.addView(cText("Ganti Token di Konektor", 14f, Theme.ON_ACCENT, true, false));
         btnEdit.setOnClickListener(v -> {
             dialog.dismiss();
             showConnectionBottomSheet();
@@ -2004,8 +2004,8 @@ public class MainActivity extends Activity {
         scanBtn.setGravity(Gravity.CENTER);
         scanBtn.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         scanBtn.setPadding(dp(12), dp(11), dp(12), dp(11));
-        scanBtn.addView(cIcon(R.drawable.ic_qr_code, 20, Color.WHITE));
-        TextView scanLbl = cText("  Scan QR Code Pairing", 14f, Color.WHITE, true, false);
+        scanBtn.addView(cIcon(R.drawable.ic_qr_code, 20, Theme.ON_ACCENT));
+        TextView scanLbl = cText("  Scan QR Code Pairing", 14f, Theme.ON_ACCENT, true, false);
         scanBtn.addView(scanLbl);
         scanBtn.setOnClickListener(v -> {
             dialog.dismiss();
@@ -2071,7 +2071,7 @@ public class MainActivity extends Activity {
         btnSave.setGravity(Gravity.CENTER);
         btnSave.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
-        btnSave.addView(cText("Simpan & Hubungkan", 14f, Color.WHITE, true, false));
+        btnSave.addView(cText("Simpan & Hubungkan", 14f, Theme.ON_ACCENT, true, false));
         btnSave.setOnClickListener(v -> {
             String u = urlInput.getText().toString().trim();
             String t = tokenInput.getText().toString().trim();
@@ -2742,7 +2742,7 @@ public class MainActivity extends Activity {
 
         btnSend = new FrameLayout(this);
         btnSend.setBackground(cBox(Theme.ACCENT, 0, 0, 18));
-        ImageView sendIcon = cIcon(R.drawable.ic_send, 18, Color.WHITE);
+        ImageView sendIcon = cIcon(R.drawable.ic_send, 18, Theme.ON_ACCENT);
         FrameLayout.LayoutParams lpSendIc = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         btnSend.addView(sendIcon, lpSendIc);
         btnSend.setOnClickListener(v -> sendClaudePrompt());
@@ -3066,7 +3066,7 @@ public class MainActivity extends Activity {
         lpC.setMargins(0, 0, dp(8), 0);
         actions.addView(cancel, lpC);
 
-        TextView confirm = cText("Ganti", 14f, Color.WHITE, true, false);
+        TextView confirm = cText("Ganti", 14f, Theme.ON_ACCENT, true, false);
         confirm.setGravity(Gravity.CENTER);
         confirm.setPadding(dp(16), dp(13), dp(16), dp(13));
         confirm.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
@@ -3352,7 +3352,7 @@ public class MainActivity extends Activity {
         lpR.setMargins(0, 0, dp(8), 0);
         actions.addView(retry, lpR);
 
-        TextView paste = cText("Tempel token", 14f, Color.WHITE, true, false);
+        TextView paste = cText("Tempel token", 14f, Theme.ON_ACCENT, true, false);
         paste.setGravity(Gravity.CENTER);
         paste.setPadding(dp(16), dp(13), dp(16), dp(13));
         paste.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
