@@ -6947,12 +6947,13 @@ public class MainActivity extends Activity {
                     return;
                 }
 
-                // A running task must never be repainted from an empty transcript.
-                // The Codex rollout is read while it is still being written, so a
-                // poll can momentarily come back with nothing; rebuilding from
-                // that wipes the message the user just sent, and it only returns
-                // once the transcript is complete again.
-                if (newTurnCount == 0 && isLiveTaskRunning && chatMessagesList.getChildCount() > 0) {
+                // An empty transcript never repaints a chat that already has
+                // content. Two things produce one: a Codex rollout parsed while
+                // the CLI is still writing it, and a brand-new session whose
+                // transcript file lags behind the run. Either way, rebuilding
+                // from it wiped the message just sent and dropped the user back
+                // on the "new session" screen.
+                if (newTurnCount == 0 && chatMessagesList.getChildCount() > 0) {
                     return;
                 }
 
@@ -6965,7 +6966,13 @@ public class MainActivity extends Activity {
                 lastRenderedWasRunning = isLiveTaskRunning;
 
                 chatMessagesList.removeAllViews();
-                showEmptyMascotState(turns.length() == 0 && !isLiveTaskRunning);
+                // The empty state belongs to a session nothing has been sent in.
+                // Once a conversation exists, or a prompt is in flight, an empty
+                // transcript means "not written yet", not "nothing here".
+                showEmptyMascotState(turns.length() == 0
+                        && !isLiveTaskRunning
+                        && pendingOptimisticUserPrompt == null
+                        && (activeConversationId == null || activeConversationId.isEmpty()));
 
                 ArrayList<JSONObject> pendingTools = new ArrayList<>();
                 ArrayList<JSONObject> allSessionTools = new ArrayList<>();

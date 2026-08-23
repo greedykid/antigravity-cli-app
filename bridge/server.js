@@ -341,7 +341,7 @@ function getCodexSessions() {
         if (sid && !map.has(sid)) {
           map.set(sid, {
             conversationId: sid,
-            title: item.text || item.title || ("Codex " + sid.slice(0, 8)),
+            title: cleanTitle(item.text || item.title, "Codex " + sid.slice(0, 8)),
             timestamp: item.ts ? item.ts * 1000 : (item.timestamp || Date.now()),
             workspace: WORKDIR,
             engine: "codex",
@@ -454,6 +454,23 @@ function findLatestAgyConversationId(sinceMs = 0) {
   return newestId;
 }
 
+// Session titles come from several places: the CLI history files and, for
+// Antigravity, the <USER_REQUEST> block scraped out of a transcript log. That
+// log stores the request JSON-encoded, so its newlines arrive as the literal
+// two characters \n and ended up in session names. Decode the common escapes
+// and flatten to a single line.
+function cleanTitle(raw, fallback) {
+  let text = typeof raw === "string" ? raw : "";
+  text = text
+    .replace(/\\r\\n|\\n|\\r/g, " ")
+    .replace(/\\t/g, " ")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text || fallback;
+}
+
 function getSessions(engineFilter) {
   const home = os.homedir();
   const file = path.join(home, ".gemini/antigravity-cli/history.jsonl");
@@ -466,7 +483,7 @@ function getSessions(engineFilter) {
         if (item.conversationId && !agyMap.has(item.conversationId)) {
           agyMap.set(item.conversationId, {
             conversationId: item.conversationId,
-            title: item.display || ("Session " + item.conversationId.slice(0, 8)),
+            title: cleanTitle(item.display, "Session " + item.conversationId.slice(0, 8)),
             timestamp: item.timestamp || Date.now(),
             workspace: item.workspace || "/home/ubuntu",
             engine: "antigravity",
@@ -499,7 +516,7 @@ function getSessions(engineFilter) {
               const headText = buf.toString("utf8", 0, bytesRead);
               const m = headText.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
               if (m && m[1].trim()) {
-                title = m[1].trim().slice(0, 60);
+                title = cleanTitle(m[1], title).slice(0, 60);
               }
             } else {
               const stat = fs.statSync(path.join(brainDir, convId));
