@@ -422,7 +422,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.9.2 • Instant State Auto-Sync", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.9.3 • Aspect Ratio True Viewport", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -979,7 +979,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // CRASH-PROOF EMBEDDED QR SCANNER & PERMISSIONS
+    // TRUE-ASPECT-RATIO CRASH-PROOF QR SCANNER & PERMISSIONS
     // ============================================================
     private void startQrScanner() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -1035,15 +1035,20 @@ public class MainActivity extends Activity {
             lpSub.setMargins(0, dp(4), 0, dp(14));
             root.addView(sub, lpSub);
 
-            // Embedded Camera Viewport Frame
+            // Embedded Camera Viewport Frame (Rounded with Center-Crop Clipping)
             FrameLayout frame = new FrameLayout(this);
             frame.setBackground(cBox(Color.BLACK, CLAUDE_TERRACOTTA, 2, 16));
+            frame.setClipChildren(true);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                frame.setClipToOutline(true);
+            }
 
             final QrCameraScannerView scannerView = new QrCameraScannerView(this, text -> {
                 dialog.dismiss();
                 handleQrPayload(text);
             });
-            frame.addView(scannerView, new FrameLayout.LayoutParams(-1, -1));
+            FrameLayout.LayoutParams lpScan = new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER);
+            frame.addView(scannerView, lpScan);
 
             // Viewfinder Guide Overlay
             View guide = new View(this);
@@ -1096,6 +1101,8 @@ public class MainActivity extends Activity {
         private final MultiFormatReader reader;
         private final QrScanResultListener listener;
         private boolean isScanning = true;
+        private int previewWidth = 0;
+        private int previewHeight = 0;
 
         public QrCameraScannerView(Context context, QrScanResultListener listener) {
             super(context);
@@ -1114,6 +1121,17 @@ public class MainActivity extends Activity {
                 camera = Camera.open();
                 camera.setDisplayOrientation(90);
                 Camera.Parameters params = camera.getParameters();
+
+                List<Camera.Size> supportedSizes = params.getSupportedPreviewSizes();
+                if (supportedSizes != null && !supportedSizes.isEmpty()) {
+                    Camera.Size bestSize = getOptimalPreviewSize(supportedSizes, 1280, 720);
+                    if (bestSize != null) {
+                        params.setPreviewSize(bestSize.width, bestSize.height);
+                        previewWidth = bestSize.width;
+                        previewHeight = bestSize.height;
+                    }
+                }
+
                 List<String> focusModes = params.getSupportedFocusModes();
                 if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
                     params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
@@ -1122,9 +1140,58 @@ public class MainActivity extends Activity {
                 camera.setPreviewDisplay(holder);
                 camera.setPreviewCallback(this);
                 camera.startPreview();
+                requestLayout();
             } catch (Throwable e) {
                 e.printStackTrace();
             }
+        }
+
+        private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int targetWidth, int targetHeight) {
+            if (sizes == null) return null;
+            double targetRatio = (double) targetWidth / targetHeight; // 1280/720 = 1.777
+            Camera.Size optimalSize = null;
+            double minDiff = Double.MAX_VALUE;
+
+            for (Camera.Size size : sizes) {
+                double ratio = (double) size.width / size.height;
+                if (Math.abs(ratio - targetRatio) > 0.18) continue;
+                if (Math.abs(size.height - targetHeight) < minDiff) {
+                    optimalSize = size;
+                    minDiff = Math.abs(size.height - targetHeight);
+                }
+            }
+
+            if (optimalSize == null) {
+                minDiff = Double.MAX_VALUE;
+                for (Camera.Size size : sizes) {
+                    if (Math.abs(size.height - targetHeight) < minDiff) {
+                        optimalSize = size;
+                        minDiff = Math.abs(size.height - targetHeight);
+                    }
+                }
+            }
+            return optimalSize != null ? optimalSize : sizes.get(0);
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int width = MeasureSpec.getSize(widthMeasureSpec);
+            int height = MeasureSpec.getSize(heightMeasureSpec);
+
+            if (previewWidth > 0 && previewHeight > 0) {
+                // In portrait (90 degree rotation), portrait aspect ratio is previewHeight / previewWidth (e.g. 720 / 1280 = 0.5625)
+                float cameraPortraitRatio = (float) previewHeight / (float) previewWidth;
+                float viewportRatio = (float) width / (float) height;
+
+                if (viewportRatio > cameraPortraitRatio) {
+                    // Viewport is wider than camera ratio -> scale height to fill completely without black bars or squishing
+                    height = (int) (width / cameraPortraitRatio);
+                } else {
+                    // Viewport is taller than camera ratio -> scale width to fill completely without black bars or squishing
+                    width = (int) (height * cameraPortraitRatio);
+                }
+            }
+            setMeasuredDimension(width, height);
         }
 
         @Override
