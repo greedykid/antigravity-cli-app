@@ -349,12 +349,20 @@ function getCodexTranscript(sessionId, limit = 1000) {
         }
         for (const c of contents) {
           if (role === "user" && c.type === "input_text") {
-            const text = c.text || "";
-            if (!text.startsWith("<environment_context>") && !text.startsWith("<skills_instructions>") && !text.startsWith("<permissions instructions>")) {
-              msgs.push({ role: "user", content: text.trim(), time: obj.timestamp });
+            const text = (c.text || "").trim();
+            // Codex rollouts contain empty input_text parts. Emitting them as
+            // turns produced blank bubbles in the app and, worse, matched the
+            // optimistic prompt (every string contains ""), so the message the
+            // user just typed was replaced by an empty one mid-run.
+            if (text
+                && !text.startsWith("<environment_context>")
+                && !text.startsWith("<skills_instructions>")
+                && !text.startsWith("<permissions instructions>")) {
+              msgs.push({ role: "user", content: text, time: obj.timestamp });
             }
           } else if (role === "assistant" && c.type === "output_text") {
-            msgs.push({ role: "assistant", content: (c.text || "").trim(), time: obj.timestamp });
+            const text = (c.text || "").trim();
+            if (text) msgs.push({ role: "assistant", content: text, time: obj.timestamp });
           }
         }
       }

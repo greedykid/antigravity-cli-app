@@ -4000,6 +4000,7 @@ public class MainActivity extends Activity {
                 mainHandler.post(() -> {
                     activeJobId = null;
                     isLiveTaskRunning = false;
+                    pendingOptimisticUserPrompt = null;
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
@@ -4015,7 +4016,9 @@ public class MainActivity extends Activity {
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
+                    activeJobId = null;
                     isLiveTaskRunning = false;
+                    pendingOptimisticUserPrompt = null;
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
@@ -4177,6 +4180,27 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * True when a transcript turn is the prompt we optimistically rendered.
+     *
+     * The old test allowed containment in both directions, so an empty turn —
+     * which every string contains — counted as a match. The optimistic bubble
+     * was then dropped and replaced by the blank one, and the user's text only
+     * came back once the real turn reached the transcript.
+     */
+    private boolean matchesPendingPrompt(String content) {
+        if (pendingOptimisticUserPrompt == null) return false;
+        String pending = pendingOptimisticUserPrompt.trim();
+        String candidate = content == null ? "" : content.trim();
+        if (pending.isEmpty() || candidate.isEmpty()) return false;
+        if (pending.equals(candidate)) return true;
+        // Attachment headers are prepended to what we render, so the stored
+        // turn can be the shorter of the two — but it must still be substantial.
+        int shorter = Math.min(pending.length(), candidate.length());
+        if (shorter < 8) return false;
+        return pending.contains(candidate) || candidate.contains(pending);
+    }
+
     private void renderActiveSessionTurns(String requestedConvId, JSONObject json, boolean showToast) {
         try {
             hideSessionLoading();
@@ -4197,6 +4221,15 @@ public class MainActivity extends Activity {
                 int newTurnCount = turns.length();
 
                 if (!isLiveTaskRunning && !lastRenderedWasRunning && requestedConvId != null && requestedConvId.equals(lastLoadedSessionId) && newTurnCount == lastLoadedTurnCount) {
+                    return;
+                }
+
+                // A running task must never be repainted from an empty transcript.
+                // The Codex rollout is read while it is still being written, so a
+                // poll can momentarily come back with nothing; rebuilding from
+                // that wipes the message the user just sent, and it only returns
+                // once the transcript is complete again.
+                if (newTurnCount == 0 && isLiveTaskRunning && chatMessagesList.getChildCount() > 0) {
                     return;
                 }
 
@@ -4239,24 +4272,29 @@ public class MainActivity extends Activity {
                             renderInlineStepPill(new ArrayList<>(pendingTools), false);
                             pendingTools.clear();
                         }
-                        if (pendingOptimisticUserPrompt != null && (content.contains(pendingOptimisticUserPrompt) || pendingOptimisticUserPrompt.contains(content))) {
+                        if (matchesPendingPrompt(content)) {
                             foundOptimisticInTranscript = true;
                         }
-                        renderUserMessageBlock(content, time);
+                        // A blank turn is never worth a bubble, and rendering one
+                        // here is what made the typed message appear to vanish.
+                        if (!content.trim().isEmpty()) {
+                            renderUserMessageBlock(content, time);
+                        }
                     } else {
                         if (!pendingTools.isEmpty()) {
                             renderInlineStepPill(new ArrayList<>(pendingTools), false);
                             pendingTools.clear();
                         }
-                        renderAssistantMessageBlock(content, time, (i == lastAssistantIdx));
+                        if (!content.trim().isEmpty() || i == lastAssistantIdx) {
+                            renderAssistantMessageBlock(content, time, (i == lastAssistantIdx));
+                        }
                     }
                 }
 
-                if (foundOptimisticInTranscript) {
-                    pendingOptimisticUserPrompt = null;
-                }
-
-                // If live task is running and user prompt is not yet in disk transcript, render user prompt first!
+                // Deliberately not cleared here. It used to be dropped the first
+                // time the transcript contained it, which left nothing to fall
+                // back on if a later poll returned a partial transcript. It is
+                // cleared when the task actually finishes.
                 if (isLiveTaskRunning && pendingOptimisticUserPrompt != null && !foundOptimisticInTranscript) {
                     if (!pendingTools.isEmpty()) {
                         renderInlineStepPill(new ArrayList<>(pendingTools), false);
@@ -5039,6 +5077,7 @@ public class MainActivity extends Activity {
         if ("task.finished".equals(name)) {
             if (!isOurs) return;
             isLiveTaskRunning = false;
+            pendingOptimisticUserPrompt = null;
             if (currentScreen == 1) syncLiveExecution();
             return;
         }
