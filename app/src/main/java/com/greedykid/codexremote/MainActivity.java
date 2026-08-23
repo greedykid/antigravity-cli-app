@@ -1051,37 +1051,7 @@ public class MainActivity extends Activity {
             dialog.getWindow().setGravity(Gravity.BOTTOM);
         }
 
-        // The window has a fixed height anchored to the bottom, so ADJUST_RESIZE
-        // has nothing to shrink and the keyboard simply covered the input row and
-        // the Run button. Padding the sheet by the keyboard height lifts them
-        // above it; the output console takes the loss because it holds the weight.
-        keepAboveKeyboard(root, dp(14));
-
         dialog.show();
-    }
-
-    /**
-     * Pads a view's bottom by the on-screen keyboard height while it is open.
-     *
-     * Measured from the visible display frame rather than WindowInsets.ime(),
-     * which is only reliable from API 30 and this app supports 26.
-     */
-    private void keepAboveKeyboard(final View target, final int basePaddingBottom) {
-        final int screenHeight = getResources().getDisplayMetrics().heightPixels;
-        target.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
-            Rect visible = new Rect();
-            target.getRootView().getWindowVisibleDisplayFrame(visible);
-            int keyboardHeight = screenHeight - visible.bottom;
-            // Gesture bars and notches produce small values; only a real keyboard
-            // takes a meaningful slice of the screen.
-            if (keyboardHeight < screenHeight * 0.15f) keyboardHeight = 0;
-
-            int desired = basePaddingBottom + keyboardHeight;
-            if (target.getPaddingBottom() != desired) {
-                target.setPadding(target.getPaddingLeft(), target.getPaddingTop(),
-                        target.getPaddingRight(), desired);
-            }
-        });
     }
 
 
@@ -5418,7 +5388,14 @@ public class MainActivity extends Activity {
                     if (isImg) {
                         try {
                             BitmapFactory.Options opts = new BitmapFactory.Options();
-                            opts.inSampleSize = 4;
+                            opts.inJustDecodeBounds = true;
+                            BitmapFactory.decodeByteArray(fileBytes, 0, fileBytes.length, opts);
+                            int maxDim = Math.max(opts.outWidth, opts.outHeight);
+                            opts.inSampleSize = 1;
+                            if (maxDim > 2560) {
+                                opts.inSampleSize = 2;
+                            }
+                            opts.inJustDecodeBounds = false;
                             thumbBmp = BitmapFactory.decodeByteArray(fileBytes, 0, fileBytes.length, opts);
                         } catch (Exception ignored) {}
                     }
@@ -5498,6 +5475,8 @@ public class MainActivity extends Activity {
                 thumb.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 8));
                 LinearLayout.LayoutParams lpTh = new LinearLayout.LayoutParams(dp(30), dp(30));
                 thumb.setLayoutParams(lpTh);
+                thumb.setClickable(true);
+                thumb.setOnClickListener(v -> showFullscreenBitmapDialog(m.bitmap, m.fileName));
                 chip.addView(thumb);
             } else {
                 ImageView docIcon = cIcon(R.drawable.ic_attach_file, 20, Theme.ACCENT);
@@ -5507,6 +5486,10 @@ public class MainActivity extends Activity {
             TextView nameView = cText(" " + (m.fileName.length() > 18 ? m.fileName.substring(0, 15) + "..." : m.fileName), 12f, Theme.ACCENT, true, false);
             nameView.setPadding(dp(4), 0, dp(4), 0);
             nameView.setSingleLine(true);
+            nameView.setClickable(true);
+            if (m.isImage && m.bitmap != null) {
+                nameView.setOnClickListener(v -> showFullscreenBitmapDialog(m.bitmap, m.fileName));
+            }
             chip.addView(nameView);
 
             ImageView closeBtn = cIconButton(R.drawable.ic_close, 14, 24, Theme.TEXT_MUTED);
@@ -5558,7 +5541,7 @@ public class MainActivity extends Activity {
 
         for (AttachedMedia m : attachedMediaList) {
             filePathsToSend.add(m.serverPath);
-            fileHeaders.append("[File: ").append(m.serverPath).append("]\n");
+            fileHeaders.append("[Attached File: ").append(m.serverPath).append("]\n");
         }
 
         attachedMediaList.clear();
@@ -5820,14 +5803,25 @@ public class MainActivity extends Activity {
      * was then dropped and replaced by the blank one, and the user's text only
      * came back once the real turn reached the transcript.
      */
+    private String extractUserPromptBody(String text) {
+        if (text == null) return "";
+        return text.replaceAll("(?i)\\[(?:Attached\\s+)?File:[^\\]]+\\]", "").trim();
+    }
+
     private boolean matchesPendingPrompt(String content) {
         if (pendingOptimisticUserPrompt == null) return false;
         String pending = pendingOptimisticUserPrompt.trim();
         String candidate = content == null ? "" : content.trim();
         if (pending.isEmpty() || candidate.isEmpty()) return false;
         if (pending.equals(candidate)) return true;
-        // Attachment headers are prepended to what we render, so the stored
-        // turn can be the shorter of the two — but it must still be substantial.
+
+        String pendingBody = extractUserPromptBody(pending);
+        String candidateBody = extractUserPromptBody(candidate);
+        if (!pendingBody.isEmpty() && !candidateBody.isEmpty()) {
+            if (pendingBody.equals(candidateBody)) return true;
+            if (pendingBody.contains(candidateBody) || candidateBody.contains(pendingBody)) return true;
+        }
+
         int shorter = Math.min(pending.length(), candidate.length());
         if (shorter < 8) return false;
         return pending.contains(candidate) || candidate.contains(pending);
@@ -6359,6 +6353,37 @@ public class MainActivity extends Activity {
         } catch (Throwable ignored) {}
 
         renderMarkdownIntoContainer(container, remainingText.trim(), isUser);
+    }
+
+    private void showFullscreenBitmapDialog(final Bitmap bmp, final String title) {
+        if (bmp == null) return;
+        final Dialog dialog = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF000000);
+
+        final ImageView iv = new ImageView(this);
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        iv.setImageBitmap(bmp);
+        root.addView(iv, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+
+        if (title != null && !title.isEmpty()) {
+            TextView titleView = cText(title, 14f, Color.WHITE, true, false);
+            titleView.setPadding(dp(20), dp(34), dp(70), dp(16));
+            titleView.setSingleLine(true);
+            titleView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            root.addView(titleView, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP | Gravity.START));
+        }
+
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 24, 48, Color.WHITE);
+        FrameLayout.LayoutParams lpClose = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.END);
+        lpClose.setMargins(0, dp(28), dp(16), 0);
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        root.addView(closeBtn, lpClose);
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     private void showFullscreenImageDialog(final String imgPath) {
