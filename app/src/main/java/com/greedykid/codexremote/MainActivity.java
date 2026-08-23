@@ -173,7 +173,7 @@ public class MainActivity extends Activity {
     private int lastLoadedTurnCount = -1;
     private boolean lastRenderedWasRunning = false;
 
-    // Live Bottom Sheet Modal State (Real-time updates while open)
+    // Live Bottom Sheet Modal State
     private Dialog activeBottomSheetDialog = null;
     private LinearLayout activeBottomSheetList = null;
     private TextView activeBottomSheetSubtitle = null;
@@ -333,7 +333,6 @@ public class MainActivity extends Activity {
     private void buildSidebarContent(LinearLayout sidebar) {
         sidebar.setPadding(dp(22), dp(24), dp(22), dp(20));
 
-        // App Branding Header
         LinearLayout brand = new LinearLayout(this);
         brand.setOrientation(LinearLayout.HORIZONTAL);
         brand.setGravity(Gravity.CENTER_VERTICAL);
@@ -352,7 +351,6 @@ public class MainActivity extends Activity {
         brand.addView(brandText, new LinearLayout.LayoutParams(0, -2, 1));
         sidebar.addView(brand);
 
-        // Status Card
         LinearLayout statusCard = new LinearLayout(this);
         statusCard.setOrientation(LinearLayout.VERTICAL);
         statusCard.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
@@ -380,7 +378,6 @@ public class MainActivity extends Activity {
         statusCard.addView(sidebarEngineLabel, lpE);
         sidebar.addView(statusCard, lpSt);
 
-        // Menu Items List
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
@@ -431,7 +428,6 @@ public class MainActivity extends Activity {
         scroll.addView(menuItems);
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        // Footer Version info
         TextView ver = cText("v2.9.5 • Claude Floating Composer & Rich Markdown", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
@@ -560,7 +556,6 @@ public class MainActivity extends Activity {
     private void buildHubScreen(LinearLayout parent) {
         parent.setPadding(dp(18), dp(14), dp(18), dp(16));
 
-        // Top Navigation Bar
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -573,7 +568,6 @@ public class MainActivity extends Activity {
         View spacer = new View(this);
         topBar.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
 
-        // QR Button
         LinearLayout qrBtn = new LinearLayout(this);
         qrBtn.setOrientation(LinearLayout.HORIZONTAL);
         qrBtn.setGravity(Gravity.CENTER_VERTICAL);
@@ -587,7 +581,6 @@ public class MainActivity extends Activity {
         lpQr.setMargins(0, 0, dp(10), 0);
         topBar.addView(qrBtn, lpQr);
 
-        // New Session Button
         LinearLayout newBtnTop = new LinearLayout(this);
         newBtnTop.setOrientation(LinearLayout.HORIZONTAL);
         newBtnTop.setGravity(Gravity.CENTER_VERTICAL);
@@ -600,13 +593,11 @@ public class MainActivity extends Activity {
         topBar.addView(newBtnTop);
         parent.addView(topBar);
 
-        // Header Title: "Code" in Iconic Serif Font
         TextView headerTitle = cText("Code", 36, CLAUDE_TEXT_MAIN, true, true);
         LinearLayout.LayoutParams lpTitle = new LinearLayout.LayoutParams(-1, -2);
         lpTitle.setMargins(0, dp(4), 0, dp(20));
         parent.addView(headerTitle, lpTitle);
 
-        // Scrollable Session Categories
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
@@ -778,12 +769,10 @@ public class MainActivity extends Activity {
     // SCREEN 2: CHAT VIEW (Floating Composer & Smooth Scroll Underlay)
     // ============================================================
     private void buildChatScreen(FrameLayout root) {
-        // 1. Full-Height Content Area (Top Bar + ScrollView)
         LinearLayout contentLayout = new LinearLayout(this);
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         contentLayout.setPadding(dp(16), dp(8), dp(16), 0);
 
-        // Top App Bar
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -814,7 +803,6 @@ public class MainActivity extends Activity {
         topBar.addView(moreBtn);
         contentLayout.addView(topBar);
 
-        // ScrollView with generous bottom padding so messages glide behind the floating composer
         chatScroll = new ScrollView(this);
         chatScroll.setFillViewport(true);
         chatScroll.setVerticalScrollBarEnabled(false);
@@ -833,12 +821,11 @@ public class MainActivity extends Activity {
 
         root.addView(contentLayout, new FrameLayout.LayoutParams(-1, -1));
 
-        // 2. Floating Bottom Composer Card (Pure White with shadow & transparent surrounding margins)
+        // Floating Bottom Composer Card (Pure White with shadow & transparent surrounding margins)
         LinearLayout floatingWrapper = new LinearLayout(this);
         floatingWrapper.setOrientation(LinearLayout.VERTICAL);
         floatingWrapper.setBackgroundColor(Color.TRANSPARENT);
 
-        // Attachment Preview Chip (Floats right above composer)
         attachmentChip = createAttachmentChip();
         floatingWrapper.addView(attachmentChip);
 
@@ -862,7 +849,6 @@ public class MainActivity extends Activity {
         promptInput.setPadding(0, 0, 0, dp(8));
         composerCard.addView(promptInput, new LinearLayout.LayoutParams(-1, -2));
 
-        // Bottom Controls Row: [Repo Pill] ... [+] [Cloud] [Mic] [Send]
         LinearLayout bottomRow = new LinearLayout(this);
         bottomRow.setOrientation(LinearLayout.HORIZONTAL);
         bottomRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -909,7 +895,6 @@ public class MainActivity extends Activity {
         root.addView(floatingWrapper, lpFloat);
     }
 
-    // Attachment Chip with Image Thumbnail Preview
     private LinearLayout createAttachmentChip() {
         LinearLayout chip = new LinearLayout(this);
         chip.setOrientation(LinearLayout.HORIZONTAL);
@@ -983,9 +968,6 @@ public class MainActivity extends Activity {
         Toast.makeText(this, "Engine: " + currentEngine, Toast.LENGTH_SHORT).show();
     }
 
-    // ============================================================
-    // POPUP DROPDOWN MENU (3-DOTS)
-    // ============================================================
     private void showMoreDropdownMenu(View anchorView) {
         PopupMenu popup = new PopupMenu(this, anchorView);
         popup.getMenu().add(0, 1, 0, "Scan QR Code Pairing");
@@ -1008,9 +990,6 @@ public class MainActivity extends Activity {
         popup.show();
     }
 
-    // ============================================================
-    // TRUE-ASPECT-RATIO CRASH-PROOF QR SCANNER
-    // ============================================================
     private void startQrScanner() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -1540,7 +1519,6 @@ public class MainActivity extends Activity {
         addMessageCard("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
         promptInput.setText("");
 
-        // Scroll to bottom when user sends a prompt
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
 
         startAutoRefresh();
@@ -1573,7 +1551,6 @@ public class MainActivity extends Activity {
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
 
-                    // Render final output INSTANTLY from the completed response object
                     renderActiveSessionTurns(activeConversationId, res, false);
                 });
             } catch (Exception e) {
@@ -2072,7 +2049,6 @@ public class MainActivity extends Activity {
         card.setBackground(cBox(bgColor, borderColor, 1, 16));
         card.setPadding(dp(14), dp(10), dp(14), dp(12));
 
-        // Header Row: Author + Timestamp + Quick Copy Button
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
@@ -2096,10 +2072,8 @@ public class MainActivity extends Activity {
         head.addView(copyBtn);
         card.addView(head);
 
-        // Check if content contains image tags or file attachment
         renderMessageContentWithMedia(card, content, isUser);
 
-        // Dedicated Bottom Action Bar for Assistant Messages (Salin / Copy Response Pill)
         if (!isUser && content != null && !content.trim().isEmpty()) {
             LinearLayout botActionRow = new LinearLayout(this);
             botActionRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -2135,14 +2109,17 @@ public class MainActivity extends Activity {
 
     private String cleanMarkdownForCopy(String raw) {
         if (raw == null) return "";
-        return raw.replaceAll("\\[File: [^\\n\\]]+\\]\\n?", "").trim();
+        try {
+            return raw.replaceAll("\\\\[File: [^\\\\n\\\\]]+\\\\]\\\\n?", "").trim();
+        } catch (Exception e) {
+            return raw.trim();
+        }
     }
 
-    // Media & Image Preview Renderer in Chat Messages
     private void renderMessageContentWithMedia(LinearLayout container, String text, boolean isUser) {
         if (text == null || text.isEmpty()) return;
 
-        Pattern imgFilePat = Pattern.compile("\\[File:\\s*([^\\]]+\\.(?:png|jpg|jpeg|webp|gif|svg))\\]", Pattern.CASE_INSENSITIVE);
+        Pattern imgFilePat = Pattern.compile("\\\\[File:\\\\s*([^\\\\]]+\\\\.(?:png|jpg|jpeg|webp|gif|svg))\\\\]", Pattern.CASE_INSENSITIVE);
         Matcher m = imgFilePat.matcher(text);
 
         String remainingText = text;
@@ -2218,7 +2195,6 @@ public class MainActivity extends Activity {
         String[] sections = markdown.split("```");
         for (int s = 0; s < sections.length; s++) {
             if (s % 2 == 1) {
-                // Fenced Code Block
                 String block = sections[s];
                 String lang = "CODE";
                 String codeContent = block;
@@ -2400,7 +2376,6 @@ public class MainActivity extends Activity {
         tableLayout.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 10));
         tableLayout.setPadding(dp(1), dp(1), dp(1), dp(1));
 
-        // Header Row
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setBackgroundColor(CLAUDE_SURFACE_MUTED);
@@ -2414,7 +2389,6 @@ public class MainActivity extends Activity {
         }
         tableLayout.addView(headerRow);
 
-        // Data Rows
         for (int r = 1; r < tableLines.size(); r++) {
             String rowLine = tableLines.get(r);
             if (rowLine.replace("|", "").replace("-", "").replace(":", "").replace(" ", "").isEmpty()) {
@@ -2456,7 +2430,7 @@ public class MainActivity extends Activity {
         String trimmed = row.trim();
         if (trimmed.startsWith("|")) trimmed = trimmed.substring(1);
         if (trimmed.endsWith("|")) trimmed = trimmed.substring(0, trimmed.length() - 1);
-        String[] parts = trimmed.split("\\|");
+        String[] parts = trimmed.split("\\\\|");
         for (int i = 0; i < parts.length; i++) {
             parts[i] = parts[i].trim();
         }
@@ -2476,55 +2450,49 @@ public class MainActivity extends Activity {
         SpannableStringBuilder ssb = new SpannableStringBuilder(line);
 
         // Bold (**bold** or __bold__)
-        Pattern boldPat = Pattern.compile("(\\*\\*|__)(.+?)\\1");
-        Matcher boldMat = boldPat.matcher(ssb.toString());
-        while (boldMat.find()) {
-            int start = boldMat.start();
-            int end = boldMat.end();
-            String inner = boldMat.group(2);
-            ssb.replace(start, end, inner);
-            ssb.setSpan(new StyleSpan(Typeface.BOLD), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            boldMat = boldPat.matcher(ssb.toString());
-        }
-
-        // Italic (*italic* or _italic_)
-        Pattern italicPat = Pattern.compile("(?<!\\*|_)((\\*|_))(?!\\*|_)(.+?)\\1");
-        Matcher italicMat = italicPat.matcher(ssb.toString());
-        while (italicMat.find()) {
-            int start = italicMat.start();
-            int end = italicMat.end();
-            String inner = italicMat.group(3);
-            ssb.replace(start, end, inner);
-            ssb.setSpan(new StyleSpan(Typeface.ITALIC), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            italicMat = italicPat.matcher(ssb.toString());
-        }
+        try {
+            Pattern boldPat = Pattern.compile("(\\\\*\\\\*|__)(.+?)\\\\1");
+            Matcher boldMat = boldPat.matcher(ssb.toString());
+            while (boldMat.find()) {
+                int start = boldMat.start();
+                int end = boldMat.end();
+                String inner = boldMat.group(2);
+                ssb.replace(start, end, inner);
+                ssb.setSpan(new StyleSpan(Typeface.BOLD), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                boldMat = boldPat.matcher(ssb.toString());
+            }
+        } catch (Exception ignored) {}
 
         // Strikethrough (~~text~~)
-        Pattern strikePat = Pattern.compile("~~(.+?)~~");
-        Matcher strikeMat = strikePat.matcher(ssb.toString());
-        while (strikeMat.find()) {
-            int start = strikeMat.start();
-            int end = strikeMat.end();
-            String inner = strikeMat.group(1);
-            ssb.replace(start, end, inner);
-            ssb.setSpan(new StrikethroughSpan(), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            strikeMat = strikePat.matcher(ssb.toString());
-        }
+        try {
+            Pattern strikePat = Pattern.compile("~~(.+?)~~");
+            Matcher strikeMat = strikePat.matcher(ssb.toString());
+            while (strikeMat.find()) {
+                int start = strikeMat.start();
+                int end = strikeMat.end();
+                String inner = strikeMat.group(1);
+                ssb.replace(start, end, inner);
+                ssb.setSpan(new StrikethroughSpan(), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                strikeMat = strikePat.matcher(ssb.toString());
+            }
+        } catch (Exception ignored) {}
 
         // Inline code (`code`)
-        Pattern codePat = Pattern.compile("`([^`]+)`");
-        Matcher codeMat = codePat.matcher(ssb.toString());
-        while (codeMat.find()) {
-            int start = codeMat.start();
-            int end = codeMat.end();
-            String inner = codeMat.group(1);
-            ssb.replace(start, end, " " + inner + " ");
-            int spanEnd = start + inner.length() + 2;
-            ssb.setSpan(new TypefaceSpan("monospace"), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            ssb.setSpan(new BackgroundColorSpan(CLAUDE_SURFACE_MUTED), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            ssb.setSpan(new ForegroundColorSpan(CLAUDE_TERRACOTTA), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            codeMat = codePat.matcher(ssb.toString());
-        }
+        try {
+            Pattern codePat = Pattern.compile("`([^`]+)`");
+            Matcher codeMat = codePat.matcher(ssb.toString());
+            while (codeMat.find()) {
+                int start = codeMat.start();
+                int end = codeMat.end();
+                String inner = codeMat.group(1);
+                ssb.replace(start, end, " " + inner + " ");
+                int spanEnd = start + inner.length() + 2;
+                ssb.setSpan(new TypefaceSpan("monospace"), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssb.setSpan(new BackgroundColorSpan(CLAUDE_SURFACE_MUTED), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssb.setSpan(new ForegroundColorSpan(CLAUDE_TERRACOTTA), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                codeMat = codePat.matcher(ssb.toString());
+            }
+        } catch (Exception ignored) {}
 
         return ssb;
     }
