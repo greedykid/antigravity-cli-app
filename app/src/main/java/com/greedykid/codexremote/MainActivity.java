@@ -506,6 +506,11 @@ public class MainActivity extends Activity {
             showGitPanel();
         });
 
+        addSidebarMenuItem(body, R.drawable.ic_folder, "Proyek", null, -1, false, () -> {
+            closeSidebar();
+            showProjectPicker();
+        });
+
         addSidebarMenuItem(body, R.drawable.ic_settings, "Pengaturan", null, 2, false, () -> {
             closeSidebar();
             showScreen(2);
@@ -545,6 +550,11 @@ public class MainActivity extends Activity {
         addSidebarMenuItem(body, R.drawable.ic_security, "Mode Eksekusi", null, -1, false, () -> {
             closeSidebar();
             showSandboxPicker();
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_build, "Pemeliharaan", null, -1, false, () -> {
+            closeSidebar();
+            showMaintenanceSheet();
         });
 
         addSidebarMenuItem(body, R.drawable.ic_refresh, "Test Ping & Health", null, -1, false, this::checkHealth);
@@ -1304,6 +1314,8 @@ public class MainActivity extends Activity {
         settingsGitPathSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_source_branch, "Git repo path",
                 gitPathLabel(), () -> showGitPathBottomSheet(), true);
         addSettingsRowItem(g3, R.drawable.ic_laptop, "Server Tersimpan", null, () -> showServerSwitcher(), true);
+        addSettingsRowItem(g3, R.drawable.ic_folder, "Proyek", null, () -> showProjectPicker(), true);
+        addSettingsRowItem(g3, R.drawable.ic_build, "Pemeliharaan", null, () -> showMaintenanceSheet(), true);
         addSettingsRowItem(g3, R.drawable.ic_android, "Izin", null, () -> showPermissionsBottomSheet(), false);
         list.addView(g3);
 
@@ -1674,30 +1686,16 @@ public class MainActivity extends Activity {
 
         final boolean isCodex = "codex".equalsIgnoreCase(currentEngine);
 
-        // 1. ENGINE-SPECIFIC USAGE SECTION
+        // 1. ACTIVITY SECTION (filled in by the fetch below)
         final LinearLayout geminiGroup = createSettingsGroupContainer();
         geminiGroup.setPadding(dp(16), dp(14), dp(16), dp(14));
-        renderModelGroupHeader(geminiGroup, isCodex ? "CODEX USAGE" : "GEMINI MODELS", isCodex ? "Local Codex session metrics" : "Gemini Flash, Gemini Pro");
-        renderUsageProgressSection(geminiGroup, isCodex ? "Tokens Used" : "Weekly Limit Remaining", isCodex ? 100 : 75, isCodex ? "Loading usage..." : "75% remaining", isCodex ? "Read from ~/.codex sessions" : "Refreshes in 141h 2m", isCodex ? CLAUDE_AMBER : CLAUDE_GREEN);
-        
-        View spacerG = new View(this);
-        LinearLayout.LayoutParams lpSpG = new LinearLayout.LayoutParams(-1, dp(12));
-        geminiGroup.addView(spacerG, lpSpG);
-        
-        renderUsageProgressSection(geminiGroup, isCodex ? "Requests" : "Five Hour Limit Remaining", isCodex ? 100 : 47, isCodex ? "Loading usage..." : "47% remaining", isCodex ? "Read from Codex history" : "Refreshes in 3h 2m", isCodex ? CLAUDE_AMBER : 0xFFEAB308);
+        renderModelGroupHeader(geminiGroup, "AKTIVITAS", "Memuat...");
         list.addView(geminiGroup);
 
-        // 2. CLAUDE AND GPT MODELS SECTION
+        // 2. QUOTA SECTION — deliberately empty until the server says what it knows
         final LinearLayout claudeGroup = createSettingsGroupContainer();
         claudeGroup.setPadding(dp(16), dp(14), dp(16), dp(14));
-        renderModelGroupHeader(claudeGroup, isCodex ? "CODEX MODEL" : "CLAUDE AND GPT MODELS", isCodex ? "Selected directly in the app" : "Claude Opus, Claude Sonnet, GPT-OSS");
-        renderUsageProgressSection(claudeGroup, isCodex ? "Active model" : "Weekly Limit Remaining", 100, isCodex ? displayModel(currentModel) : "100% remaining", isCodex ? "Applied to new prompts" : "Quota available", isCodex ? CLAUDE_AMBER : CLAUDE_GREEN);
-        
-        View spacerC = new View(this);
-        LinearLayout.LayoutParams lpSpC = new LinearLayout.LayoutParams(-1, dp(12));
-        claudeGroup.addView(spacerC, lpSpC);
-
-        renderUsageProgressSection(claudeGroup, isCodex ? "Plan" : "Five Hour Limit Remaining", 100, isCodex ? "Codex CLI" : "100% remaining", isCodex ? "Usage tracked locally" : "Quota available", isCodex ? CLAUDE_AMBER : CLAUDE_GREEN);
+        renderModelGroupHeader(claudeGroup, "KUOTA PROVIDER", "Memuat...");
         list.addView(claudeGroup);
 
         // 3. ENGINE & SERVER DETAILS
@@ -1760,57 +1758,48 @@ public class MainActivity extends Activity {
                             String acc = json.optString("account", userEmail);
                             sub.setText("Account: " + acc);
 
-                            if (isCodex) {
-                                geminiGroup.removeAllViews();
-                                renderModelGroupHeader(geminiGroup, "CODEX USAGE", "Local Codex session metrics");
-                                renderUsageProgressSection(geminiGroup, "Tokens Used", 100, formatCount(json.optLong("estimatedTokens", 0)) + " tokens", "Read from ~/.codex sessions", CLAUDE_AMBER);
-                                View codexSpacer = new View(MainActivity.this);
-                                geminiGroup.addView(codexSpacer, new LinearLayout.LayoutParams(-1, dp(12)));
-                                renderUsageProgressSection(geminiGroup, "Requests", 100, json.optInt("totalPrompts", 0) + " prompts", "Read from Codex history", CLAUDE_AMBER);
-                                claudeGroup.removeAllViews();
-                                renderModelGroupHeader(claudeGroup, "CODEX MODEL", "Selected directly in the app");
-                                renderUsageProgressSection(claudeGroup, "Active model", 100, displayModel(currentModel), "Applied to new prompts", CLAUDE_AMBER);
-                                detailCard.removeAllViews();
-                                addStatRow(detailCard, "Active Engine", "Codex CLI");
-                                addStatRow(detailCard, "Active Model", displayModel(currentModel));
-                                addStatRow(detailCard, "Total Requests", json.optInt("totalPrompts", 0) + " Prompts");
-                                addStatRow(detailCard, "Estimated Tokens", formatCount(json.optLong("estimatedTokens", 0)));
-                                addStatRow(detailCard, "Connected Host", json.optString("hostname", currentServerHostname));
-                                return;
-                            }
-
-                            int gW = json.optInt("geminiWeekly", 75);
-                            String gWReset = json.optString("geminiWeeklyReset", "Refreshes in 141h 2m");
-                            int g5H = json.optInt("geminiFiveHour", 47);
-                            String g5HReset = json.optString("geminiFiveHourReset", "Refreshes in 3h 2m");
+                            // Everything below is measured on the server. The old
+                            // screen filled gaps with invented numbers (75%, 47%,
+                            // 2782 steps); a real zero now shows as zero.
+                            boolean quotaKnown = json.optBoolean("quotaKnown", false);
 
                             geminiGroup.removeAllViews();
-                            renderModelGroupHeader(geminiGroup, "GEMINI MODELS", "Gemini Flash, Gemini Pro");
-                            renderUsageProgressSection(geminiGroup, "Weekly Limit Remaining", gW, gW + "% remaining", gWReset, CLAUDE_GREEN);
-                            
-                            View sp1 = new View(MainActivity.this);
-                            geminiGroup.addView(sp1, new LinearLayout.LayoutParams(-1, dp(12)));
-                            
-                            renderUsageProgressSection(geminiGroup, "Five Hour Limit Remaining", g5H, g5H + "% remaining", g5HReset, g5H < 50 ? 0xFFEAB308 : CLAUDE_GREEN);
+                            renderModelGroupHeader(geminiGroup, "AKTIVITAS", "Dihitung dari riwayat lokal di server");
+                            addStatRow(geminiGroup, "5 jam terakhir", json.optInt("promptsLast5h", 0) + " prompt");
+                            addStatRow(geminiGroup, "24 jam terakhir", json.optInt("promptsLast24h", 0) + " prompt");
+                            addStatRow(geminiGroup, "7 hari terakhir", json.optInt("promptsLast7d", 0) + " prompt");
 
-                            int cW = json.optInt("claudeWeekly", 100);
-                            int c5H = json.optInt("claudeFiveHour", 100);
                             claudeGroup.removeAllViews();
-                            renderModelGroupHeader(claudeGroup, "CLAUDE AND GPT MODELS", "Claude Opus, Claude Sonnet, GPT-OSS");
-                            renderUsageProgressSection(claudeGroup, "Weekly Limit Remaining", cW, cW + "% remaining", "Quota available", CLAUDE_GREEN);
-                            
-                            View sp2 = new View(MainActivity.this);
-                            claudeGroup.addView(sp2, new LinearLayout.LayoutParams(-1, dp(12)));
-                            
-                            renderUsageProgressSection(claudeGroup, "Five Hour Limit Remaining", c5H, c5H + "% remaining", "Quota available", CLAUDE_GREEN);
+                            if (!quotaKnown) {
+                                renderModelGroupHeader(claudeGroup, "KUOTA PROVIDER", "Tidak tersedia dari CLI lokal");
+                                TextView note = cText(json.optString("quotaStatus",
+                                                "CLI tidak mengekspos sisa kuota provider, jadi angkanya tidak ditampilkan."),
+                                        12.5f, CLAUDE_TEXT_MUTED, false, false);
+                                note.setPadding(0, dp(6), 0, 0);
+                                claudeGroup.addView(note);
+                            }
 
                             detailCard.removeAllViews();
-                            addStatRow(detailCard, "Active Engine", "Antigravity CLI (agy)");
-                            addStatRow(detailCard, "Active Model", json.optString("model", "Gemini 3.7 Flash (High)"));
-                            addStatRow(detailCard, "Total Requests", json.optInt("totalPrompts", 74) + " Prompts");
-                            addStatRow(detailCard, "Executed Steps", String.format(Locale.getDefault(), "%,d Langkah", json.optInt("totalSteps", 2782)));
-                            addStatRow(detailCard, "Tools Invocations", String.format(Locale.getDefault(), "%,d Aksi", json.optInt("totalTools", 1125)));
-                            addStatRow(detailCard, "Connected Host", json.optString("hostname", currentServerHostname));
+                            if (isCodex) {
+                                addStatRow(detailCard, "Engine aktif", "Codex CLI");
+                                addStatRow(detailCard, "Model aktif", displayModel(currentModel));
+                                addStatRow(detailCard, "Total prompt", formatCount(json.optLong("totalPrompts", 0)));
+                                addStatRow(detailCard, "Total sesi", formatCount(json.optLong("totalSessions", 0)));
+                                addStatRow(detailCard, json.optBoolean("tokensMeasured", false)
+                                                ? "Token terpakai" : "Perkiraan token",
+                                        formatCount(json.optLong("estimatedTokens", 0)));
+                            } else {
+                                addStatRow(detailCard, "Engine aktif", "Antigravity CLI (agy)");
+                                addStatRow(detailCard, "Model aktif", displayModel(currentModel));
+                                addStatRow(detailCard, "Total prompt", formatCount(json.optLong("totalPrompts", 0)));
+                                addStatRow(detailCard, "Total sesi", formatCount(json.optLong("totalSessions", 0)));
+                                addStatRow(detailCard, "Langkah dieksekusi", formatCount(json.optLong("totalSteps", 0)));
+                                addStatRow(detailCard, "Pemanggilan tool", formatCount(json.optLong("totalTools", 0)));
+                                addStatRow(detailCard, "Perkiraan token", formatCount(json.optLong("estimatedTokens", 0)));
+                                addStatRow(detailCard, "Memori server", json.optString("memoryUsage", "-"));
+                            }
+                            addStatRow(detailCard, "Host", json.optString("hostname", currentServerHostname));
+                            addStatRow(detailCard, "Uptime", json.optString("uptime", "-"));
                         });
                     } else {
                         mainHandler.post(() -> btnRefresh.setColorFilter(CLAUDE_TEXT_MUTED));
@@ -1838,57 +1827,6 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(2), 0, dp(12));
         container.addView(mSub, lp);
-    }
-
-    private void renderUsageProgressSection(LinearLayout container, String title, int percent, String details, String resetText, int fillColor) {
-        LinearLayout head = new LinearLayout(this);
-        head.setOrientation(LinearLayout.HORIZONTAL);
-        head.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView tView = cText(title, 14f, CLAUDE_TEXT_MAIN, true, false);
-        head.addView(tView, new LinearLayout.LayoutParams(0, -2, 1));
-
-        TextView pView = cText(percent + "%", 14f, fillColor, true, false);
-        head.addView(pView);
-        container.addView(head);
-
-        // Progress Bar Track
-        FrameLayout track = new FrameLayout(this);
-        track.setBackground(cBox(CLAUDE_SURFACE_MUTED, 0, 0, 4));
-
-        View fill = new View(this);
-        fill.setBackground(cBox(fillColor, 0, 0, 4));
-
-        float clamped = Math.max(0.04f, Math.min(1.0f, percent / 100f));
-        LinearLayout.LayoutParams lpFill = new LinearLayout.LayoutParams(0, dp(8));
-        lpFill.weight = clamped;
-
-        LinearLayout fillWrapper = new LinearLayout(this);
-        fillWrapper.setOrientation(LinearLayout.HORIZONTAL);
-        fillWrapper.addView(fill, lpFill);
-
-        View emptySpacer = new View(this);
-        LinearLayout.LayoutParams lpEmpty = new LinearLayout.LayoutParams(0, dp(8));
-        lpEmpty.weight = 1.0f - clamped;
-        fillWrapper.addView(emptySpacer, lpEmpty);
-
-        track.addView(fillWrapper, new FrameLayout.LayoutParams(-1, dp(8)));
-
-        LinearLayout.LayoutParams lpTr = new LinearLayout.LayoutParams(-1, dp(8));
-        lpTr.setMargins(0, dp(10), 0, dp(10));
-        container.addView(track, lpTr);
-
-        // Subtitle / Reset Details Row
-        LinearLayout foot = new LinearLayout(this);
-        foot.setOrientation(LinearLayout.HORIZONTAL);
-        foot.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView dView = cText(details, 12f, CLAUDE_TEXT_MUTED, false, false);
-        foot.addView(dView, new LinearLayout.LayoutParams(0, -2, 1));
-
-        TextView rView = cText(resetText, 11.5f, CLAUDE_TEXT_LIGHT, false, false);
-        foot.addView(rView);
-        container.addView(foot);
     }
 
     private void addStatRow(LinearLayout container, String label, String value) {
@@ -2938,6 +2876,7 @@ public class MainActivity extends Activity {
         addDropdownItem(popup, 7, "Cari Sesi", R.drawable.ic_search, CLAUDE_TEXT_MAIN);
         addDropdownItem(popup, 8, "File Workspace", R.drawable.ic_folder, CLAUDE_TEXT_MAIN);
         addDropdownItem(popup, 9, "Git", R.drawable.ic_source_branch, CLAUDE_TEXT_MAIN);
+        addDropdownItem(popup, 10, "Ekspor Transkrip", R.drawable.ic_content_copy, CLAUDE_TEXT_MAIN);
         forceShowPopupIcons(popup);
 
         popup.setOnMenuItemClickListener(item -> {
@@ -2951,6 +2890,7 @@ public class MainActivity extends Activity {
             else if (id == 7) showSearchPanel();
             else if (id == 8) showFileBrowser(".");
             else if (id == 9) showGitPanel();
+            else if (id == 10) exportActiveSession();
             return true;
         });
         popup.show();
@@ -3615,19 +3555,34 @@ public class MainActivity extends Activity {
                     req.put("conversationId", activeConversationId);
                 }
 
-                JSONObject res = executePost(endpoint, prefs.getString("token", ""), req);
+                // Ask for a job so the run survives this request: a dropped
+                // tunnel or a locked phone no longer loses the work.
+                req.put("async", true);
+
+                JSONObject accepted = executePost(endpoint, prefs.getString("token", ""), req);
+                final String jobId = accepted.optString("jobId", "");
+
+                JSONObject res = jobId.isEmpty()
+                        ? accepted                       // server predates jobs: it already ran
+                        : awaitJobResult(jobId);
+
                 String activeId = res.optString("conversationId", activeConversationId);
                 if (activeId != null && !activeId.isEmpty()) {
                     activeConversationId = activeId;
                 }
 
+                final JSONObject finalRes = res;
                 mainHandler.post(() -> {
                     isLiveTaskRunning = false;
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
 
-                    renderActiveSessionTurns(activeConversationId, res, false);
+                    String error = finalRes.optString("error", "");
+                    if (!error.isEmpty()) {
+                        Toast.makeText(MainActivity.this, error, Toast.LENGTH_LONG).show();
+                    }
+                    renderActiveSessionTurns(activeConversationId, finalRes, false);
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
@@ -3639,6 +3594,52 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    /**
+     * Polls a background job until it settles. SSE already streams progress, so
+     * this only has to notice the end state; it backs off to stay cheap during
+     * a long run, and gives up well after the server's own task timeout.
+     */
+    private JSONObject awaitJobResult(String jobId) {
+        long deadline = System.currentTimeMillis() + 4L * 60 * 60 * 1000;
+        int delayMs = 1500;
+
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(delayMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            delayMs = Math.min(delayMs + 500, 8000);
+
+            try {
+                JSONObject status = bridge.get("/api/jobs/" + BridgeClient.encode(jobId), 15000);
+                JSONObject job = status.optJSONObject("job");
+                if (job == null) continue;
+
+                String state = job.optString("state", "running");
+                if ("running".equals(state)) continue;
+
+                JSONObject result = new JSONObject();
+                result.put("ok", "done".equals(state));
+                result.put("conversationId", job.optString("conversationId", ""));
+                result.put("response", job.optString("response", ""));
+                if (job.has("turns")) result.put("turns", job.opt("turns"));
+                if (job.has("session")) result.put("session", job.opt("session"));
+                if (!job.isNull("error")) result.put("error", job.optString("error", ""));
+                return result;
+            } catch (Exception ignored) {
+                // Network blip: keep waiting, the job runs on the server.
+            }
+        }
+
+        try {
+            return new JSONObject().put("ok", false).put("error", "Task masih berjalan di server. Buka lagi nanti.");
+        } catch (Exception e) {
+            return new JSONObject();
+        }
     }
 
     private void syncLiveExecution() {
@@ -4363,7 +4364,7 @@ public class MainActivity extends Activity {
     }
 
     private void showFileViewer(final String path) {
-        Dialog dialog = createBaseBottomSheet(true);
+        final Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, path.substring(path.lastIndexOf('/') + 1), true);
 
         TextView pathLabel = cText("/" + path, 11.5f, CLAUDE_TEXT_MUTED, false, false);
@@ -4396,11 +4397,29 @@ public class MainActivity extends Activity {
                         return;
                     }
                     String lang = json.optString("language", "");
-                    String content = json.optString("content", "");
+                    final String content = json.optString("content", "");
+                    final boolean truncated = json.optBoolean("truncated", false);
+
+                    // Editing a truncated file would silently drop the tail.
+                    if (!truncated) {
+                        TextView edit = cText("Edit file", 13.5f, CLAUDE_TERRACOTTA, true, false);
+                        edit.setGravity(Gravity.CENTER);
+                        edit.setPadding(dp(14), dp(11), dp(14), dp(11));
+                        edit.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+                        edit.setOnClickListener(v -> {
+                            dialog.dismiss();
+                            showFileEditor(path, content);
+                        });
+                        LinearLayout.LayoutParams lpEdit = new LinearLayout.LayoutParams(-1, -2);
+                        lpEdit.setMargins(0, 0, 0, dp(10));
+                        body.addView(edit, lpEdit);
+                    }
+
                     // Reuse the markdown code-block styling by fencing the content.
                     renderMarkdownIntoContainer(body, "```" + lang + "\n" + content + "\n```", false);
-                    if (json.optBoolean("truncated", false)) {
-                        body.addView(cText("… dipotong di 512 KB", 12f, CLAUDE_AMBER, false, false));
+                    if (truncated) {
+                        body.addView(cText("… dipotong di 512 KB — edit dimatikan agar sisanya tidak hilang",
+                                12f, CLAUDE_AMBER, false, false));
                     }
                 });
             } catch (Exception ex) {
@@ -5000,6 +5019,446 @@ public class MainActivity extends Activity {
             if (currentScreen == 1) syncLiveExecution();
         }
     });
+
+    // ============================================================
+    // FILE EDITOR
+    // ============================================================
+    private void showFileEditor(final String path, final String initialContent) {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Edit " + path.substring(path.lastIndexOf('/') + 1), true);
+
+        TextView pathLabel = cText("/" + path, 11.5f, CLAUDE_TEXT_MUTED, false, false);
+        pathLabel.setSingleLine(true);
+        pathLabel.setEllipsize(TextUtils.TruncateAt.START);
+        root.addView(pathLabel);
+
+        final EditText editor = new EditText(this);
+        editor.setText(initialContent);
+        editor.setTextSize(12.5f);
+        editor.setTypeface(Typeface.MONOSPACE);
+        editor.setTextColor(Color.rgb(240, 240, 245));
+        editor.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
+        editor.setPadding(dp(12), dp(12), dp(12), dp(12));
+        editor.setGravity(Gravity.TOP | Gravity.START);
+        editor.setHorizontallyScrolling(false);
+        LinearLayout.LayoutParams lpEd = new LinearLayout.LayoutParams(-1, dp(360));
+        lpEd.setMargins(0, dp(10), 0, dp(12));
+        root.addView(editor, lpEd);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView cancel = cText("Batal", 14f, CLAUDE_TEXT_MAIN, true, false);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setPadding(dp(16), dp(13), dp(16), dp(13));
+        cancel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(0, -2, 1);
+        lpC.setMargins(0, 0, dp(8), 0);
+        actions.addView(cancel, lpC);
+
+        TextView save = cText("Simpan", 14f, Color.WHITE, true, false);
+        save.setGravity(Gravity.CENTER);
+        save.setPadding(dp(16), dp(13), dp(16), dp(13));
+        save.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
+        save.setOnClickListener(v -> {
+            final String content = editor.getText().toString();
+            save.setEnabled(false);
+            executor.execute(() -> {
+                try {
+                    JSONObject payload = new JSONObject().put("path", path).put("content", content);
+                    JSONObject result = bridge.post("/api/files/write", payload, 30000);
+                    mainHandler.post(() -> {
+                        save.setEnabled(true);
+                        if (result.optBoolean("ok", false)) {
+                            Toast.makeText(MainActivity.this, "Tersimpan", Toast.LENGTH_SHORT).show();
+                            dialog.dismiss();
+                        } else {
+                            Toast.makeText(MainActivity.this, describeApiError(result, "Gagal menyimpan"), Toast.LENGTH_LONG).show();
+                        }
+                    });
+                } catch (Exception ex) {
+                    mainHandler.post(() -> {
+                        save.setEnabled(true);
+                        Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show();
+                    });
+                }
+            });
+        });
+        actions.addView(save, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(actions);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    // ============================================================
+    // PROJECT PICKER (multi-workdir)
+    // ============================================================
+    private String activeProjectPath() {
+        return prefs.getString("git_repo_path", "");
+    }
+
+    private void showProjectPicker() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Proyek", true);
+        root.addView(cText("Folder proyek di dalam workdir server. Dipakai oleh panel Git dan File.",
+                12.5f, CLAUDE_TEXT_MUTED, false, false));
+
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams lpList = new LinearLayout.LayoutParams(-1, -2);
+        lpList.setMargins(0, dp(12), 0, dp(8));
+        root.addView(list, lpList);
+        list.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
+
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/projects");
+                mainHandler.post(() -> renderProjectList(list, dialog, json));
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    list.removeAllViews();
+                    list.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                });
+            }
+        });
+
+        TextView add = cText("+  Tambah proyek", 14f, CLAUDE_TERRACOTTA, true, false);
+        add.setGravity(Gravity.CENTER);
+        add.setPadding(dp(16), dp(13), dp(16), dp(13));
+        add.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        add.setOnClickListener(v -> {
+            dialog.dismiss();
+            showAddProjectSheet();
+        });
+        root.addView(add, new LinearLayout.LayoutParams(-1, -2));
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void renderProjectList(LinearLayout list, final Dialog dialog, JSONObject json) {
+        list.removeAllViews();
+        final String workdir = json.optString("workdir", "");
+        JSONArray projects = json.optJSONArray("projects");
+
+        // The workdir itself is always a valid target.
+        list.addView(buildProjectRow("Workdir server", workdir, "", true, dialog, null));
+
+        if (projects != null) {
+            for (int i = 0; i < projects.length(); i++) {
+                JSONObject p = projects.optJSONObject(i);
+                if (p == null) continue;
+                final String pPath = p.optString("path");
+                String detail = (p.optBoolean("exists", false) ? "" : "tidak ditemukan · ")
+                        + (p.optBoolean("isRepo", false) ? "git repo" : "bukan repo");
+                list.addView(buildProjectRow(p.optString("name", pPath), detail, pPath,
+                        p.optBoolean("exists", false), dialog, pPath));
+            }
+        }
+    }
+
+    private LinearLayout buildProjectRow(String name, String detail, final String path,
+                                         boolean enabled, final Dialog dialog, final String removable) {
+        boolean isActive = path.equals(activeProjectPath());
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, isActive ? CLAUDE_TERRACOTTA : CLAUDE_BORDER, 1, 14));
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setAlpha(enabled ? 1f : 0.5f);
+
+        card.addView(cIcon(R.drawable.ic_folder, 18, isActive ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(12), 0, dp(8), 0);
+        col.addView(cText(name, 14f, CLAUDE_TEXT_MAIN, true, false));
+        TextView sub = cText(detail.isEmpty() ? "-" : detail, 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        sub.setSingleLine(true);
+        sub.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        col.addView(sub);
+        card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+
+        if (isActive) card.addView(cIcon(R.drawable.ic_check, 18, CLAUDE_TERRACOTTA));
+
+        if (enabled) {
+            card.setOnClickListener(v -> {
+                prefs.edit().putString("git_repo_path", path).apply();
+                refreshSettingsValues();
+                dialog.dismiss();
+                Toast.makeText(this, "Proyek: " + name, Toast.LENGTH_SHORT).show();
+            });
+        }
+
+        if (removable != null && !removable.isEmpty()) {
+            card.setOnLongClickListener(v -> {
+                removeProject(removable);
+                dialog.dismiss();
+                return true;
+            });
+        }
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(8), 0, 0);
+        card.setLayoutParams(lp);
+        return card;
+    }
+
+    private void showAddProjectSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Tambah Proyek", true);
+        root.addView(cText("Path relatif terhadap workdir server, mis. codexcli-remote-app",
+                12.5f, CLAUDE_TEXT_MUTED, false, false));
+
+        final EditText nameInput = new EditText(this);
+        nameInput.setHint("Nama tampilan (opsional)");
+        nameInput.setTextSize(14.5f);
+        nameInput.setSingleLine(true);
+        nameInput.setTextColor(CLAUDE_TEXT_MAIN);
+        nameInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        nameInput.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
+        nameInput.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lpN = new LinearLayout.LayoutParams(-1, -2);
+        lpN.setMargins(0, dp(14), 0, dp(10));
+        root.addView(nameInput, lpN);
+
+        final EditText pathInput = new EditText(this);
+        pathInput.setHint("path/relatif");
+        pathInput.setTextSize(14.5f);
+        pathInput.setSingleLine(true);
+        pathInput.setTextColor(CLAUDE_TEXT_MAIN);
+        pathInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        pathInput.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
+        pathInput.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lpP = new LinearLayout.LayoutParams(-1, -2);
+        lpP.setMargins(0, 0, 0, dp(14));
+        root.addView(pathInput, lpP);
+
+        TextView save = cText("Simpan", 14.5f, Color.WHITE, true, false);
+        save.setGravity(Gravity.CENTER);
+        save.setPadding(dp(16), dp(14), dp(16), dp(14));
+        save.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        save.setOnClickListener(v -> {
+            String path = pathInput.getText().toString().trim();
+            if (path.isEmpty()) {
+                Toast.makeText(this, "Path tidak boleh kosong", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            addProject(nameInput.getText().toString().trim(), path);
+            dialog.dismiss();
+        });
+        root.addView(save, new LinearLayout.LayoutParams(-1, -2));
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void addProject(final String name, final String path) {
+        executor.execute(() -> {
+            try {
+                JSONObject current = bridge.get("/api/projects");
+                JSONArray list = current.optJSONArray("projects");
+                if (list == null) list = new JSONArray();
+
+                JSONArray next = new JSONArray();
+                for (int i = 0; i < list.length(); i++) {
+                    JSONObject p = list.optJSONObject(i);
+                    if (p != null) next.put(new JSONObject().put("name", p.optString("name")).put("path", p.optString("path")));
+                }
+                next.put(new JSONObject().put("name", name.isEmpty() ? path : name).put("path", path));
+
+                JSONObject result = bridge.post("/api/projects", new JSONObject().put("projects", next));
+                mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                        result.optBoolean("ok", false) ? "Proyek ditambahkan" : describeApiError(result, "Gagal"),
+                        Toast.LENGTH_SHORT).show());
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void removeProject(final String path) {
+        executor.execute(() -> {
+            try {
+                JSONObject current = bridge.get("/api/projects");
+                JSONArray list = current.optJSONArray("projects");
+                JSONArray next = new JSONArray();
+                if (list != null) {
+                    for (int i = 0; i < list.length(); i++) {
+                        JSONObject p = list.optJSONObject(i);
+                        if (p == null || path.equals(p.optString("path"))) continue;
+                        next.put(new JSONObject().put("name", p.optString("name")).put("path", p.optString("path")));
+                    }
+                }
+                bridge.post("/api/projects", new JSONObject().put("projects", next));
+                if (path.equals(activeProjectPath())) {
+                    mainHandler.post(() -> prefs.edit().putString("git_repo_path", "").apply());
+                }
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Proyek dihapus", Toast.LENGTH_SHORT).show());
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    // ============================================================
+    // SESSION EXPORT
+    // ============================================================
+    private void exportActiveSession() {
+        final String convId = activeConversationId;
+        if (convId == null || convId.isEmpty()) {
+            Toast.makeText(this, "Belum ada sesi untuk diekspor", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this, "Menyiapkan transkrip...", Toast.LENGTH_SHORT).show();
+
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/session/export?id=" + BridgeClient.encode(convId), 30000);
+                if (!json.optBoolean("ok", false)) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                            describeApiError(json, "Gagal mengekspor"), Toast.LENGTH_LONG).show());
+                    return;
+                }
+                final String markdown = json.optString("markdown", "");
+                final String title = json.optString("title", "Sesi");
+                mainHandler.post(() -> {
+                    Intent share = new Intent(Intent.ACTION_SEND);
+                    share.setType("text/plain");
+                    share.putExtra(Intent.EXTRA_SUBJECT, title);
+                    share.putExtra(Intent.EXTRA_TEXT, markdown);
+                    startActivity(Intent.createChooser(share, "Bagikan transkrip"));
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    // ============================================================
+    // MAINTENANCE: UPLOADS & AUDIT LOG
+    // ============================================================
+    private void showMaintenanceSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Pemeliharaan", true);
+
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, dp(420)));
+        body.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
+
+        loadMaintenance(body);
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void loadMaintenance(final LinearLayout body) {
+        executor.execute(() -> {
+            try {
+                final JSONObject uploads = bridge.get("/api/uploads");
+                final JSONObject audit = bridge.get("/api/audit?limit=30");
+                mainHandler.post(() -> renderMaintenance(body, uploads, audit));
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                });
+            }
+        });
+    }
+
+    private void renderMaintenance(final LinearLayout body, JSONObject uploads, JSONObject audit) {
+        body.removeAllViews();
+
+        TextView headUploads = cText("Uploads", 13f, CLAUDE_TEXT_MUTED, false, false);
+        headUploads.setPadding(0, 0, 0, dp(8));
+        body.addView(headUploads);
+
+        JSONArray entries = uploads.optJSONArray("entries");
+        int count = entries == null ? 0 : entries.length();
+        long totalBytes = uploads.optLong("totalBytes", 0);
+        int retention = uploads.optInt("retentionDays", 0);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.addView(cText(count + " file · " + humanSize(totalBytes), 14.5f, CLAUDE_TEXT_MAIN, true, false));
+        card.addView(cText(retention > 0
+                ? "Dihapus otomatis setelah " + retention + " hari"
+                : "Penghapusan otomatis dimatikan", 12.5f, CLAUDE_TEXT_MUTED, false, false));
+
+        TextView clean = cText("Bersihkan sekarang", 13.5f, CLAUDE_TERRACOTTA, true, false);
+        clean.setGravity(Gravity.CENTER);
+        clean.setPadding(dp(14), dp(11), dp(14), dp(11));
+        clean.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 12));
+        clean.setOnClickListener(v -> runUploadsCleanup(body));
+        LinearLayout.LayoutParams lpClean = new LinearLayout.LayoutParams(-1, -2);
+        lpClean.setMargins(0, dp(12), 0, 0);
+        card.addView(clean, lpClean);
+        body.addView(card, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView headAudit = cText("Aktivitas terakhir", 13f, CLAUDE_TEXT_MUTED, false, false);
+        headAudit.setPadding(0, dp(20), 0, dp(8));
+        body.addView(headAudit);
+
+        JSONArray log = audit.optJSONArray("entries");
+        if (log == null || log.length() == 0) {
+            body.addView(cText("Belum ada catatan.", 13f, CLAUDE_TEXT_LIGHT, false, false));
+            return;
+        }
+        for (int i = 0; i < log.length(); i++) {
+            JSONObject e = log.optJSONObject(i);
+            if (e == null) continue;
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(0, dp(7), 0, dp(7));
+
+            String event = e.optString("event", "?");
+            row.addView(cText(event, 13.5f, auditColor(event), true, false));
+
+            StringBuilder detail = new StringBuilder(e.optString("at", ""));
+            if (e.has("promptPreview")) detail.append(" · ").append(e.optString("promptPreview"));
+            else if (e.has("path")) detail.append(" · ").append(e.optString("path"));
+            else if (e.has("error")) detail.append(" · ").append(e.optString("error"));
+
+            TextView sub = cText(detail.toString(), 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+            sub.setMaxLines(2);
+            sub.setEllipsize(TextUtils.TruncateAt.END);
+            row.addView(sub);
+            body.addView(row);
+        }
+    }
+
+    private int auditColor(String event) {
+        if (event.contains("failed") || event.contains("rate_limited")) return CLAUDE_RED;
+        if (event.startsWith("git.") || event.startsWith("file.")) return CLAUDE_AMBER;
+        return CLAUDE_TEXT_MAIN;
+    }
+
+    private void runUploadsCleanup(final LinearLayout body) {
+        executor.execute(() -> {
+            try {
+                JSONObject result = bridge.post("/api/uploads/cleanup", new JSONObject(), 30000);
+                final int removed = result.optJSONArray("removed") == null ? 0 : result.optJSONArray("removed").length();
+                final long freed = result.optLong("freedBytes", 0);
+                mainHandler.post(() -> {
+                    Toast.makeText(MainActivity.this,
+                            removed == 0 ? "Tidak ada file lama" : (removed + " file dihapus · " + humanSize(freed)),
+                            Toast.LENGTH_SHORT).show();
+                    loadMaintenance(body);
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
 
     // ============================================================
     // GENERAL SETTINGS & INTERRUPT
