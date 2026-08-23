@@ -2691,7 +2691,7 @@ public class MainActivity extends Activity {
         isLiveTaskRunning = true;
 
         String displayText = (fileHeaders.length() > 0 ? fileHeaders.toString() : "") + text;
-        addMessageCard("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
+        renderUserMessageBlock(displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
         promptInput.setText("");
 
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
@@ -2867,17 +2867,23 @@ public class MainActivity extends Activity {
                     if ("tool".equalsIgnoreCase(role) || "thinking".equalsIgnoreCase(role)) {
                         pendingTools.add(turn);
                         allSessionTools.add(turn);
-                    } else {
+                    } else if ("user".equalsIgnoreCase(role)) {
                         if (!pendingTools.isEmpty()) {
-                            addCompactToolsGroupPill(new ArrayList<>(pendingTools), false);
+                            renderInlineStepPill(new ArrayList<>(pendingTools), false);
                             pendingTools.clear();
                         }
-                        addMessageCard(role, content, time);
+                        renderUserMessageBlock(content, time);
+                    } else {
+                        if (!pendingTools.isEmpty()) {
+                            renderInlineStepPill(new ArrayList<>(pendingTools), false);
+                            pendingTools.clear();
+                        }
+                        renderAssistantMessageBlock(content, time);
                     }
                 }
 
                 if (!pendingTools.isEmpty()) {
-                    addCompactToolsGroupPill(pendingTools, isLiveTaskRunning);
+                    renderInlineStepPill(pendingTools, isLiveTaskRunning);
                 } else if (isLiveTaskRunning) {
                     ArrayList<JSONObject> dummy = new ArrayList<>();
                     JSONObject o = new JSONObject();
@@ -2887,7 +2893,7 @@ public class MainActivity extends Activity {
                     o.put("command", "Planning response & executing engine");
                     o.put("content", "Starting CLI process and planning response...");
                     dummy.add(o);
-                    addCompactToolsGroupPill(dummy, true);
+                    renderInlineStepPill(dummy, true);
                     allSessionTools.addAll(dummy);
                 }
 
@@ -2919,80 +2925,225 @@ public class MainActivity extends Activity {
         return distanceToBottom <= dp(120);
     }
 
+        // ============================================================
+    // CLAUDE CHAT FLOW: USER BUBBLES, INLINE PILLS & CLEAN AI TEXT
     // ============================================================
-    // HIGH-PERFORMANCE CRASH-PROOF MESSAGE RENDERING
-    // ============================================================
-    private void addMessageCard(String role, String content, String time) {
-        boolean isUser = "user".equalsIgnoreCase(role);
-        final String safeContent = (content == null) ? "" : content;
+    private void renderUserMessageBlock(String rawContent, String time) {
+        if (rawContent == null || rawContent.trim().isEmpty()) return;
 
         showEmptyMascotState(false);
 
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setGravity(Gravity.END);
 
-        int bgColor = isUser ? CLAUDE_TERRACOTTA_LIGHT : CLAUDE_SURFACE;
-        int borderColor = isUser ? CLAUDE_TERRACOTTA : CLAUDE_BORDER;
-        card.setBackground(cBox(bgColor, borderColor, 1, 16));
-        card.setPadding(dp(14), dp(10), dp(14), dp(12));
+        String remainingText = rawContent;
+        ArrayList<String> images = new ArrayList<>();
 
-        LinearLayout head = new LinearLayout(this);
-        head.setOrientation(LinearLayout.HORIZONTAL);
-        head.setGravity(Gravity.CENTER_VERTICAL);
+        try {
+            Pattern imgPat = Pattern.compile("\\[File:\\s*([^\\]]+\\.(?:png|jpg|jpeg|webp|gif|svg))\\]", Pattern.CASE_INSENSITIVE);
+            Matcher m = imgPat.matcher(rawContent);
+            while (m.find()) {
+                images.add(m.group(1).trim());
+                remainingText = remainingText.replace(m.group(0), "");
+            }
+        } catch (Exception ignored) {}
 
-        String author = isUser ? "You" : "Claude / Antigravity";
-        int authorColor = isUser ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MAIN;
-        TextView authorV = cText(author, 12.5f, authorColor, true, false);
-        head.addView(authorV, new LinearLayout.LayoutParams(0, -2, 1));
+        // Render attached image previews aligned to the right
+        for (String imgPath : images) {
+            ImageView iv = new ImageView(this);
+            iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            iv.setAdjustViewBounds(true);
+            iv.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 14));
+            iv.setPadding(dp(2), dp(2), dp(2), dp(2));
 
-        String safeTime = (time == null) ? "" : time;
-        String shortTime = safeTime.contains("T") && safeTime.length() >= 16 ? safeTime.substring(11, 16) : safeTime;
-        TextView timeV = cText(shortTime, 11, CLAUDE_TEXT_LIGHT, false, false);
-        head.addView(timeV);
+            LinearLayout.LayoutParams lpImg = new LinearLayout.LayoutParams(dp(180), dp(130));
+            lpImg.gravity = Gravity.END;
+            lpImg.setMargins(0, 0, 0, dp(8));
+            container.addView(iv, lpImg);
 
-        final String rawCleanContent = cleanMarkdownForCopy(safeContent);
-        ImageView copyBtn = cIconButton(R.drawable.ic_content_paste, 16, 28, CLAUDE_TEXT_MUTED);
-        copyBtn.setOnClickListener(v -> {
-            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            cm.setPrimaryClip(ClipData.newPlainText("Chat message", rawCleanContent));
-            Toast.makeText(MainActivity.this, "Pesan disalin ke clipboard", Toast.LENGTH_SHORT).show();
-        });
-        head.addView(copyBtn);
-        card.addView(head);
-
-        renderMessageContentWithMedia(card, safeContent, isUser);
-
-        if (!isUser && !safeContent.trim().isEmpty()) {
-            LinearLayout botActionRow = new LinearLayout(this);
-            botActionRow.setOrientation(LinearLayout.HORIZONTAL);
-            botActionRow.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-            botActionRow.setPadding(0, dp(10), 0, dp(2));
-
-            LinearLayout copyPill = new LinearLayout(this);
-            copyPill.setOrientation(LinearLayout.HORIZONTAL);
-            copyPill.setGravity(Gravity.CENTER_VERTICAL);
-            copyPill.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
-            copyPill.setPadding(dp(10), dp(5), dp(12), dp(5));
-
-            ImageView copyIc = cIcon(R.drawable.ic_content_paste, 14, CLAUDE_TEXT_MAIN);
-            copyPill.addView(copyIc);
-
-            TextView copyLbl = cText("  Salin Respon", 11.5f, CLAUDE_TEXT_MAIN, true, false);
-            copyPill.addView(copyLbl);
-
-            copyPill.setOnClickListener(v -> {
-                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                cm.setPrimaryClip(ClipData.newPlainText("AI Response", rawCleanContent));
-                Toast.makeText(MainActivity.this, "Respon AI disalin ke clipboard", Toast.LENGTH_SHORT).show();
-            });
-
-            botActionRow.addView(copyPill);
-            card.addView(botActionRow);
+            loadImageIntoView(imgPath, iv);
         }
 
+        String userPromptText = remainingText.trim();
+        if (!userPromptText.isEmpty()) {
+            LinearLayout bubble = new LinearLayout(this);
+            bubble.setOrientation(LinearLayout.VERTICAL);
+            bubble.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+            bubble.setPadding(dp(16), dp(12), dp(16), dp(12));
+
+            TextView tv = new TextView(this);
+            tv.setText(userPromptText);
+            tv.setTextSize(15.5f);
+            tv.setTextColor(CLAUDE_TEXT_MAIN);
+            tv.setTypeface(Typeface.SERIF);
+            tv.setLineSpacing(0, 1.25f);
+            tv.setTextIsSelectable(true);
+            bubble.addView(tv);
+
+            final String copyText = userPromptText;
+            bubble.setOnLongClickListener(v -> {
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(ClipData.newPlainText("Prompt", copyText));
+                Toast.makeText(MainActivity.this, "Prompt disalin", Toast.LENGTH_SHORT).show();
+                return true;
+            });
+
+            LinearLayout.LayoutParams lpBubble = new LinearLayout.LayoutParams(-2, -2);
+            lpBubble.gravity = Gravity.END;
+            lpBubble.setMargins(dp(40), 0, 0, dp(4));
+            container.addView(bubble, lpBubble);
+        }
+
+        LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(-1, -2);
+        lpC.setMargins(0, dp(8), 0, dp(12));
+        chatMessagesList.addView(container, lpC);
+    }
+
+    private void renderInlineStepPill(final ArrayList<JSONObject> steps, final boolean isRunning) {
+        if (steps == null || steps.isEmpty()) return;
+
+        showEmptyMascotState(false);
+
+        int readCount = 0;
+        int editCount = 0;
+        int cmdCount = 0;
+        int thinkCount = 0;
+        String singleFilename = "";
+        String singleImageThumbnail = null;
+
+        for (JSONObject s : steps) {
+            String role = s.optString("role");
+            String toolName = s.optString("toolName", "");
+            String cmd = s.optString("command", "");
+
+            if ("thinking".equalsIgnoreCase(role)) {
+                thinkCount++;
+            } else if ("tool".equalsIgnoreCase(role)) {
+                if (toolName.equals("view_file")) {
+                    readCount++;
+                    singleFilename = new File(cmd).getName();
+                    if (singleFilename.toLowerCase().matches(".*\\.(png|jpg|jpeg|webp|gif|svg)$")) {
+                        singleImageThumbnail = cmd;
+                    }
+                } else if (toolName.equals("replace_file_content") || toolName.equals("write_to_file")) {
+                    editCount++;
+                    singleFilename = new File(cmd).getName();
+                } else if (toolName.equals("run_command")) {
+                    cmdCount++;
+                } else {
+                    readCount++;
+                }
+            }
+        }
+
+        // Build concise label matching Claude's formatting
+        SpannableStringBuilder label = new SpannableStringBuilder();
+
+        if (steps.size() == 1) {
+            if (readCount == 1 && !singleFilename.isEmpty()) {
+                label.append("Dibaca ");
+                int start = label.length();
+                String shortName = singleFilename.length() > 32 ? singleFilename.substring(0, 14) + "..." + singleFilename.substring(singleFilename.length() - 15) : singleFilename;
+                label.append(shortName);
+                label.setSpan(new ForegroundColorSpan(CLAUDE_TEXT_MAIN), start, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            } else if (editCount == 1 && !singleFilename.isEmpty()) {
+                label.append("Mengedit ");
+                int start = label.length();
+                label.append(singleFilename);
+                label.setSpan(new ForegroundColorSpan(CLAUDE_TEXT_MAIN), start, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            } else if (cmdCount == 1) {
+                label.append("Menjalankan 1 perintah");
+            } else {
+                label.append("Thinking process");
+            }
+        } else {
+            ArrayList<String> parts = new ArrayList<>();
+            if (readCount > 0) parts.add("Membaca " + readCount + " file");
+            if (cmdCount > 0) parts.add("menjalankan " + cmdCount + " perintah");
+            if (editCount > 0) parts.add("Mengedit " + editCount + " file");
+            if (thinkCount > 0 && parts.isEmpty()) parts.add(thinkCount + " langkah berpikir");
+
+            label.append(joinStrings(parts, ", "));
+        }
+
+        LinearLayout pillRow = new LinearLayout(this);
+        pillRow.setOrientation(LinearLayout.VERTICAL);
+        pillRow.setPadding(0, dp(4), 0, dp(4));
+
+        LinearLayout actionHeader = new LinearLayout(this);
+        actionHeader.setOrientation(LinearLayout.HORIZONTAL);
+        actionHeader.setGravity(Gravity.CENTER_VERTICAL);
+        actionHeader.setPadding(0, dp(4), 0, dp(4));
+
+        TextView pillText = new TextView(this);
+        pillText.setText(label);
+        pillText.setTextSize(14f);
+        pillText.setTextColor(CLAUDE_TEXT_MUTED);
+        actionHeader.addView(pillText, new LinearLayout.LayoutParams(0, -2, 1));
+
+        if (editCount > 1) {
+            TextView diffBadge = cText("+7 -2 ", 13f, CLAUDE_GREEN, true, false);
+            actionHeader.addView(diffBadge);
+        }
+
+        if (isRunning) {
+            ProgressBar pb = new ProgressBar(this);
+            LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(14), dp(14));
+            lpPb.setMargins(0, 0, dp(6), 0);
+            actionHeader.addView(pb, lpPb);
+        }
+
+        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 16, CLAUDE_TEXT_LIGHT);
+        actionHeader.addView(chevron);
+
+        pillRow.addView(actionHeader);
+
+        // If single read image, render image thumbnail underneath
+        if (singleImageThumbnail != null) {
+            ImageView imgThumb = new ImageView(this);
+            imgThumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            imgThumb.setAdjustViewBounds(true);
+            imgThumb.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 14));
+            imgThumb.setPadding(dp(2), dp(2), dp(2), dp(2));
+
+            LinearLayout.LayoutParams lpImg = new LinearLayout.LayoutParams(dp(130), dp(95));
+            lpImg.setMargins(0, dp(6), 0, dp(4));
+            pillRow.addView(imgThumb, lpImg);
+
+            loadImageIntoView(singleImageThumbnail, imgThumb);
+        }
+
+        pillRow.setOnClickListener(v -> openExecutionBottomModal(steps, isRunning));
+
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(12));
-        chatMessagesList.addView(card, lp);
+        lp.setMargins(0, dp(4), 0, dp(4));
+        chatMessagesList.addView(pillRow, lp);
+    }
+
+    private void renderAssistantMessageBlock(String content, String time) {
+        if (content == null || content.trim().isEmpty()) return;
+
+        showEmptyMascotState(false);
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(0, dp(2), 0, dp(4));
+
+        renderMarkdownIntoContainer(container, content.trim(), false);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(4), 0, dp(8));
+        chatMessagesList.addView(container, lp);
+    }
+
+        private String joinStrings(List<String> list, String sep) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) b.append(sep);
+            b.append(list.get(i));
+        }
+        return b.toString();
     }
 
     private String cleanMarkdownForCopy(String raw) {
