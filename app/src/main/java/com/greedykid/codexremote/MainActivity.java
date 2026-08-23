@@ -1187,10 +1187,7 @@ public class MainActivity extends Activity {
     private void showUsageStatsDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("Statistik Penggunaan")
-                .setMessage("• Engine: " + currentEngine + "
-• Host: " + currentServerHostname + "
-• Mode: Real-time Live Synchronization
-• Multi-File Attachments: Aktif")
+                .setMessage("• Engine: " + currentEngine + "\n• Host: " + currentServerHostname + "\n• Mode: Real-time Live Synchronization\n• Multi-File Attachments: Aktif")
                 .setPositiveButton("Tutup", null)
                 .show();
     }
@@ -1199,9 +1196,7 @@ public class MainActivity extends Activity {
         boolean camOk = checkCallingOrSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
         new AlertDialog.Builder(this)
                 .setTitle("Izin Aplikasi")
-                .setMessage("• Kamera: " + (camOk ? "Diizinkan ✓" : "Belum diizinkan") + "
-• Mikrofon: Diizinkan ✓
-• Penyimpanan: Diizinkan ✓")
+                .setMessage("• Kamera: " + (camOk ? "Diizinkan ✓" : "Belum diizinkan") + "\n• Mikrofon: Diizinkan ✓\n• Penyimpanan: Diizinkan ✓")
                 .setPositiveButton("OK", null)
                 .show();
     }
@@ -1219,8 +1214,7 @@ public class MainActivity extends Activity {
     private void showAboutAppDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("Tentang Antigravity Remote")
-                .setMessage("Versi 2.9.8 (Claude Code Edition)
-Gateway Android Client untuk Antigravity CLI & Codex CLI.")
+                .setMessage("Versi 2.9.8 (Claude Code Edition)\nGateway Android Client untuk Antigravity CLI & Codex CLI.")
                 .setPositiveButton("OK", null)
                 .show();
     }
