@@ -208,6 +208,8 @@ public class MainActivity extends Activity {
     private TextView settingsUserEmailText;
     private TextView settingsConnectorStatusText;
     private TextView settingsCapabilitiesSubtitle;
+    private TextView settingsSandboxSubtitle;
+    private TextView settingsGitPathSubtitle;
 
     // Active Session State
     private String activeConversationId = null;
@@ -1232,6 +1234,11 @@ public class MainActivity extends Activity {
         LinearLayout g3 = createSettingsGroupContainer();
         settingsCapabilitiesSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_tune, "Kemampuan", "4 diaktifkan", () -> toggleEngine(), true);
         settingsConnectorStatusText = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_link, "Konektor", "1 terhubung", () -> showConnectionBottomSheet(), true);
+        settingsSandboxSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_security, "Mode Eksekusi",
+                sandboxLabel(prefs.getString("sandbox_mode", "full")), () -> showSandboxPicker(), true);
+        settingsGitPathSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_source_branch, "Git repo path",
+                gitPathLabel(), () -> showGitPathBottomSheet(), true);
+        addSettingsRowItem(g3, R.drawable.ic_laptop, "Server Tersimpan", null, () -> showServerSwitcher(), true);
         addSettingsRowItem(g3, R.drawable.ic_android, "Izin", null, () -> showPermissionsBottomSheet(), false);
         list.addView(g3);
 
@@ -1358,6 +1365,57 @@ public class MainActivity extends Activity {
         if (settingsCapabilitiesSubtitle != null) {
             settingsCapabilitiesSubtitle.setText("Engine: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Antigravity CLI" : "Codex CLI"));
         }
+        if (settingsSandboxSubtitle != null) {
+            settingsSandboxSubtitle.setText(sandboxLabel(prefs.getString("sandbox_mode", "full")));
+        }
+        if (settingsGitPathSubtitle != null) {
+            settingsGitPathSubtitle.setText(gitPathLabel());
+        }
+    }
+
+    private String sandboxLabel(String mode) {
+        if ("readonly".equals(mode)) return "Hanya baca";
+        if ("workspace".equals(mode)) return "Tulis di workspace";
+        return "Akses penuh";
+    }
+
+    private String gitPathLabel() {
+        String path = prefs.getString("git_repo_path", "");
+        return path.isEmpty() ? "Workdir server" : path;
+    }
+
+    private void showGitPathBottomSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Git repo path", true);
+        root.addView(cText("Relatif terhadap workdir server. Kosongkan untuk memakai workdir itu sendiri.",
+                12.5f, CLAUDE_TEXT_MUTED, false, false));
+
+        final EditText input = new EditText(this);
+        input.setText(prefs.getString("git_repo_path", ""));
+        input.setHint("mis. codexcli-remote-app");
+        input.setTextSize(14.5f);
+        input.setSingleLine(true);
+        input.setTextColor(CLAUDE_TEXT_MAIN);
+        input.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        input.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
+        input.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lpIn = new LinearLayout.LayoutParams(-1, -2);
+        lpIn.setMargins(0, dp(14), 0, dp(14));
+        root.addView(input, lpIn);
+
+        TextView save = cText("Simpan", 14.5f, Color.WHITE, true, false);
+        save.setGravity(Gravity.CENTER);
+        save.setPadding(dp(16), dp(14), dp(16), dp(14));
+        save.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        save.setOnClickListener(v -> {
+            prefs.edit().putString("git_repo_path", input.getText().toString().trim()).apply();
+            refreshSettingsValues();
+            dialog.dismiss();
+        });
+        root.addView(save, new LinearLayout.LayoutParams(-1, -2));
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     // ============================================================
@@ -4813,6 +4871,22 @@ public class MainActivity extends Activity {
     // ============================================================
     // LIVE EVENTS (SSE) WIRING
     // ============================================================
+    // The server owns the sandbox setting; mirror it so the UI cannot lie.
+    private void syncServerSettings() {
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/settings", 10000);
+                JSONObject settings = json.optJSONObject("settings");
+                if (settings == null) return;
+                final String mode = settings.optString("sandboxMode", "full");
+                mainHandler.post(() -> {
+                    prefs.edit().putString("sandbox_mode", mode).apply();
+                    refreshSettingsValues();
+                });
+            } catch (Exception ignored) {}
+        });
+    }
+
     private void restartLiveEvents() {
         stopLiveEvents();
         startLiveEvents();
@@ -4929,18 +5003,20 @@ public class MainActivity extends Activity {
                 mainHandler.post(() -> {
                     if (code == 200) {
                         if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_GREEN, 0, 0, 4));
-                        if (sidebarStatusText != null) sidebarStatusText.setText("  Gateway Online");
+                        if (sidebarStatusText != null) sidebarStatusText.setText("Gateway Online");
                         Toast.makeText(this, "Gateway Online! Terhubung sukses.", Toast.LENGTH_SHORT).show();
+                        syncServerSettings();
+                        startLiveEvents();
                     } else {
                         if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_RED, 0, 0, 4));
-                        if (sidebarStatusText != null) sidebarStatusText.setText("  HTTP " + code);
+                        if (sidebarStatusText != null) sidebarStatusText.setText("HTTP " + code);
                         Toast.makeText(this, "Gateway HTTP " + code, Toast.LENGTH_LONG).show();
                     }
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
                     if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_RED, 0, 0, 4));
-                    if (sidebarStatusText != null) sidebarStatusText.setText("  Gateway Offline");
+                    if (sidebarStatusText != null) sidebarStatusText.setText("Gateway Offline");
                     String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                     Toast.makeText(this, "Gagal koneksi: " + msg, Toast.LENGTH_LONG).show();
                 });
