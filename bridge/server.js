@@ -178,6 +178,8 @@ function getTranscript(convId, limit = 80) {
             let toolTitle = "Action";
             let commandText = "";
             let friendlyTitle = "Aksi: " + toolName;
+            let addedLines = 0;
+            let deletedLines = 0;
 
             if (toolName === "run_command") {
               toolTitle = "Bash";
@@ -185,8 +187,14 @@ function getTranscript(convId, limit = 80) {
               friendlyTitle = "Menjalankan: " + (commandText.length > 35 ? commandText.slice(0, 32) + "..." : commandText);
             } else if (toolName === "replace_file_content" || toolName === "write_to_file") {
               toolTitle = "Edit file";
-              commandText = (argsObj && argsObj.TargetFile) || "";
-              friendlyTitle = "Mengedit " + path.basename(commandText);
+              commandText = (argsObj && (argsObj.TargetFile || argsObj.TargetContent)) || "";
+              friendlyTitle = "Mengedit " + (commandText ? path.basename(commandText) : "file");
+              if (toolName === "replace_file_content" && argsObj) {
+                if (argsObj.ReplacementContent) addedLines = argsObj.ReplacementContent.split("\n").length;
+                if (argsObj.TargetContent) deletedLines = argsObj.TargetContent.split("\n").length;
+              } else if (toolName === "write_to_file" && argsObj && argsObj.CodeContent) {
+                addedLines = argsObj.CodeContent.split("\n").length;
+              }
             } else if (toolName === "view_file") {
               toolTitle = "Read file";
               commandText = (argsObj && argsObj.AbsolutePath) || "";
@@ -206,6 +214,8 @@ function getTranscript(convId, limit = 80) {
               title: friendlyTitle,
               command: commandText || argsStr,
               content: argsStr || ("Action: " + toolName),
+              addedLines,
+              deletedLines,
               time: s.created_at,
               index: s.step_index
             });

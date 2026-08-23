@@ -3009,6 +3009,8 @@ public class MainActivity extends Activity {
         int editCount = 0;
         int cmdCount = 0;
         int thinkCount = 0;
+        int totalAdded = 0;
+        int totalDeleted = 0;
         String singleFilename = "";
         String singleImageThumbnail = null;
 
@@ -3016,6 +3018,9 @@ public class MainActivity extends Activity {
             String role = s.optString("role");
             String toolName = s.optString("toolName", "");
             String cmd = s.optString("command", "");
+
+            totalAdded += s.optInt("addedLines", 0);
+            totalDeleted += s.optInt("deletedLines", 0);
 
             if ("thinking".equalsIgnoreCase(role)) {
                 thinkCount++;
@@ -3082,8 +3087,21 @@ public class MainActivity extends Activity {
         pillText.setTextColor(CLAUDE_TEXT_MUTED);
         actionHeader.addView(pillText, new LinearLayout.LayoutParams(0, -2, 1));
 
-        if (editCount > 1) {
-            TextView diffBadge = cText("+7 -2 ", 13f, CLAUDE_GREEN, true, false);
+        // Fully dynamic diff badge (+added in green, -deleted in red)
+        if (totalAdded > 0 || totalDeleted > 0) {
+            LinearLayout diffBadge = new LinearLayout(this);
+            diffBadge.setOrientation(LinearLayout.HORIZONTAL);
+            diffBadge.setGravity(Gravity.CENTER_VERTICAL);
+            diffBadge.setPadding(dp(4), 0, dp(4), 0);
+
+            if (totalAdded > 0) {
+                TextView addView = cText("+" + totalAdded + " ", 13f, CLAUDE_GREEN, true, false);
+                diffBadge.addView(addView);
+            }
+            if (totalDeleted > 0) {
+                TextView delView = cText("-" + totalDeleted + " ", 13f, CLAUDE_RED, true, false);
+                diffBadge.addView(delView);
+            }
             actionHeader.addView(diffBadge);
         }
 
