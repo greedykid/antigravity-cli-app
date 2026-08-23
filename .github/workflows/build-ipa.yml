@@ -85,5 +85,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload latest ios/build/CodexRemote.ipa --clobber
+          gh release upload latest ios/build/CodexRemote.ipa --clobber --repo ${{ github.repository }} || \
+          gh release create latest ios/build/CodexRemote.ipa --title "Antigravity Remote Latest APK" --notes "Latest build APK & IPA" --repo ${{ github.repository }}
+          gh release upload v0.3.0 ios/build/CodexRemote.ipa --clobber --repo ${{ github.repository }} || \
+          gh release create v0.3.0 ios/build/CodexRemote.ipa --title "Antigravity Remote v0.3.0" --notes "Release v0.3.0 with full Terminal PTY and keyboard auto-resize" --repo ${{ github.repository }}
 
