@@ -41,7 +41,7 @@ jobs:
             -project CodexRemote.xcodeproj \
             -scheme CodexRemote \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
             -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -54,12 +54,13 @@ jobs:
             build > xcodebuild.log 2>&1
           STATUS=$?
           if [ $STATUS -ne 0 ]; then
-            echo "::error::xcodebuild failed with exit code $STATUS"
-            echo "### Xcodebuild Failure Log" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 120 xcodebuild.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 120 xcodebuild.log
+            ERROR_MSG=$(grep -i "error:" xcodebuild.log | head -n 5 | tr '\n' ' ')
+            if [ -z "$ERROR_MSG" ]; then
+              ERROR_MSG=$(tail -n 10 xcodebuild.log | tr '\n' ' ')
+            fi
+            echo "::error title=XcodeBuild Error::$ERROR_MSG"
+            echo "=== XCODEBUILD LOG ==="
+            tail -n 100 xcodebuild.log
             exit $STATUS
           fi
 
