@@ -54,7 +54,7 @@ test("adds a provider without disturbing the rest of the file", () => {
   const before = fs.readFileSync(cfg.CONFIG_FILE, "utf8");
   const res = cfg.upsertProvider({
     id: "openrouter", name: "OpenRouter",
-    baseUrl: "https://openrouter.ai/api/v1", wireApi: "chat", apiKey: "sk-or-123"
+    baseUrl: "https://openrouter.ai/api/v1", wireApi: cfg.supportedWireApis()[0], apiKey: "sk-or-123"
   });
   assert.equal(res.ok, true);
 
@@ -70,7 +70,7 @@ test("adds a provider without disturbing the rest of the file", () => {
   assert.equal(r.providers.length, 2);
   const or = r.providers.find(p => p.id === "openrouter");
   assert.equal(or.baseUrl, "https://openrouter.ai/api/v1");
-  assert.equal(or.wireApi, "chat");
+  assert.equal(or.wireApi, cfg.supportedWireApis()[0]);
 });
 
 test("editing a provider keeps its key when none is supplied", () => {
@@ -84,7 +84,7 @@ test("editing a provider keeps its key when none is supplied", () => {
 
 test("an env key is written instead of an inline token", () => {
   cfg.upsertProvider({ id: "openrouter", baseUrl: "https://openrouter.ai/api/v1",
-    wireApi: "chat", envKey: "OPENROUTER_API_KEY" });
+    wireApi: cfg.supportedWireApis()[0], envKey: "OPENROUTER_API_KEY" });
   const text = fs.readFileSync(cfg.CONFIG_FILE, "utf8");
   assert.ok(text.includes('env_key = "OPENROUTER_API_KEY"'));
   assert.ok(!/\[model_providers\.openrouter\][\s\S]*?experimental_bearer_token/.test(text));
@@ -99,7 +99,7 @@ test("rejects a bad id or url instead of writing", () => {
 
 test("switching the active provider rewrites only that key", () => {
   cfg.upsertProvider({ id: "openrouter", baseUrl: "https://openrouter.ai/api/v1",
-    wireApi: "chat", apiKey: "sk-or-123" });
+    wireApi: cfg.supportedWireApis()[0], apiKey: "sk-or-123" });
   assert.equal(cfg.setActive({ provider: "openrouter", model: "anthropic/claude-sonnet-4.5" }).ok, true);
 
   const r = cfg.read();
@@ -124,7 +124,7 @@ test("refuses to delete the active provider", () => {
 });
 
 test("deletes an inactive provider and leaves the rest intact", () => {
-  cfg.upsertProvider({ id: "openrouter", baseUrl: "https://openrouter.ai/api/v1", wireApi: "chat" });
+  cfg.upsertProvider({ id: "openrouter", baseUrl: "https://openrouter.ai/api/v1", wireApi: cfg.supportedWireApis()[0] });
   assert.equal(cfg.removeProvider("openrouter").ok, true);
 
   const text = fs.readFileSync(cfg.CONFIG_FILE, "utf8");
@@ -134,19 +134,27 @@ test("deletes an inactive provider and leaves the rest intact", () => {
 });
 
 test("a backup of the previous file is kept before writing", () => {
-  cfg.upsertProvider({ id: "openrouter", baseUrl: "https://openrouter.ai/api/v1", wireApi: "chat" });
+  cfg.upsertProvider({ id: "openrouter", baseUrl: "https://openrouter.ai/api/v1", wireApi: cfg.supportedWireApis()[0] });
   assert.equal(fs.readFileSync(cfg.CONFIG_FILE + ".bak", "utf8"), ORIGINAL);
 });
 
-test("an unknown wire_api falls back to chat rather than being written through", () => {
+test("an unknown wire_api falls back to one this Codex build accepts", () => {
   cfg.upsertProvider({ id: "openrouter", baseUrl: "https://openrouter.ai/api/v1", wireApi: "telepathy" });
-  assert.equal(cfg.read().providers.find(p => p.id === "openrouter").wireApi, "chat");
+  const written = cfg.read().providers.find(p => p.id === "openrouter").wireApi;
+  assert.ok(cfg.supportedWireApis().includes(written), `wrote unsupported ${written}`);
+});
+
+// codex-cli 0.149 removed wire_api = "chat"; a config using it fails to load.
+test("only wire_api values the installed Codex accepts are offered", () => {
+  const offered = cfg.read().wireApis;
+  assert.ok(offered.length > 0);
+  assert.ok(offered.every(w => cfg.ALL_WIRE_APIS.includes(w)));
 });
 
 test("works from an empty config", () => {
   fs.writeFileSync(cfg.CONFIG_FILE, "");
   assert.equal(cfg.upsertProvider({ id: "openrouter", baseUrl: "https://openrouter.ai/api/v1",
-    wireApi: "chat", apiKey: "sk" }).ok, true);
+    wireApi: cfg.supportedWireApis()[0], apiKey: "sk" }).ok, true);
   assert.equal(cfg.setActive({ provider: "openrouter", model: "x/y" }).ok, true);
   const r = cfg.read();
   assert.equal(r.activeProvider, "openrouter");

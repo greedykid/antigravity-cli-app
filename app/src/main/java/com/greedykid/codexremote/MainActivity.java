@@ -1234,6 +1234,8 @@ public class MainActivity extends Activity {
     private String activeSessionTitle = "New session";
     /** Engine the open session belongs to; sessions cannot cross engines. */
     private String activeSessionEngine = "";
+    /** Provider Codex is configured to use, read from its config.toml. */
+    private String codexProviderId = "";
     private String currentEngine = "antigravity";
     private String currentModel = "";
     private String currentServerHostname = "Server Remote";
@@ -1296,6 +1298,7 @@ public class MainActivity extends Activity {
         currentServerHostname = prefs.getString("device_name", "Server Remote");
         buildClaudeUiWithSidebar();
         consumePendingEngineNotice();
+        syncCodexProviderInfo();
         requestNotificationPermission();
         createNotificationChannel();
         LiveEventBus.register(liveEventListener);
@@ -1954,6 +1957,7 @@ public class MainActivity extends Activity {
         } else if (screenIndex == 1) {
             chatTopTitle.setText(activeSessionTitle);
             updateRepoTag();
+            if (isCodexEngine()) syncCodexProviderInfo();
             updateChatNavIcon();
             if (activeConversationId != null || isLiveTaskRunning) {
                 fetchActiveSessionTurns(false);
@@ -5120,9 +5124,38 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Mirrors the Codex CLI's own provider and model into the toolbar. Codex
+     * reads them from config.toml, so the app's stored model is not the truth
+     * once a provider has been switched.
+     */
+    private void syncCodexProviderInfo() {
+        if (!bridge.isPaired()) return;
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/codex/config", 15000);
+                if (!json.optBoolean("ok", false)) return;
+                final String provider = json.optString("activeProvider", "");
+                final String model = json.optString("activeModel", "");
+                mainHandler.post(() -> {
+                    codexProviderId = provider;
+                    if (!model.isEmpty() && isCodexEngine()) {
+                        currentModel = model;
+                        prefs.edit().putString(modelPrefKey("codex"), model).apply();
+                    }
+                    updateRepoTag();
+                    refreshSettingsValues();
+                });
+            } catch (Exception ignored) {}
+        });
+    }
+
     private void updateRepoTag() {
         if (repoTagLabel != null) {
-            repoTagLabel.setText(engineShortLabel(currentEngine));
+            // For Codex the useful label is the provider actually configured,
+            // not the word "Codex" — it can be OpenRouter, a proxy, anything.
+            boolean showProvider = isCodexEngine() && !codexProviderId.isEmpty();
+            repoTagLabel.setText(showProvider ? codexProviderId : engineShortLabel(currentEngine));
         }
         if (modelTagLabel != null) modelTagLabel.setText(displayModel(currentModel));
     }
@@ -6647,9 +6680,11 @@ public class MainActivity extends Activity {
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
 
-                    String error = finalRes.optString("error", "");
+                    String error = finalRes.isNull("error") ? "" : finalRes.optString("error", "");
                     if (!error.isEmpty()) {
                         Toast.makeText(MainActivity.this, error, Toast.LENGTH_LONG).show();
+                        renderAssistantMessageBlock("**Gagal menjalankan perintah**\n\n```\n" + error + "\n```",
+                                new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), false);
                     }
                     // The user may have opened another session while this ran;
                     // painting the result now would swap the transcript underneath them.
@@ -6720,8 +6755,11 @@ public class MainActivity extends Activity {
 
                 JSONObject result = new JSONObject();
                 result.put("ok", "done".equals(state));
-                result.put("conversationId", job.optString("conversationId", ""));
-                result.put("response", job.optString("response", ""));
+                // optString returns the literal string "null" for an explicit
+                // JSON null, which is how a failed run ended up rendered as a
+                // message reading "null".
+                result.put("conversationId", job.isNull("conversationId") ? "" : job.optString("conversationId", ""));
+                result.put("response", job.isNull("response") ? "" : job.optString("response", ""));
                 if (job.has("turns")) result.put("turns", job.opt("turns"));
                 if (job.has("session")) result.put("session", job.opt("session"));
                 if (!job.isNull("error")) result.put("error", job.optString("error", ""));
@@ -7803,6 +7841,7 @@ public class MainActivity extends Activity {
                 mainHandler.post(() -> {
                     prefs.edit().putString("sandbox_mode", mode).apply();
                     refreshSettingsValues();
+                    syncCodexProviderInfo();
                 });
             } catch (Exception ignored) {}
         });
@@ -8360,6 +8399,7 @@ public class MainActivity extends Activity {
                 mainHandler.post(() -> {
                     if (result.optBoolean("ok", false)) {
                         Toast.makeText(MainActivity.this, "Provider disimpan", Toast.LENGTH_SHORT).show();
+                        syncCodexProviderInfo();
                         dialog.dismiss();
                         showCodexApiConfig();
                     } else {
@@ -8403,6 +8443,7 @@ public class MainActivity extends Activity {
                         if (result.optBoolean("ok", false)) {
                             Toast.makeText(MainActivity.this,
                                     "Codex sekarang memakai " + providerId, Toast.LENGTH_SHORT).show();
+                            syncCodexProviderInfo();
                             dialog.dismiss();
                             showCodexApiConfig();
                         } else {

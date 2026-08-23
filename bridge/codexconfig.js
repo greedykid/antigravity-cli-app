@@ -8,11 +8,67 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const { spawnSync } = require("child_process");
 
 const CONFIG_FILE = path.join(os.homedir(), ".codex", "config.toml");
 
 const TOP_LEVEL_KEYS = ["model", "model_provider", "model_reasoning_effort"];
-const WIRE_APIS = ["chat", "responses"];
+// Which of these a given Codex build accepts is discovered at runtime:
+// 0.149 dropped "chat" entirely and refuses to load a config that uses it.
+const ALL_WIRE_APIS = ["responses", "chat"];
+const CODEX_BIN = process.env.CODEX_BIN || "codex";
+
+/**
+ * Loads a candidate config in an isolated CODEX_HOME and asks `codex doctor`
+ * whether it parses. Doctor never contacts a model, so this is cheap and safe;
+ * it is what stops the app writing a config that bricks the CLI.
+ */
+function validateText(text) {
+  let home;
+  try {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "codexcfg-probe-"));
+    fs.writeFileSync(path.join(home, "config.toml"), text);
+
+    const doctor = spawnSync(CODEX_BIN, ["doctor"], {
+      encoding: "utf8", timeout: 20000,
+      env: Object.assign({}, process.env, { CODEX_HOME: home })
+    });
+    const output = (doctor.stdout || "") + (doctor.stderr || "");
+
+    // Doctor exits non-zero for unrelated reasons too (an unreachable
+    // endpoint, for one), so the config verdict comes from its report.
+    if (!/config could not be loaded/i.test(output)) return { ok: true };
+
+    // Config is bad; exec fails at load time, before any API call, and prints
+    // the specific reason the user needs.
+    const exec = spawnSync(CODEX_BIN, ["exec", "--skip-git-repo-check", "probe"], {
+      encoding: "utf8", timeout: 20000, input: "",
+      env: Object.assign({}, process.env, { CODEX_HOME: home })
+    });
+    const detail = ((exec.stderr || "") + (exec.stdout || ""))
+      .split("\n").find(line => /Error loading config\.toml/i.test(line));
+
+    return { ok: false, error: (detail || "config.toml ditolak oleh Codex").trim() };
+  } catch (e) {
+    // If the probe itself cannot run, do not block the user.
+    return { ok: true, unchecked: true };
+  } finally {
+    try { if (home) fs.rmSync(home, { recursive: true, force: true }); } catch (e) {}
+  }
+}
+
+let cachedWireApis = null;
+
+/** Probes once which wire_api values this Codex build still accepts. */
+function supportedWireApis() {
+  if (cachedWireApis) return cachedWireApis;
+  const supported = ALL_WIRE_APIS.filter(wire => validateText(
+    `model = "probe"\nmodel_provider = "probe"\n\n[model_providers.probe]\n` +
+    `name = "probe"\nbase_url = "https://example.invalid/v1"\nwire_api = "${wire}"\n`
+  ).ok);
+  cachedWireApis = supported.length ? supported : ["responses"];
+  return cachedWireApis;
+}
 
 function readRaw() {
   try {
@@ -106,7 +162,7 @@ function read() {
     activeModel: top.model || "",
     reasoningEffort: top.model_reasoning_effort || "",
     providers: list,
-    wireApis: WIRE_APIS
+    wireApis: supportedWireApis()
   };
 }
 
@@ -163,7 +219,8 @@ function providerBlock(id, input) {
   const out = [`[model_providers.${id}]`];
   out.push(`name = ${JSON.stringify(input.name || id)}`);
   out.push(`base_url = ${JSON.stringify(input.baseUrl)}`);
-  const wire = WIRE_APIS.includes(input.wireApi) ? input.wireApi : "chat";
+  const allowed = supportedWireApis();
+  const wire = allowed.includes(input.wireApi) ? input.wireApi : allowed[0];
   out.push(`wire_api = ${JSON.stringify(wire)}`);
   // A key can live inline or in an environment variable; never both.
   if (input.apiKey) {
@@ -188,8 +245,6 @@ function upsertProvider(input) {
   if (!validateUrl(input.baseUrl)) return { ok: false, error: "base_url harus diawali http:// atau https://" };
 
   const raw = readRaw();
-  backup(raw);
-
   const lines = raw ? raw.split("\n") : [];
   const existing = providerRange(lines, id);
 
@@ -209,8 +264,14 @@ function upsertProvider(input) {
     lines.push(...block, "");
   }
 
-  write(lines.join("\n"));
-  return { ok: true, id };
+  const next = lines.join("\n");
+  // Never leave Codex with a config it refuses to load.
+  const check = validateText(next);
+  if (!check.ok) return { ok: false, error: check.error };
+
+  backup(raw);
+  write(next);
+  return { ok: true, id, unchecked: check.unchecked || false };
 }
 
 function removeProvider(id) {
@@ -243,18 +304,21 @@ function setActive(input) {
     }
   }
 
-  backup(raw);
   let text = raw;
   if (input.provider) text = setTopLevelKey(text, "model_provider", input.provider);
   if (input.model) text = setTopLevelKey(text, "model", input.model);
   if (input.reasoningEffort) text = setTopLevelKey(text, "model_reasoning_effort", input.reasoningEffort);
-  write(text);
 
-  return { ok: true };
+  const check = validateText(text);
+  if (!check.ok) return { ok: false, error: check.error };
+
+  backup(raw);
+  write(text);
+  return { ok: true, unchecked: check.unchecked || false };
 }
 
 module.exports = {
-  CONFIG_FILE, WIRE_APIS,
+  CONFIG_FILE, ALL_WIRE_APIS, supportedWireApis, validateText,
   read, parse, setActive, upsertProvider, removeProvider,
   setTopLevelKey, providerBlock, maskSecret, validateId, validateUrl
 };
