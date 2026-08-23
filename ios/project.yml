@@ -44,3 +44,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.greedykid.codexremote
         INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
         TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
+        AD_HOC_CODE_SIGNING_ALLOWED: "YES"
+        CODE_SIGN_STYLE: "Manual"
+        DEVELOPMENT_TEAM: ""
+        PROVISIONING_PROFILE_SPECIFIER: ""
+        SWIFT_COMPILATION_MODE: "wholemodule"
