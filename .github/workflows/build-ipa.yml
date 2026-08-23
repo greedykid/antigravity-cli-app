@@ -29,9 +29,8 @@ jobs:
       - name: Generate Xcode project
         working-directory: ios
         run: |
-          xcodegen generate
-          ls -la
-          xcodebuild -list -project CodexRemote.xcodeproj
+          xcodegen generate --spec project.yml --verbose
+          find . -maxdepth 2
 
       - name: Build unsigned app
         working-directory: ios
