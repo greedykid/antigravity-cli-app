@@ -725,7 +725,7 @@ public class WorkspacePanels {
 
                         card.setOnClickListener(v -> {
                             dialog.dismiss();
-                            navigatedFromHub = true;
+                            // Host.openSession sets the back-navigation flag.
                             openSpecificSession(convId, title);
                         });
 
