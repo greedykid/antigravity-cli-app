@@ -275,6 +275,14 @@ public class MainActivity extends Activity {
         return d;
     }
 
+    private GradientDrawable cBottomSheetBox(int fillColor) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fillColor);
+        float r = dp(24);
+        d.setCornerRadii(new float[]{ r, r, r, r, 0, 0, 0, 0 });
+        return d;
+    }
+
     private TextView cText(String text, float sp, int color, boolean bold, boolean isSerif) {
         TextView v = new TextView(this);
         v.setText(text);
@@ -1136,10 +1144,12 @@ public class MainActivity extends Activity {
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.getDecorView().setPadding(0, 0, 0, 0);
             WindowManager.LayoutParams wlp = window.getAttributes();
             wlp.gravity = Gravity.BOTTOM;
             wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
             wlp.height = WindowManager.LayoutParams.WRAP_CONTENT;
+            wlp.horizontalMargin = 0f;
             wlp.windowAnimations = android.R.style.Animation_InputMethod;
             window.setAttributes(wlp);
         }
@@ -1662,10 +1672,12 @@ public class MainActivity extends Activity {
 
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.getDecorView().setPadding(0, 0, 0, 0);
             WindowManager.LayoutParams wlp = window.getAttributes();
             wlp.gravity = Gravity.BOTTOM;
             wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
             wlp.height = peekHeight;
+            wlp.horizontalMargin = 0f;
             wlp.windowAnimations = android.R.style.Animation_InputMethod;
             window.setAttributes(wlp);
         }
