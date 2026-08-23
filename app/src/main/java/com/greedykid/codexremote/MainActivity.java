@@ -3336,30 +3336,368 @@ public class MainActivity extends Activity {
 
     private void showAboutAppBottomSheet() {
         Dialog dialog = createBaseBottomSheet(true);
-        LinearLayout root = createBottomSheetRoot(dialog, "Tentang Antigravity Remote", true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Tentang & Pembaruan Aplikasi", true);
 
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+
+        // App Logo & Info Row
         LinearLayout logoRow = new LinearLayout(this);
         logoRow.setOrientation(LinearLayout.HORIZONTAL);
         logoRow.setGravity(Gravity.CENTER_VERTICAL);
-        logoRow.setPadding(0, dp(6), 0, dp(14));
+        logoRow.setPadding(0, dp(4), 0, dp(12));
 
-        ImageView sp = cIcon(R.drawable.ic_spark, 32, Theme.ACCENT);
+        ImageView sp = cIcon(R.drawable.ic_spark, 36, Theme.ACCENT);
         logoRow.addView(sp);
+
+        String verName = "3.0.0";
+        int verCode = 1;
+        try {
+            android.content.pm.PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+            verName = pInfo.versionName;
+            verCode = pInfo.versionCode;
+        } catch (Exception ignored) {}
 
         LinearLayout lt = new LinearLayout(this);
         lt.setOrientation(LinearLayout.VERTICAL);
         lt.setPadding(dp(12), 0, 0, 0);
-        lt.addView(cText("Antigravity Code Remote", 16f, Theme.TEXT_MAIN, true, true));
-        lt.addView(cText("Versi 2.9.9 • Claude Dark Edition", 12.5f, Theme.TEXT_MUTED, false, false));
+        lt.addView(cText("Antigravity Code Remote", 16.5f, Theme.TEXT_MAIN, true, true));
+        lt.addView(cText("Versi Terpasang: v" + verName + " (Build " + verCode + ")", 12.5f, Theme.TEXT_MUTED, false, false));
         logoRow.addView(lt);
-        root.addView(logoRow);
+        content.addView(logoRow);
 
-        TextView info = cText("Klien remote cerdas untuk Antigravity CLI dan Codex CLI di Android dengan live synchronization dan format markdown interaktif.", 13.5f, Theme.TEXT_MUTED, false, false);
+        TextView info = cText("Klien remote cerdas untuk Antigravity CLI dan Codex CLI di Android dengan live synchronization, terminal interaktif, dan format markdown kaya.", 13f, Theme.TEXT_MUTED, false, false);
         info.setLineSpacing(0, 1.25f);
-        root.addView(info);
+        LinearLayout.LayoutParams lpInfo = new LinearLayout.LayoutParams(-1, -2);
+        lpInfo.setMargins(0, 0, 0, dp(14));
+        content.addView(info, lpInfo);
+
+        // --- UPDATE CARD ---
+        LinearLayout updateCard = new LinearLayout(this);
+        updateCard.setOrientation(LinearLayout.VERTICAL);
+        updateCard.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
+        updateCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        LinearLayout cardHead = new LinearLayout(this);
+        cardHead.setOrientation(LinearLayout.HORIZONTAL);
+        cardHead.setGravity(Gravity.CENTER_VERTICAL);
+        cardHead.addView(cIcon(R.drawable.ic_refresh, 18, Theme.ACCENT));
+        TextView cardTitle = cText("  Pembaruan Aplikasi Otomatis", 14.5f, Theme.TEXT_MAIN, true, false);
+        cardHead.addView(cardTitle);
+        updateCard.addView(cardHead);
+
+        final TextView statusView = cText("Sedang memeriksa rilis terbaru...", 12.5f, Theme.TEXT_MUTED, false, false);
+        statusView.setPadding(0, dp(8), 0, dp(4));
+        updateCard.addView(statusView);
+
+        final TextView detailsView = cText("", 12f, Theme.TEXT_MUTED, false, false);
+        detailsView.setVisibility(View.GONE);
+        detailsView.setPadding(0, dp(2), 0, dp(6));
+        updateCard.addView(detailsView);
+
+        final ProgressBar progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setIndeterminate(true);
+        progressBar.setVisibility(View.GONE);
+        LinearLayout.LayoutParams lpProgress = new LinearLayout.LayoutParams(-1, dp(8));
+        lpProgress.setMargins(0, dp(6), 0, dp(10));
+        updateCard.addView(progressBar, lpProgress);
+
+        // Buttons Container
+        final LinearLayout btnCheck = new LinearLayout(this);
+        btnCheck.setOrientation(LinearLayout.HORIZONTAL);
+        btnCheck.setGravity(Gravity.CENTER);
+        btnCheck.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
+        btnCheck.setPadding(dp(14), dp(11), dp(14), dp(11));
+        btnCheck.addView(cIcon(R.drawable.ic_search, 16, Theme.ON_ACCENT));
+        btnCheck.addView(cText("  Periksa Ulang", 13.5f, Theme.ON_ACCENT, true, false));
+
+        final LinearLayout btnDownload = new LinearLayout(this);
+        btnDownload.setOrientation(LinearLayout.HORIZONTAL);
+        btnDownload.setGravity(Gravity.CENTER);
+        btnDownload.setBackground(cBox(Theme.GREEN, 0, 0, 12));
+        btnDownload.setPadding(dp(14), dp(11), dp(14), dp(11));
+        btnDownload.setVisibility(View.GONE);
+        btnDownload.addView(cIcon(R.drawable.ic_arrow_downward, 16, Theme.ON_ACCENT));
+        btnDownload.addView(cText("  Unduh & Pasang Sekarang", 13.5f, Theme.ON_ACCENT, true, false));
+
+        LinearLayout btnReleasePage = new LinearLayout(this);
+        btnReleasePage.setOrientation(LinearLayout.HORIZONTAL);
+        btnReleasePage.setGravity(Gravity.CENTER);
+        btnReleasePage.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 12));
+        btnReleasePage.setPadding(dp(14), dp(10), dp(14), dp(10));
+        btnReleasePage.addView(cIcon(R.drawable.ic_link, 16, Theme.TEXT_MUTED));
+        btnReleasePage.addView(cText("  Buka Halaman Rilis GitHub", 13f, Theme.TEXT_MAIN, false, false));
+        btnReleasePage.setOnClickListener(v -> {
+            try {
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/greedykid/codexcli-remote-app/releases/tag/latest"));
+                startActivity(browserIntent);
+            } catch (Exception e) {
+                Toast.makeText(MainActivity.this, "Gagal membuka browser", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        btnCheck.setOnClickListener(v -> checkAppUpdates(statusView, detailsView, btnDownload, progressBar));
+
+        LinearLayout.LayoutParams lpBtnC = new LinearLayout.LayoutParams(-1, dp(44));
+        lpBtnC.setMargins(0, dp(8), 0, 0);
+        updateCard.addView(btnCheck, lpBtnC);
+
+        LinearLayout.LayoutParams lpBtnD = new LinearLayout.LayoutParams(-1, dp(44));
+        lpBtnD.setMargins(0, dp(8), 0, 0);
+        updateCard.addView(btnDownload, lpBtnD);
+
+        LinearLayout.LayoutParams lpBtnR = new LinearLayout.LayoutParams(-1, dp(42));
+        lpBtnR.setMargins(0, dp(8), 0, 0);
+        updateCard.addView(btnReleasePage, lpBtnR);
+
+        content.addView(updateCard);
+
+        scroll.addView(content);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
 
         dialog.setContentView(root);
         dialog.show();
+
+        // Auto check updates on open
+        checkAppUpdates(statusView, detailsView, btnDownload, progressBar);
+    }
+
+    private void checkAppUpdates(final TextView statusView, final TextView detailsView, final LinearLayout btnDownload, final ProgressBar progressBar) {
+        statusView.setText("Memeriksa rilis terbaru di GitHub...");
+        statusView.setTextColor(Theme.TEXT_MUTED);
+        if (progressBar != null) {
+            progressBar.setIndeterminate(true);
+            progressBar.setVisibility(View.VISIBLE);
+        }
+
+        executor.execute(() -> {
+            try {
+                URL url = new URL("https://api.github.com/repos/greedykid/codexcli-remote-app/releases/tags/latest");
+                HttpURLConnection c = (HttpURLConnection) url.openConnection();
+                c.setRequestMethod("GET");
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(15000);
+                c.setRequestProperty("User-Agent", "CodexRemote-App");
+                c.setRequestProperty("Accept", "application/vnd.github.v3+json");
+
+                int code = c.getResponseCode();
+                if (code != 200) {
+                    c.disconnect();
+                    url = new URL("https://api.github.com/repos/greedykid/codexcli-remote-app/releases/latest");
+                    c = (HttpURLConnection) url.openConnection();
+                    c.setRequestMethod("GET");
+                    c.setConnectTimeout(15000);
+                    c.setReadTimeout(15000);
+                    c.setRequestProperty("User-Agent", "CodexRemote-App");
+                    c.setRequestProperty("Accept", "application/vnd.github.v3+json");
+                }
+
+                BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = r.readLine()) != null) sb.append(line);
+                r.close();
+                c.disconnect();
+
+                JSONObject release = new JSONObject(sb.toString());
+                final String tagName = release.optString("tag_name", "latest");
+                final String publishedAt = release.optString("published_at", "");
+                final String bodyNotes = release.optString("body", "");
+
+                JSONArray assets = release.optJSONArray("assets");
+                String apkDownloadUrl = null;
+                long apkSize = 0;
+                if (assets != null) {
+                    for (int i = 0; i < assets.length(); i++) {
+                        JSONObject ast = assets.optJSONObject(i);
+                        if (ast != null && ast.optString("name", "").endsWith(".apk")) {
+                            apkDownloadUrl = ast.optString("browser_download_url", "");
+                            apkSize = ast.optLong("size", 0);
+                            break;
+                        }
+                    }
+                }
+                if (apkDownloadUrl == null || apkDownloadUrl.isEmpty()) {
+                    apkDownloadUrl = "https://github.com/greedykid/codexcli-remote-app/releases/download/latest/app-debug.apk";
+                }
+
+                final String finalApkUrl = apkDownloadUrl;
+                final long finalApkSize = apkSize;
+
+                mainHandler.post(() -> {
+                    if (progressBar != null) progressBar.setVisibility(View.GONE);
+                    statusView.setText("✓ Rilis terbaru tersedia: " + tagName);
+                    statusView.setTextColor(Theme.GREEN);
+
+                    StringBuilder info = new StringBuilder();
+                    if (!publishedAt.isEmpty()) {
+                        info.append("Diterbitkan: ").append(publishedAt.replace("T", " ").replace("Z", " UTC")).append("\n");
+                    }
+                    if (finalApkSize > 0) {
+                        info.append("Ukuran APK: ").append(String.format(Locale.US, "%.2f MB", finalApkSize / (1024.0 * 1024.0))).append("\n");
+                    }
+                    if (!bodyNotes.isEmpty()) {
+                        String cleanNotes = bodyNotes.length() > 200 ? bodyNotes.substring(0, 200) + "..." : bodyNotes;
+                        info.append("Catatan: ").append(cleanNotes);
+                    }
+                    detailsView.setText(info.toString().trim());
+                    detailsView.setVisibility(View.VISIBLE);
+
+                    btnDownload.setVisibility(View.VISIBLE);
+                    btnDownload.setOnClickListener(v -> downloadAndInstallApk(finalApkUrl, statusView, detailsView, btnDownload, progressBar));
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (progressBar != null) progressBar.setVisibility(View.GONE);
+                    statusView.setText("Rilis GitHub aktif: latest");
+                    statusView.setTextColor(Theme.TEXT_MAIN);
+
+                    detailsView.setText("Unduhan langsung tersedia dari server rilis.");
+                    detailsView.setVisibility(View.VISIBLE);
+
+                    btnDownload.setVisibility(View.VISIBLE);
+                    btnDownload.setOnClickListener(v -> downloadAndInstallApk(
+                            "https://github.com/greedykid/codexcli-remote-app/releases/download/latest/app-debug.apk",
+                            statusView, detailsView, btnDownload, progressBar));
+                });
+            }
+        });
+    }
+
+    private void downloadAndInstallApk(final String downloadUrl, final TextView statusView, final TextView detailsView, final LinearLayout btnDownload, final ProgressBar progressBar) {
+        btnDownload.setEnabled(false);
+        btnDownload.setAlpha(0.6f);
+        if (progressBar != null) {
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setIndeterminate(false);
+            progressBar.setMax(100);
+            progressBar.setProgress(0);
+        }
+        statusView.setText("Memulai pengunduhan APK...");
+        statusView.setTextColor(Theme.ACCENT);
+
+        executor.execute(() -> {
+            InputStream in = null;
+            FileOutputStream out = null;
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL(downloadUrl);
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(25000);
+                conn.setReadTimeout(60000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent", "CodexRemote-App");
+
+                int responseCode = conn.getResponseCode();
+                if (responseCode == HttpURLConnection.HTTP_MOVED_TEMP || responseCode == HttpURLConnection.HTTP_MOVED_PERM || responseCode == 307 || responseCode == 308) {
+                    String newUrl = conn.getHeaderField("Location");
+                    if (newUrl != null && !newUrl.isEmpty()) {
+                        conn.disconnect();
+                        url = new URL(newUrl);
+                        conn = (HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(25000);
+                        conn.setReadTimeout(60000);
+                        conn.setRequestProperty("User-Agent", "CodexRemote-App");
+                    }
+                }
+
+                int totalLength = conn.getContentLength();
+                File updateDir = new File(getCacheDir(), "updates");
+                if (!updateDir.exists()) updateDir.mkdirs();
+                File apkFile = new File(updateDir, "app-update.apk");
+                if (apkFile.exists()) apkFile.delete();
+
+                in = conn.getInputStream();
+                out = new FileOutputStream(apkFile);
+
+                byte[] buffer = new byte[16384];
+                int bytesRead;
+                long totalDownloaded = 0;
+                long lastProgressTime = 0;
+
+                while ((bytesRead = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, bytesRead);
+                    totalDownloaded += bytesRead;
+
+                    long now = System.currentTimeMillis();
+                    if (totalLength > 0 && now - lastProgressTime > 120) {
+                        lastProgressTime = now;
+                        final int progress = (int) ((totalDownloaded * 100) / totalLength);
+                        final long downloadedBytes = totalDownloaded;
+                        final long totalBytes = totalLength;
+                        mainHandler.post(() -> {
+                            if (progressBar != null) progressBar.setProgress(progress);
+                            statusView.setText(String.format(Locale.US, "Mengunduh: %d%% (%.2f / %.2f MB)", progress, downloadedBytes / (1024.0 * 1024.0), totalBytes / (1024.0 * 1024.0)));
+                        });
+                    }
+                }
+                out.flush();
+
+                final File finalApk = apkFile;
+                mainHandler.post(() -> {
+                    if (progressBar != null) {
+                        progressBar.setProgress(100);
+                        progressBar.setVisibility(View.GONE);
+                    }
+                    statusView.setText("✓ Unduhan selesai! Membuka installer...");
+                    statusView.setTextColor(Theme.GREEN);
+                    btnDownload.setEnabled(true);
+                    btnDownload.setAlpha(1.0f);
+                    installDownloadedApk(finalApk);
+                });
+            } catch (Exception e) {
+                final String err = e.getMessage() != null ? e.getMessage() : "Koneksi terputus";
+                mainHandler.post(() -> {
+                    if (progressBar != null) progressBar.setVisibility(View.GONE);
+                    statusView.setText("Gagal mengunduh: " + err);
+                    statusView.setTextColor(Theme.RED);
+                    btnDownload.setEnabled(true);
+                    btnDownload.setAlpha(1.0f);
+                    Toast.makeText(MainActivity.this, "Gagal mengunduh: " + err, Toast.LENGTH_LONG).show();
+                });
+            } finally {
+                try { if (in != null) in.close(); } catch (Exception ignored) {}
+                try { if (out != null) out.close(); } catch (Exception ignored) {}
+                if (conn != null) conn.disconnect();
+            }
+        });
+    }
+
+    private void installDownloadedApk(File apkFile) {
+        if (apkFile == null || !apkFile.exists()) {
+            Toast.makeText(this, "File APK tidak ditemukan", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!getPackageManager().canRequestPackageInstalls()) {
+                    Toast.makeText(this, "Aktifkan izin 'Instal aplikasi tidak dikenal' untuk memasang pembaruan", Toast.LENGTH_LONG).show();
+                    Intent permIntent = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                    permIntent.setData(Uri.parse("package:" + getPackageName()));
+                    startActivity(permIntent);
+                    return;
+                }
+            }
+
+            Uri apkUri = FileProvider.getUriForFile(
+                    this,
+                    getPackageName() + ".fileprovider",
+                    apkFile
+            );
+
+            Intent installIntent = new Intent(Intent.ACTION_VIEW);
+            installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(installIntent);
+        } catch (Exception e) {
+            Toast.makeText(this, "Gagal membuka installer: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private void showConnectionBottomSheet() {
