@@ -909,7 +909,7 @@ public class MainActivity extends Activity {
     // FEATURE D: INTERACTIVE QUICK TERMINAL MODAL
     // ============================================================
     private void openQuickTerminalModal() {
-        final Dialog dialog = new Dialog(this);
+        final Dialog dialog = new Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
@@ -918,12 +918,24 @@ public class MainActivity extends Activity {
         }
 
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        final int fullHeight = (int) (dm.heightPixels * 0.85f);
+
+        final FrameLayout wrapper = new FrameLayout(this);
+        wrapper.setBackgroundColor(Color.parseColor("#80000000"));
+        wrapper.setOnClickListener(v -> dialog.dismiss());
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(cBox(Color.parseColor("#0d1117"), Theme.BORDER, 1, 24));
         root.setPadding(dp(18), dp(12), dp(18), dp(14));
+        root.setClickable(true);
+
+        FrameLayout.LayoutParams lpRoot = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 
+            ViewGroup.LayoutParams.MATCH_PARENT, 
+            Gravity.BOTTOM
+        );
+        lpRoot.topMargin = (int) (dm.heightPixels * 0.15f);
+        wrapper.addView(root, lpRoot);
 
         // Header
         LinearLayout header = new LinearLayout(this);
@@ -997,6 +1009,23 @@ public class MainActivity extends Activity {
             outView.append("\n$ " + cmd + "\n[Menjalankan...]\n");
             outScroll.post(() -> outScroll.fullScroll(View.FOCUS_DOWN));
 
+            final JSONObject bgTask = new JSONObject();
+            try {
+                bgTask.put("role", "tool");
+                bgTask.put("toolTitle", "Terminal (PTY)");
+                bgTask.put("title", cmd);
+                bgTask.put("command", cmd);
+                bgTask.put("content", "$ " + cmd + "\n[Menjalankan di background...]\n");
+                bgTask.put("isBackgroundTerminal", true);
+                bgTask.put("status", "running");
+                bgTask.put("startTime", System.currentTimeMillis());
+            } catch (Exception ignored) {}
+            activeBackgroundTerminalTasks.add(0, bgTask);
+
+            if (activeBottomSheetDialog != null && activeBottomSheetDialog.isShowing()) {
+                updateExecutionBottomModalContent(currentActiveSteps, isLiveTaskRunning);
+            }
+
             executor.execute(() -> {
                 try {
                     JSONObject req = new JSONObject();
@@ -1006,18 +1035,39 @@ public class MainActivity extends Activity {
                     final String err = res.optString("error", "");
                     final int exitCode = res.optInt("exitCode", 0);
                     mainHandler.post(() -> {
+                        String resultLog;
                         if (!output.isEmpty()) {
-                            outView.append(output + (output.endsWith("\n") ? "" : "\n"));
+                            resultLog = output + (output.endsWith("\n") ? "" : "\n");
+                            outView.append(resultLog);
                         } else if (!err.isEmpty()) {
-                            outView.append("Error: " + err + "\n");
+                            resultLog = "Error: " + err + "\n";
+                            outView.append(resultLog);
                         } else {
-                            outView.append("(Perintah selesai dengan status " + exitCode + ")\n");
+                            resultLog = "(Perintah selesai dengan status " + exitCode + ")\n";
+                            outView.append(resultLog);
+                        }
+                        try {
+                            bgTask.put("content", "$ " + cmd + "\n" + resultLog);
+                            bgTask.put("status", exitCode == 0 ? "done" : "error");
+                        } catch (Exception ignored) {}
+
+                        if (activeBottomSheetDialog != null && activeBottomSheetDialog.isShowing()) {
+                            updateExecutionBottomModalContent(currentActiveSteps, isLiveTaskRunning);
                         }
                         outScroll.post(() -> outScroll.fullScroll(View.FOCUS_DOWN));
                     });
                 } catch (Exception e) {
                     mainHandler.post(() -> {
-                        outView.append("Gagal terhubung ke bridge: " + e.getMessage() + "\n");
+                        String errLog = "Gagal terhubung ke bridge: " + e.getMessage() + "\n";
+                        outView.append(errLog);
+                        try {
+                            bgTask.put("content", "$ " + cmd + "\n" + errLog);
+                            bgTask.put("status", "error");
+                        } catch (Exception ignored) {}
+
+                        if (activeBottomSheetDialog != null && activeBottomSheetDialog.isShowing()) {
+                            updateExecutionBottomModalContent(currentActiveSteps, isLiveTaskRunning);
+                        }
                         outScroll.post(() -> outScroll.fullScroll(View.FOCUS_DOWN));
                     });
                 }
@@ -1045,9 +1095,9 @@ public class MainActivity extends Activity {
         chipScroll.addView(chipRow);
         root.addView(chipScroll, 1);
 
-        dialog.setContentView(root);
+        dialog.setContentView(wrapper);
         if (dialog.getWindow() != null) {
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, fullHeight);
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
             dialog.getWindow().setGravity(Gravity.BOTTOM);
         }
 
@@ -1167,6 +1217,7 @@ public class MainActivity extends Activity {
     private LinearLayout activeBottomSheetDetailView = null;
     private TextView activeBottomSheetSubtitle = null;
     private ArrayList<JSONObject> currentActiveSteps = new ArrayList<>();
+    private final CopyOnWriteArrayList<JSONObject> activeBackgroundTerminalTasks = new CopyOnWriteArrayList<>();
 
     private boolean isAutoRefreshActive = false;
     private final Runnable autoRefreshRunnable = new Runnable() {
@@ -3495,31 +3546,33 @@ public class MainActivity extends Activity {
 
         final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
 
-        if (activeBottomSheetSubtitle != null) {
-            activeBottomSheetSubtitle.setText(items.size() + " actions • ketuk item untuk melihat detail" + (isActuallyRunning ? " (Live)" : ""));
+        ArrayList<JSONObject> combinedList = new ArrayList<>();
+        for (JSONObject t : activeBackgroundTerminalTasks) {
+            combinedList.add(t);
+        }
+        for (JSONObject it : items) {
+            combinedList.add(it);
         }
 
-        int currentCount = activeBottomSheetMasterList.getChildCount();
-        if (currentCount == items.size() && currentCount > 0) {
-            // Incremental fast-path: Only update the last running badge without layout destruction!
-            View lastCard = activeBottomSheetMasterList.getChildAt(currentCount - 1);
-            if (lastCard instanceof LinearLayout) {
-                final JSONObject lastItem = items.get(currentCount - 1);
-                lastCard.setBackground(cBox(isActuallyRunning ? Theme.AMBER_BG : Theme.SURFACE, isActuallyRunning ? Theme.AMBER : Theme.BORDER, 1, 16));
-                lastCard.setOnClickListener(v -> showStepDetailView(lastItem, isActuallyRunning));
-            }
-            return;
+        if (activeBottomSheetSubtitle != null) {
+            int bgCount = activeBackgroundTerminalTasks.size();
+            String sub = combinedList.size() + " actions • ketuk item untuk melihat detail";
+            if (bgCount > 0) sub += " (" + bgCount + " terminal bg)";
+            if (isActuallyRunning) sub += " (Live)";
+            activeBottomSheetSubtitle.setText(sub);
         }
 
         activeBottomSheetMasterList.removeAllViews();
 
-        for (int i = 0; i < items.size(); i++) {
-            final JSONObject it = items.get(i);
+        for (int i = 0; i < combinedList.size(); i++) {
+            final JSONObject it = combinedList.get(i);
             String role = it.optString("role", "tool");
             String toolTitle = it.optString("toolTitle", "tool".equalsIgnoreCase(role) ? "Bash" : "Thinking");
             String displayTitle = it.optString("title", toolTitle);
             boolean isTool = "tool".equalsIgnoreCase(role);
-            final boolean isThisItemRunning = (isActuallyRunning && i == items.size() - 1);
+            boolean isBgTerm = it.optBoolean("isBackgroundTerminal", false);
+            String bgStatus = it.optString("status", "");
+            final boolean isThisItemRunning = isBgTerm ? "running".equals(bgStatus) : (isActuallyRunning && i == combinedList.size() - 1);
 
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.HORIZONTAL);
@@ -3527,7 +3580,9 @@ public class MainActivity extends Activity {
             card.setBackground(cBox(isThisItemRunning ? Theme.AMBER_BG : Theme.SURFACE, isThisItemRunning ? Theme.AMBER : Theme.BORDER, 1, 16));
             card.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 20, isThisItemRunning ? Theme.AMBER : Theme.ACCENT);
+            int iconRes = isBgTerm ? R.drawable.ic_code : (isTool ? R.drawable.ic_build : R.drawable.ic_psychology);
+            int iconTint = isThisItemRunning ? Theme.AMBER : (isBgTerm ? Theme.GREEN : Theme.ACCENT);
+            ImageView ic = cIcon(iconRes, 20, iconTint);
             card.addView(ic);
 
             LinearLayout textCol = new LinearLayout(this);
@@ -3553,7 +3608,13 @@ public class MainActivity extends Activity {
                 ProgressBar pb = new ProgressBar(this);
                 LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(12), dp(12));
                 bBadge.addView(pb, lpPb);
-                TextView bText = cText(" Running", 11f, Theme.AMBER, true, false);
+                TextView bText = cText(isBgTerm ? " Running (PTY)" : " Running", 11f, Theme.AMBER, true, false);
+                bBadge.addView(bText);
+            } else if (isBgTerm && "error".equals(bgStatus)) {
+                bBadge.setBackground(cBox(Theme.RED_BG, Theme.RED, 1, 6));
+                bBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+                bBadge.addView(cIcon(R.drawable.ic_close, 12, Theme.RED));
+                TextView bText = cText(" Error", 11f, Theme.RED, true, false);
                 bBadge.addView(bText);
             } else {
                 bBadge.setBackground(cBox(Theme.GREEN_BG, Theme.GREEN, 1, 6));
@@ -3576,7 +3637,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    // --- LEVEL 2: STEP DETAIL VIEW (Exact Match to Screenshot!) ---
     private void showStepDetailView(JSONObject item, boolean isRunning) {
         if (activeBottomSheetDetailView == null || activeBottomSheetMasterView == null) return;
 
@@ -3597,7 +3657,6 @@ public class MainActivity extends Activity {
 
         boolean isEditDiff = "Edit".equalsIgnoreCase(toolTitle) || !targetContent.isEmpty() || !replacementContent.isEmpty() || !targetFile.isEmpty();
 
-        // Top Bar: Back Arrow (<--) + Centered Title ("Edit") + Subtitle ("Selesai")
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -3605,8 +3664,31 @@ public class MainActivity extends Activity {
 
         ImageView backBtn = cIconButton(R.drawable.ic_arrow_back, 24, 40, Theme.TEXT_MAIN);
         backBtn.setOnClickListener(v -> {
-            activeBottomSheetDetailView.setVisibility(View.GONE);
-            activeBottomSheetMasterView.setVisibility(View.VISIBLE);
+            final int containerWidth = (activeBottomSheetContainer != null && activeBottomSheetContainer.getWidth() > 0)
+                    ? activeBottomSheetContainer.getWidth()
+                    : getResources().getDisplayMetrics().widthPixels;
+
+            if (activeBottomSheetMasterView != null) {
+                activeBottomSheetMasterView.setVisibility(View.VISIBLE);
+                activeBottomSheetMasterView.setTranslationX(-containerWidth * 0.35f);
+                activeBottomSheetMasterView.setAlpha(0f);
+                activeBottomSheetMasterView.animate()
+                        .translationX(0f)
+                        .alpha(1f)
+                        .setDuration(220)
+                        .start();
+            }
+
+            activeBottomSheetDetailView.animate()
+                    .translationX(containerWidth)
+                    .alpha(0f)
+                    .setDuration(220)
+                    .withEndAction(() -> {
+                        if (activeBottomSheetDetailView != null) {
+                            activeBottomSheetDetailView.setVisibility(View.GONE);
+                        }
+                    })
+                    .start();
         });
         topBar.addView(backBtn);
 
@@ -3624,7 +3706,6 @@ public class MainActivity extends Activity {
 
         topBar.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1));
 
-        // Right spacer to keep title centered
         View spacer = new View(this);
         topBar.addView(spacer, new LinearLayout.LayoutParams(dp(40), dp(40)));
         activeBottomSheetDetailView.addView(topBar);
@@ -3637,13 +3718,9 @@ public class MainActivity extends Activity {
         body.setOrientation(LinearLayout.VERTICAL);
 
         if (isEditDiff) {
-            // ============================================================
-            // RICH DIFF VIEW (Exact match to Claude Code screenshot)
-            // ============================================================
             String fileName = targetFile.isEmpty() ? "file" : new File(targetFile).getName();
             String dirPath = targetFile.isEmpty() ? "" : targetFile;
 
-            // File Meta Bar: filename + truncated path + (+A -B badge)
             LinearLayout metaBar = new LinearLayout(this);
             metaBar.setOrientation(LinearLayout.HORIZONTAL);
             metaBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -3673,49 +3750,43 @@ public class MainActivity extends Activity {
             }
             body.addView(metaBar);
 
-            // Diff Code Obsidian Box
             LinearLayout diffBox = new LinearLayout(this);
             diffBox.setOrientation(LinearLayout.VERTICAL);
             diffBox.setBackground(cBox(Color.rgb(18, 19, 22), Color.rgb(38, 40, 46), 1, 10));
 
-            // Top Accordion Header: ^ +N baris
             LinearLayout topAccordion = new LinearLayout(this);
             topAccordion.setOrientation(LinearLayout.HORIZONTAL);
             topAccordion.setGravity(Gravity.CENTER_VERTICAL);
-            topAccordion.setBackgroundColor(Color.rgb(27, 36, 51)); // Dark Navy Slate #1B2433
+            topAccordion.setBackgroundColor(Color.rgb(27, 36, 51));
             topAccordion.setPadding(dp(12), dp(7), dp(12), dp(7));
 
             ImageView upIcon = cIcon(R.drawable.ic_expand_more, 16, Color.rgb(138, 153, 173));
             upIcon.setRotation(180f);
             topAccordion.addView(upIcon);
 
-            TextView topAccText = cText(" +" + (startLine > 1 ? (startLine - 1) : 1) + " baris", 12.5f, Color.rgb(138, 153, 173), false, false);
+            TextView topAccText = cText(" +" + Math.max(1, startLine - 1) + " baris", 12.5f, Color.rgb(138, 153, 173), false, false);
             topAccText.setTypeface(Typeface.MONOSPACE);
             topAccordion.addView(topAccText);
             diffBox.addView(topAccordion);
 
-            // Horizontal Scroll for code lines
             HorizontalScrollView codeHScroll = new HorizontalScrollView(this);
             codeHScroll.setHorizontalScrollBarEnabled(false);
+            codeHScroll.setPadding(0, dp(6), 0, dp(6));
 
             LinearLayout linesContainer = new LinearLayout(this);
             linesContainer.setOrientation(LinearLayout.VERTICAL);
-            linesContainer.setPadding(0, dp(4), dp(16), dp(4));
 
-            int currentLineNum = Math.max(1, startLine);
-
-            // Render Deleted Lines (TargetContent) in Dark Red
             if (!targetContent.isEmpty()) {
-                String[] delLines = targetContent.split("\n");
-                for (String dl : delLines) {
+                String[] delLines = targetContent.split("\n", -1);
+                for (int d = 0; d < delLines.length; d++) {
+                    String dl = delLines[d];
                     LinearLayout lineRow = new LinearLayout(this);
                     lineRow.setOrientation(LinearLayout.HORIZONTAL);
-                    lineRow.setGravity(Gravity.CENTER_VERTICAL);
-                    lineRow.setBackgroundColor(Color.argb(80, 239, 68, 68)); // Red tint #361718
-                    lineRow.setPadding(0, dp(2), dp(8), dp(2));
+                    lineRow.setBackgroundColor(Color.argb(45, 239, 83, 80));
+                    lineRow.setPadding(dp(8), dp(2), dp(12), dp(2));
 
                     TextView ln = new TextView(this);
-                    ln.setText(String.valueOf(currentLineNum));
+                    ln.setText(String.valueOf(startLine + d));
                     ln.setTextSize(12f);
                     ln.setTextColor(Color.rgb(150, 150, 150));
                     ln.setTypeface(Typeface.MONOSPACE);
@@ -3727,7 +3798,7 @@ public class MainActivity extends Activity {
                     TextView codeTxt = new TextView(this);
                     codeTxt.setText(dl);
                     codeTxt.setTextSize(13f);
-                    codeTxt.setTextColor(Color.rgb(255, 133, 133)); // Red text
+                    codeTxt.setTextColor(Color.rgb(255, 128, 128));
                     codeTxt.setTypeface(Typeface.MONOSPACE);
                     lineRow.addView(codeTxt);
 
@@ -3735,18 +3806,17 @@ public class MainActivity extends Activity {
                 }
             }
 
-            // Render Added Lines (ReplacementContent) in Dark Green
             if (!replacementContent.isEmpty()) {
-                String[] addLines = replacementContent.split("\n");
-                for (String al : addLines) {
+                String[] addLines = replacementContent.split("\n", -1);
+                for (int a = 0; a < addLines.length; a++) {
+                    String al = addLines[a];
                     LinearLayout lineRow = new LinearLayout(this);
                     lineRow.setOrientation(LinearLayout.HORIZONTAL);
-                    lineRow.setGravity(Gravity.CENTER_VERTICAL);
-                    lineRow.setBackgroundColor(Color.argb(75, 76, 175, 80)); // Green tint #163321
-                    lineRow.setPadding(0, dp(2), dp(8), dp(2));
+                    lineRow.setBackgroundColor(Color.argb(45, 46, 160, 67));
+                    lineRow.setPadding(dp(8), dp(2), dp(12), dp(2));
 
                     TextView ln = new TextView(this);
-                    ln.setText(String.valueOf(currentLineNum++));
+                    ln.setText(String.valueOf(startLine + a));
                     ln.setTextSize(12f);
                     ln.setTextColor(Color.rgb(150, 150, 150));
                     ln.setTypeface(Typeface.MONOSPACE);
@@ -3758,14 +3828,13 @@ public class MainActivity extends Activity {
                     TextView codeTxt = new TextView(this);
                     codeTxt.setText(al);
                     codeTxt.setTextSize(13f);
-                    codeTxt.setTextColor(Color.rgb(112, 239, 139)); // Bright green text
+                    codeTxt.setTextColor(Color.rgb(112, 239, 139));
                     codeTxt.setTypeface(Typeface.MONOSPACE);
                     lineRow.addView(codeTxt);
 
                     linesContainer.addView(lineRow, new LinearLayout.LayoutParams(-1, -2));
                 }
             } else if (targetContent.isEmpty()) {
-                // Fallback if no target/replacement parsed
                 TextView fallback = cText(outputText, 13f, Theme.TEXT_MAIN, false, false);
                 fallback.setTypeface(Typeface.MONOSPACE);
                 linesContainer.addView(fallback);
@@ -3774,11 +3843,10 @@ public class MainActivity extends Activity {
             codeHScroll.addView(linesContainer);
             diffBox.addView(codeHScroll);
 
-            // Bottom Accordion Footer: v Perluas
             LinearLayout btmAccordion = new LinearLayout(this);
             btmAccordion.setOrientation(LinearLayout.HORIZONTAL);
             btmAccordion.setGravity(Gravity.CENTER_VERTICAL);
-            btmAccordion.setBackgroundColor(Color.rgb(27, 36, 51)); // Dark Navy Slate #1B2433
+            btmAccordion.setBackgroundColor(Color.rgb(27, 36, 51));
             btmAccordion.setPadding(dp(12), dp(7), dp(12), dp(7));
 
             ImageView downIcon = cIcon(R.drawable.ic_expand_more, 16, Color.rgb(138, 153, 173));
@@ -3791,7 +3859,6 @@ public class MainActivity extends Activity {
 
             body.addView(diffBox);
         } else {
-            // Standard Command & Output Sections
             TextView cmdLabel = cText("Perintah", 13.5f, Theme.TEXT_MUTED, false, false);
             LinearLayout.LayoutParams lpCmdL = new LinearLayout.LayoutParams(-1, -2);
             lpCmdL.setMargins(0, 0, 0, dp(8));
@@ -3805,7 +3872,7 @@ public class MainActivity extends Activity {
             TextView cmdView = new TextView(this);
             cmdView.setText(commandText.isEmpty() ? toolTitle : commandText);
             cmdView.setTextSize(13.5f);
-            cmdView.setTextColor(Color.rgb(255, 204, 128)); // Highlighted amber command syntax
+            cmdView.setTextColor(Color.rgb(255, 204, 128));
             cmdView.setTypeface(Typeface.MONOSPACE);
             cmdView.setTextIsSelectable(true);
             cmdBox.addView(cmdView);
@@ -3836,8 +3903,32 @@ public class MainActivity extends Activity {
         detailScroll.addView(body);
         activeBottomSheetDetailView.addView(detailScroll, new LinearLayout.LayoutParams(-1, -1));
 
-        activeBottomSheetMasterView.setVisibility(View.GONE);
+        final int containerWidth = (activeBottomSheetContainer != null && activeBottomSheetContainer.getWidth() > 0)
+                ? activeBottomSheetContainer.getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+
+        activeBottomSheetDetailView.setTranslationX(containerWidth);
+        activeBottomSheetDetailView.setAlpha(0f);
         activeBottomSheetDetailView.setVisibility(View.VISIBLE);
+
+        if (activeBottomSheetMasterView != null) {
+            activeBottomSheetMasterView.animate()
+                    .translationX(-containerWidth * 0.35f)
+                    .alpha(0f)
+                    .setDuration(240)
+                    .withEndAction(() -> {
+                        if (activeBottomSheetMasterView != null) {
+                            activeBottomSheetMasterView.setVisibility(View.GONE);
+                        }
+                    })
+                    .start();
+        }
+
+        activeBottomSheetDetailView.animate()
+                .translationX(0f)
+                .alpha(1f)
+                .setDuration(240)
+                .start();
     }
 
     // ============================================================
