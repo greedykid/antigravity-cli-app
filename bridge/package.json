@@ -1,1 +1,13 @@
-{"name":"codex-remote-bridge","version":"0.1.0","private":true,"scripts":{"start":"node server.js","pair":"node pair.js"},"dependencies":{"qrcode-terminal":"^0.12.0"}}
+{
+  "name": "codex-remote-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "pair": "node pair.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0"
+  }
+}

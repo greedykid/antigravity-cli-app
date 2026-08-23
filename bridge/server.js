@@ -91,6 +91,31 @@ function getCodexProcess() {
 let cachedUsage = null;
 let lastUsageFetch = 0;
 
+// Counts prompts inside a trailing time window from a history.jsonl file.
+// This is real local activity — unlike a provider quota, which the CLI does
+// not expose, so we must not pretend to know it.
+function countRecentPrompts(entries, windowMs, now) {
+  return entries.filter(ts => ts > 0 && now - ts <= windowMs).length;
+}
+
+function readAgyHistory(home) {
+  const file = path.join(home, ".gemini/antigravity-cli/history.jsonl");
+  const prompts = [];
+  const sessionIds = new Set();
+  try {
+    if (fs.existsSync(file)) {
+      for (const line of fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean)) {
+        try {
+          const item = JSON.parse(line);
+          if (item.conversationId) sessionIds.add(item.conversationId);
+          prompts.push(Number(item.timestamp) || 0);
+        } catch (e) {}
+      }
+    }
+  } catch (e) {}
+  return { prompts, sessionIds };
+}
+
 function getUsageStats() {
   const now = Date.now();
   if (cachedUsage && (now - lastUsageFetch < 15000)) {
@@ -108,32 +133,11 @@ function getUsageStats() {
     }
   } catch (e) {}
 
-  let totalPrompts = 0;
+  const { prompts, sessionIds } = readAgyHistory(home);
+
   let totalSteps = 0;
   let totalTools = 0;
   let totalChars = 0;
-  const sessionIds = new Set();
-
-  try {
-    const historyFile = path.join(home, ".gemini/antigravity-cli/history.jsonl");
-    if (fs.existsSync(historyFile)) {
-      const lines = fs.readFileSync(historyFile, "utf8").trim().split("\n").filter(Boolean);
-      totalPrompts = lines.length;
-      for (const line of lines) {
-        try {
-          const item = JSON.parse(line);
-          if (item.conversationId) sessionIds.add(item.conversationId);
-        } catch (e) {}
-      }
-    }
-  } catch (e) {}
-
-  let geminiWeekly = 68;
-  let geminiWeeklyReset = "Reset dlm 5 hari";
-  let geminiFiveHour = 92;
-  let geminiFiveHourReset = "Reset dlm 3 jam 15 mnt";
-  let claudeWeekly = 84;
-  let claudeFiveHour = 76;
 
   for (const convId of sessionIds) {
     try {
@@ -146,31 +150,35 @@ function getUsageStats() {
           if (line.includes('"tool_calls"')) totalTools++;
         }
       }
-    } catch(e) {}
+    } catch (e) {}
   }
 
-  const estimatedTokens = Math.round(totalChars / 3.8) || 502196;
   const freeMem = Math.round(os.freemem() / (1024 * 1024));
   const totalMem = Math.round(os.totalmem() / (1024 * 1024));
 
   cachedUsage = {
     ok: true,
     account: email,
-    geminiWeekly,
-    geminiWeeklyReset,
-    geminiFiveHour,
-    geminiFiveHourReset,
-    claudeWeekly,
-    claudeFiveHour,
-    totalSessions: sessionIds.size || 4,
-    totalPrompts: totalPrompts || 74,
-    totalSteps: totalSteps || 2782,
-    totalTools: totalTools || 1125,
-    estimatedTokens: estimatedTokens,
-    totalChars: totalChars || 1900000,
-    model: "Gemini 3.7 Flash / GPT-5.6",
-    tier: "Developer Tier (Unlimited)",
-    quotaStatus: "Unlimited Workspace Execution",
+    engine: "antigravity",
+
+    // Measured locally. Zero means zero — no invented fallbacks.
+    totalSessions: sessionIds.size,
+    totalPrompts: prompts.length,
+    totalSteps,
+    totalTools,
+    totalChars,
+    estimatedTokens: Math.round(totalChars / 3.8),
+
+    // Activity windows, derived from real history timestamps.
+    promptsLast5h: countRecentPrompts(prompts, 5 * 60 * 60 * 1000, now),
+    promptsLast24h: countRecentPrompts(prompts, 24 * 60 * 60 * 1000, now),
+    promptsLast7d: countRecentPrompts(prompts, 7 * 24 * 60 * 60 * 1000, now),
+
+    // The CLI exposes no provider quota locally, so say so instead of
+    // shipping a plausible-looking percentage.
+    quotaKnown: false,
+    quotaStatus: "Kuota provider tidak tersedia dari CLI lokal",
+
     memoryUsage: `${totalMem - freeMem} MB / ${totalMem} MB`,
     hostname: os.hostname(),
     uptime: Math.round(os.uptime() / 60) + " menit"
@@ -207,23 +215,50 @@ function getCodexUsageStats() {
             visited++;
             const content = fs.readFileSync(full, "utf8");
             totalChars += content.length;
-            for (const match of content.matchAll(/"(?:total_)?tokens"\s*:\s*(\d+)/g)) estimatedTokens += Number(match[1]);
+            // total_tokens is cumulative per turn, so summing every match
+            // counted the same tokens once per turn. Take the file's peak.
+            let fileMax = 0;
+            for (const match of content.matchAll(/"total_tokens"\s*:\s*(\d+)/g)) {
+              fileMax = Math.max(fileMax, Number(match[1]));
+            }
+            estimatedTokens += fileMax;
           }
         }
       }
     }
   } catch (e) {}
+  const now = Date.now();
+  let promptTimes = [];
+  try {
+    if (fs.existsSync(historyFile)) {
+      promptTimes = fs.readFileSync(historyFile, "utf8").split("\n").filter(Boolean).map(line => {
+        try {
+          const item = JSON.parse(line);
+          // Codex history stores unix seconds in `ts`.
+          return item.ts ? Number(item.ts) * 1000 : Number(item.timestamp) || 0;
+        } catch (e) {
+          return 0;
+        }
+      });
+    }
+  } catch (e) {}
+
   return {
     ok: true,
     account: "Codex account",
     engine: "codex",
-    model: "Selected model from app",
     totalPrompts,
     totalSessions,
+    // Prefer token counts parsed from the rollouts; fall back to a character
+    // estimate only when none were found, and label it as such.
     estimatedTokens: estimatedTokens || Math.round(totalChars / 4),
+    tokensMeasured: estimatedTokens > 0,
     totalChars,
-    quotaStatus: "Usage dari local Codex rollouts",
-    tier: "Codex CLI",
+    promptsLast5h: countRecentPrompts(promptTimes, 5 * 60 * 60 * 1000, now),
+    promptsLast24h: countRecentPrompts(promptTimes, 24 * 60 * 60 * 1000, now),
+    promptsLast7d: countRecentPrompts(promptTimes, 7 * 24 * 60 * 60 * 1000, now),
+    quotaKnown: false,
+    quotaStatus: "Kuota provider tidak tersedia dari CLI lokal",
     hostname: os.hostname(),
     uptime: Math.round(os.uptime() / 60) + " menit"
   };

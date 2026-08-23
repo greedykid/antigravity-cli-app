@@ -303,6 +303,23 @@ case "$1" in
     logs|log)
         show_logs
         ;;
+    rotate|rotate-token)
+        NEW_TOKEN=$(node -e "process.stdout.write(require('$APP_DIR/bridge/config.js').rotateToken())" 2>/dev/null)
+        if [ -z "$NEW_TOKEN" ]; then
+            echo -e "\033[31m✘ Gagal membuat token baru.\033[0m"
+            exit 1
+        fi
+        TOKEN="$NEW_TOKEN"
+        echo -e "\033[32m✔ Token baru dibuat: $TOKEN\033[0m"
+        echo -e "  Restart server lalu scan ulang QR pairing dari HP."
+        if systemd_manages codex-bridge; then
+            sudo systemctl restart codex-bridge || true
+        else
+            "$0" restart >/dev/null 2>&1 || true
+        fi
+        sleep 2
+        show_qr_pair
+        ;;
     token)
         if [ -n "$2" ]; then
             TOKEN="$2"
@@ -342,6 +359,7 @@ case "$1" in
         echo "  status           : Show status of server, port, and tunnel URL"
         echo "  logs             : Stream live server logs"
         echo "  token [new]      : View or change secret Bearer Token"
+        echo "  rotate           : Generate a fresh token (re-pair required)"
         echo "  engine [name]    : View or change default engine (antigravity / codex)"
         echo ""
         ;;
