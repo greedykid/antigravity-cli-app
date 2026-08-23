@@ -20,7 +20,7 @@ struct RootView: View {
 
             NavigationStack {
                 SessionsView { tab = 0 }
-                    .navigationTitle("Kode · \(state.engine.short)")
+                    .navigationTitle(state.engine.sidebarTitle)
                     .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem { Label("Kode", systemImage: "chevron.left.forwardslash.chevron.right") }

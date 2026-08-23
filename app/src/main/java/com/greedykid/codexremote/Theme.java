@@ -132,8 +132,14 @@ public final class Theme {
 
     // ---- engine identity ----
 
+    /** Short mark used where space is tight. */
     public static String wordmark() {
         return isCodex() ? "Codex" : "Antigravity";
+    }
+
+    /** Full product name for the sidebar header. */
+    public static String sidebarTitle() {
+        return wordmark() + " CLI Remote";
     }
 
     /** Title shown on the empty-session screen. */

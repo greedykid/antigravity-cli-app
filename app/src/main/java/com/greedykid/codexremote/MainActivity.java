@@ -1492,7 +1492,11 @@ public class MainActivity extends Activity {
         brandRow.setGravity(Gravity.CENTER_VERTICAL);
         brandRow.setPadding(sidePad + dp(6), dp(6), sidePad, dp(18));
 
-        TextView wordmark = cText(Theme.wordmark(), 30, Theme.TEXT_MAIN, false, true);
+        // "Antigravity CLI Remote" does not fit on one line at the old 30sp, so
+        // the header wraps to two lines at a size that still reads as a title.
+        TextView wordmark = cText(Theme.sidebarTitle(), 23, Theme.TEXT_MAIN, false, true);
+        wordmark.setMaxLines(2);
+        wordmark.setLineSpacing(0, 1.05f);
         brandRow.addView(wordmark, new LinearLayout.LayoutParams(0, -2, 1));
 
         ImageView brandGear = cIconButton(R.drawable.ic_settings, 20, 38, Theme.TEXT_MUTED);

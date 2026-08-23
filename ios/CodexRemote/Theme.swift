@@ -12,6 +12,8 @@ enum Engine: String, CaseIterable, Codable {
     var label: String { self == .codex ? "Codex CLI" : "Antigravity CLI" }
     var short: String { self == .codex ? "Codex" : "Agy" }
     var wordmark: String { self == .codex ? "Codex" : "Antigravity" }
+    /// Full product name, matching the Android sidebar header.
+    var sidebarTitle: String { wordmark + " CLI Remote" }
     var brandTitle: String { self == .codex ? "Codex Remote" : "Antigravity Code" }
     var repo: String { self == .codex ? "openai/codex-cli" : "google/antigravity-cli" }
 

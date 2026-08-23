@@ -7,4 +7,7 @@
 
     <color name="codex_window_bg">#131417</color>
     <color name="codex_accent">#10A37F</color>
+
+    <!-- Launcher icon backdrop, matching the logo sheet. -->
+    <color name="ic_launcher_background">#F7F7F9</color>
 </resources>
