@@ -111,7 +111,8 @@ public class MainActivity extends Activity {
     private static final int REQ_VOICE_SPEECH = 1002;
     private static final int REQ_CAMERA_PERMISSION = 2001;
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    // Multi-threaded executor so long-running CLI tasks and live polling run simultaneously in parallel!
+    private final ExecutorService executor = Executors.newCachedThreadPool();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
 
@@ -158,8 +159,8 @@ public class MainActivity extends Activity {
     private int currentScreen = 1; // Default to Screen 1 (New Chat Session)
     private boolean navigatedFromHub = false;
 
-    // Live Execution & Sync State
-    private boolean isLiveTaskRunning = false;
+    // Live Execution & Real-time Sync State
+    private volatile boolean isLiveTaskRunning = false;
     private String lastLoadedSessionId = null;
     private int lastLoadedTurnCount = -1;
 
@@ -420,7 +421,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.9.0 • Enhanced UI & Live Spinner", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.9.1 • Instant Live Sync", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -1425,15 +1426,27 @@ public class MainActivity extends Activity {
         addMessageCard("user", displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
         promptInput.setText("");
 
+        // Show immediate initial running pill
+        ArrayList<JSONObject> initialRunningList = new ArrayList<>();
+        try {
+            JSONObject dummy = new JSONObject();
+            dummy.put("role", "thinking");
+            dummy.put("title", "Starting agent...");
+            dummy.put("content", "Processing instruction and launching tools...");
+            initialRunningList.add(dummy);
+        } catch (Exception ignored) {}
+        addCompactToolsGroupPill(initialRunningList, true);
+
         // Scroll to bottom immediately
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
 
-        // Start high-frequency live transcript sync
+        // Start high-frequency live transcript sync loop
         startAutoRefresh();
 
         final String promptToSend = text;
         final String fileToSend = file;
 
+        // Run HTTP POST in concurrent background thread
         executor.execute(() -> {
             try {
                 JSONObject req = new JSONObject();
@@ -1490,7 +1503,8 @@ public class MainActivity extends Activity {
 
                 HttpURLConnection c = (HttpURLConnection) new URL(queryUrl).openConnection();
                 c.setRequestMethod("GET");
-                c.setConnectTimeout(6000);
+                c.setConnectTimeout(5000);
+                c.setReadTimeout(5000);
                 String token = prefs.getString("token", "");
                 if (!token.isEmpty()) {
                     c.setRequestProperty("Authorization", "Bearer " + token);
@@ -1512,7 +1526,7 @@ public class MainActivity extends Activity {
                         renderActiveSessionTurns(activeConversationId, json, false);
                     });
                 }
-            } catch (Exception e) {}
+            } catch (Exception ignored) {}
         });
     }
 
@@ -1570,8 +1584,8 @@ public class MainActivity extends Activity {
             if (turns != null) {
                 int newTurnCount = turns.length();
 
-                // Prevent unnecessary View re-creation if nothing changed
-                if (requestedConvId != null && requestedConvId.equals(lastLoadedSessionId) && newTurnCount == lastLoadedTurnCount && !isLiveTaskRunning) {
+                // Only skip re-rendering if NOT running AND turn count has not changed
+                if (!isLiveTaskRunning && requestedConvId != null && requestedConvId.equals(lastLoadedSessionId) && newTurnCount == lastLoadedTurnCount) {
                     return;
                 }
 
