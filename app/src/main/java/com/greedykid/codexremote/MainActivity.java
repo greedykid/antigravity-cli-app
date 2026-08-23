@@ -169,6 +169,8 @@ public class MainActivity extends Activity {
     private TextView chatTopTitle;
     private LinearLayout chatMessagesList;
     private ScrollView chatScroll;
+    private LinearLayout chatSessionLoadingView;
+    private FrameLayout btnScrollToBottom;
     private LinearLayout emptyMascotView;
     private EditText promptInput;
     private FrameLayout btnSend;
@@ -585,6 +587,10 @@ public class MainActivity extends Activity {
                 startAutoRefresh();
             } else {
                 stopAutoRefresh();
+                if (chatSessionLoadingView != null && chatSessionLoadingView.getVisibility() == View.VISIBLE) {
+                    chatSessionLoadingView.animate().alpha(0f).setDuration(150)
+                            .withEndAction(() -> chatSessionLoadingView.setVisibility(View.GONE)).start();
+                }
                 chatMessagesList.removeAllViews();
                 showEmptyMascotState(true);
             }
@@ -927,6 +933,10 @@ public class MainActivity extends Activity {
 
         if (chatMessagesList != null) chatMessagesList.removeAllViews();
         showEmptyMascotState(false);
+        if (chatSessionLoadingView != null) {
+            chatSessionLoadingView.setVisibility(View.VISIBLE);
+            chatSessionLoadingView.setAlpha(1f);
+        }
         showScreen(1);
     }
 
@@ -2306,13 +2316,6 @@ public class MainActivity extends Activity {
         buildEmptyMascotState();
         chatMessagesList.addView(emptyMascotView);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            chatScroll.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
-                if (scrollY == 0 && !isLiveTaskRunning && activeConversationId != null) {
-                    syncLiveExecution();
-                }
-            });
-        }
         chatScroll.addView(chatMessagesList);
         contentLayout.addView(chatScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
@@ -2349,58 +2352,113 @@ public class MainActivity extends Activity {
         promptInput.setHint("Code anything...");
         promptInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
         promptInput.setTextColor(CLAUDE_TEXT_MAIN);
-        promptInput.setTextSize(15);
-        promptInput.setBackground(null);
-        promptInput.setMinLines(1);
-        promptInput.setMaxLines(5);
-        promptInput.setSingleLine(false);
+        promptInput.setTextSize(15.5f);
+        promptInput.setTypeface(Typeface.SERIF);
+        promptInput.setBackgroundColor(Color.TRANSPARENT);
+        promptInput.setMaxLines(6);
         promptInput.setPadding(0, 0, 0, dp(8));
-        composerCard.addView(promptInput, new LinearLayout.LayoutParams(-1, -2));
+        composerCard.addView(promptInput);
 
-        LinearLayout bottomRow = new LinearLayout(this);
-        bottomRow.setOrientation(LinearLayout.HORIZONTAL);
-        bottomRow.setGravity(Gravity.CENTER_VERTICAL);
+        // Action Toolbar
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        repoTagLabel = cText("google/antigravity-cli", 12, CLAUDE_TEXT_MAIN, false, false);
-        repoTagLabel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
-        repoTagLabel.setPadding(dp(12), dp(6), dp(12), dp(6));
-        repoTagLabel.setOnClickListener(v -> toggleEngine());
-        bottomRow.addView(repoTagLabel);
+        btnAttach = cIconButton(R.drawable.ic_add, 24, 38, CLAUDE_TEXT_MUTED);
+        btnAttach.setOnClickListener(v -> openFileAndImagePicker());
+        actionRow.addView(btnAttach);
 
-        View spacer = new View(this);
-        bottomRow.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1));
+        btnVoice = cIconButton(R.drawable.ic_mic, 22, 38, CLAUDE_TEXT_MUTED);
+        btnVoice.setOnClickListener(v -> startVoiceSpeechRecognition());
+        actionRow.addView(btnVoice);
 
-        btnAttach = cIconButton(R.drawable.ic_add, 22, 38, CLAUDE_TEXT_MAIN);
-        btnAttach.setOnClickListener(v -> openMultiFilePicker());
-        bottomRow.addView(btnAttach);
+        repoTagLabel = cText(currentEngine.equalsIgnoreCase("codex") ? "Codex" : "Antigravity", 12f, CLAUDE_TEXT_MUTED, true, false);
+        repoTagLabel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        repoTagLabel.setPadding(dp(10), dp(4), dp(10), dp(4));
+        repoTagLabel.setOnClickListener(v -> toggleAiEngine());
+        LinearLayout.LayoutParams lpTag = new LinearLayout.LayoutParams(-2, -2);
+        lpTag.setMargins(dp(6), 0, 0, 0);
+        actionRow.addView(repoTagLabel, lpTag);
 
-        btnEnginePill = cIconButton(R.drawable.ic_cloud, 22, 38, CLAUDE_TEXT_MAIN);
-        btnEnginePill.setOnClickListener(v -> checkHealth());
-        bottomRow.addView(btnEnginePill);
-
-        btnVoice = cIconButton(R.drawable.ic_mic, 22, 38, CLAUDE_TEXT_MAIN);
-        btnVoice.setOnClickListener(v -> startVoiceRecognition());
-        bottomRow.addView(btnVoice);
+        View spring = new View(this);
+        actionRow.addView(spring, new LinearLayout.LayoutParams(0, 1, 1));
 
         btnSend = new FrameLayout(this);
-        btnSend.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 21));
-        ImageView sendIcon = cIcon(R.drawable.ic_send, 20, Color.WHITE);
-        FrameLayout.LayoutParams lpSendIcon = new FrameLayout.LayoutParams(dp(20), dp(20));
-        lpSendIcon.gravity = Gravity.CENTER;
-        btnSend.addView(sendIcon, lpSendIcon);
+        btnSend.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 18));
+        ImageView sendIcon = cIcon(R.drawable.ic_send, 18, Color.WHITE);
+        FrameLayout.LayoutParams lpSendIc = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
+        btnSend.addView(sendIcon, lpSendIc);
         btnSend.setOnClickListener(v -> sendClaudePrompt());
+        actionRow.addView(btnSend, new LinearLayout.LayoutParams(dp(36), dp(36)));
 
-        LinearLayout.LayoutParams lpSend = new LinearLayout.LayoutParams(dp(42), dp(42));
-        lpSend.setMargins(dp(6), 0, 0, 0);
-        bottomRow.addView(btnSend, lpSend);
-
-        composerCard.addView(bottomRow);
+        composerCard.addView(actionRow);
         floatingWrapper.addView(composerCard);
 
-        FrameLayout.LayoutParams lpFloat = new FrameLayout.LayoutParams(-1, -2);
-        lpFloat.gravity = Gravity.BOTTOM;
-        lpFloat.setMargins(dp(14), 0, dp(14), dp(10));
+        FrameLayout.LayoutParams lpFloat = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        lpFloat.setMargins(dp(16), 0, dp(16), dp(14));
         root.addView(floatingWrapper, lpFloat);
+
+        // Floating Scroll-to-Bottom Button (FAB)
+        btnScrollToBottom = new FrameLayout(this);
+        btnScrollToBottom.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 22));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            btnScrollToBottom.setElevation(dp(6));
+        }
+        ImageView downArrow = cIcon(R.drawable.ic_expand_more, 22, CLAUDE_TEXT_MAIN);
+        btnScrollToBottom.addView(downArrow, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        btnScrollToBottom.setVisibility(View.GONE);
+        btnScrollToBottom.setOnClickListener(v -> {
+            chatScroll.smoothScrollTo(0, chatMessagesList.getHeight());
+            chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+        });
+
+        FrameLayout.LayoutParams lpScrollBtn = new FrameLayout.LayoutParams(dp(42), dp(42), Gravity.BOTTOM | Gravity.END);
+        lpScrollBtn.setMargins(0, 0, dp(20), dp(120));
+        root.addView(btnScrollToBottom, lpScrollBtn);
+
+        // Scroll listener for Top History Load + Scroll-to-Bottom visibility toggle
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            chatScroll.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+                if (scrollY == 0 && !isLiveTaskRunning && activeConversationId != null) {
+                    syncLiveExecution();
+                }
+
+                int scrollHeight = chatScroll.getHeight();
+                int contentHeight = chatMessagesList.getHeight();
+                int distanceToBottom = contentHeight - (scrollY + scrollHeight);
+
+                if (distanceToBottom > dp(180)) {
+                    if (btnScrollToBottom.getVisibility() != View.VISIBLE) {
+                        btnScrollToBottom.setVisibility(View.VISIBLE);
+                        btnScrollToBottom.setAlpha(0f);
+                        btnScrollToBottom.setScaleX(0.8f);
+                        btnScrollToBottom.setScaleY(0.8f);
+                        btnScrollToBottom.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160).start();
+                    }
+                } else {
+                    if (btnScrollToBottom.getVisibility() == View.VISIBLE) {
+                        btnScrollToBottom.animate().alpha(0f).scaleX(0.8f).scaleY(0.8f).setDuration(160)
+                                .withEndAction(() -> btnScrollToBottom.setVisibility(View.GONE)).start();
+                    }
+                }
+            });
+        }
+
+        // Centered Session Loading Indicator Overlay
+        chatSessionLoadingView = new LinearLayout(this);
+        chatSessionLoadingView.setOrientation(LinearLayout.VERTICAL);
+        chatSessionLoadingView.setGravity(Gravity.CENTER);
+        chatSessionLoadingView.setBackgroundColor(CLAUDE_BG);
+        chatSessionLoadingView.setVisibility(View.GONE);
+
+        ProgressBar loadPb = new ProgressBar(this);
+        chatSessionLoadingView.addView(loadPb, new LinearLayout.LayoutParams(dp(36), dp(36)));
+
+        TextView loadText = cText("Memuat percakapan...", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        loadText.setPadding(0, dp(12), 0, 0);
+        chatSessionLoadingView.addView(loadText);
+
+        root.addView(chatSessionLoadingView, new FrameLayout.LayoutParams(-1, -1));
     }
 
     private void buildEmptyMascotState() {
