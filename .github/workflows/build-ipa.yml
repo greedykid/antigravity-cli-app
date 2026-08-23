@@ -31,7 +31,10 @@ jobs:
 
       - name: Generate Xcode project
         working-directory: ios
-        run: xcodegen generate
+        run: |
+          xcodegen generate
+          ls -la
+          xcodebuild -list -project CodexRemote.xcodeproj
 
       - name: Build unsigned app
         working-directory: ios
