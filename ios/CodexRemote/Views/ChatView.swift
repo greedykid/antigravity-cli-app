@@ -53,7 +53,34 @@ struct ChatView: View {
                         userBubble(pending)
                     }
 
-                    if state.isRunning {
+                    if state.isRunning && !state.streamingResponse.isEmpty {
+                        MarkdownView(markdown: state.streamingResponse + " ▊", palette: palette)
+                    }
+
+                    if let failed = state.failedPrompt {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(palette.amber)
+                            Text("Gagal terkirim: \(failed)")
+                                .font(.system(size: 13))
+                                .foregroundColor(palette.textMain)
+                                .lineLimit(1)
+                            Spacer()
+                            Button("Kirim Ulang 🔄") {
+                                let p = failed
+                                state.failedPrompt = nil
+                                Task { await state.send(prompt: p) }
+                            }
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(palette.accent)
+                        }
+                        .padding(12)
+                        .background(palette.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.red, lineWidth: 1))
+                    }
+
+                    if state.isRunning && state.streamingResponse.isEmpty {
                         runningIndicator.id("running")
                     }
                 }

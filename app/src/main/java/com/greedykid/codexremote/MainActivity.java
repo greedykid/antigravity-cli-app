@@ -117,6 +117,9 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     private boolean isAppInForeground = true;
+    private String liveStreamingAssistantText = "";
+    private String lastFailedPrompt = null;
+
     private static final String CHANNEL_TASK_NOTIFICATIONS = "channel_ai_task_alerts";
     private HorizontalScrollView quickActionScroll;
     private LinearLayout quickActionRow;
@@ -283,6 +286,47 @@ public class MainActivity extends Activity {
         }
     }
     private static final int NOTIFY_RESULT_ID = 8821;
+
+
+    private void renderRetryFailedMessageBlock(final String failedText, final String errorReason) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(cBox(Theme.SURFACE, Theme.RED, 1, 14));
+        card.setPadding(dp(14), dp(10), dp(14), dp(10));
+
+        ImageView icon = cIcon(R.drawable.ic_close, 18, Theme.RED);
+        card.addView(icon);
+
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setPadding(dp(10), 0, dp(8), 0);
+
+        TextView errView = cText("Gagal terkirim: " + (failedText.length() > 30 ? failedText.substring(0, 27) + "..." : failedText), 13f, Theme.TEXT_MAIN, true, false);
+        textCol.addView(errView);
+
+        TextView subView = cText(errorReason != null ? errorReason : "Koneksi gateway terputus.", 11.5f, Theme.RED, false, false);
+        textCol.addView(subView);
+
+        card.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView btnRetry = cText("Kirim Ulang 🔄", 12.5f, Theme.ON_ACCENT, true, false);
+        btnRetry.setBackground(cBox(Theme.ACCENT, 0, 0, 10));
+        btnRetry.setPadding(dp(10), dp(6), dp(10), dp(6));
+        btnRetry.setClickable(true);
+        btnRetry.setFocusable(true);
+        btnRetry.setOnClickListener(v -> {
+            chatMessagesList.removeView(card);
+            promptInput.setText(failedText);
+            sendClaudePrompt();
+        });
+        card.addView(btnRetry);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(dp(16), dp(8), dp(16), dp(8));
+        chatMessagesList.addView(card, lp);
+        chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+    }
 
     // Multi-File Attachment Model
     public static class AttachedMedia {
@@ -4695,14 +4739,16 @@ public class MainActivity extends Activity {
                     renderActiveSessionTurns(activeConversationId, finalRes, false);
                 });
             } catch (Exception e) {
+                final String err = e.getMessage() != null ? e.getMessage() : "Koneksi gateway terputus.";
                 mainHandler.post(() -> {
                     activeJobId = null;
                     isLiveTaskRunning = false;
-                    pendingOptimisticUserPrompt = null;
+                    liveStreamingAssistantText = "";
+                    lastFailedPrompt = promptToSend;
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
-                    syncLiveExecution();
+                    renderRetryFailedMessageBlock(promptToSend, err);
                 });
             }
         });
@@ -4986,9 +5032,12 @@ public class MainActivity extends Activity {
                     renderUserMessageBlock(pendingOptimisticUserPrompt, pendingOptimisticUserTime);
                 }
 
+                if (isLiveTaskRunning && liveStreamingAssistantText != null && !liveStreamingAssistantText.trim().isEmpty()) {
+                    renderAssistantMessageBlock(liveStreamingAssistantText + " ▊", "Mengetik...", true);
+                }
                 if (!pendingTools.isEmpty()) {
                     renderInlineStepPill(pendingTools, isLiveTaskRunning);
-                } else if (isLiveTaskRunning) {
+                } else if (isLiveTaskRunning && (liveStreamingAssistantText == null || liveStreamingAssistantText.trim().isEmpty())) {
                     ArrayList<JSONObject> dummy = new ArrayList<>();
                     JSONObject o = new JSONObject();
                     o.put("role", "thinking");
@@ -5760,6 +5809,7 @@ public class MainActivity extends Activity {
         if ("task.finished".equals(name)) {
             if (!isOurs) return;
             isLiveTaskRunning = false;
+            liveStreamingAssistantText = "";
             pendingOptimisticUserPrompt = null;
             if (currentScreen == 1) syncLiveExecution();
             if (!isAppInForeground) {
@@ -5772,8 +5822,13 @@ public class MainActivity extends Activity {
 
         if ("cli.event".equals(name) || "cli.output".equals(name)) {
             if (!isOurs) return;
-            // Our job just revealed which conversation it created.
-            adoptConversationId(data.optString("conversationId", ""));
+            adoptConversationId(data != null ? data.optString("conversationId", "") : "");
+            if ("cli.output".equals(name) && data != null) {
+                String chunk = data.optString("chunk", "");
+                if (!chunk.isEmpty()) {
+                    liveStreamingAssistantText += chunk;
+                }
+            }
             if (currentScreen == 1) syncLiveExecution();
         }
     });

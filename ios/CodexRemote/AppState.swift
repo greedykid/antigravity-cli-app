@@ -21,6 +21,8 @@ final class AppState: ObservableObject {
     @Published var status: String = "Belum dipasangkan"
     @Published var errorMessage: String?
     @Published var loadingSessions = false
+    @Published var streamingResponse: String = ""
+    @Published var failedPrompt: String?
 
     /// Rendered immediately so the message never waits on the round trip, and
     /// kept until the run ends — a partial transcript must not erase it.
@@ -197,6 +199,8 @@ final class AppState: ObservableObject {
 
         let epoch = sessionEpoch
         pendingPrompt = text
+        streamingResponse = ""
+        failedPrompt = nil
         isRunning = true
         errorMessage = nil
 
@@ -226,6 +230,7 @@ final class AppState: ObservableObject {
             }
         } catch {
             errorMessage = error.localizedDescription
+            failedPrompt = text
             finishRun(epoch: epoch)
         }
     }
@@ -298,12 +303,16 @@ final class AppState: ObservableObject {
         case "task.finished":
             if !event.isOk, let failure = event.errorText { errorMessage = failure }
             isRunning = false
+            streamingResponse = ""
             pendingPrompt = nil
             postNotification(title: event.isOk ? "✅ Tugas Selesai: \(activeSessionTitle)" : "⚠️ Tugas Gagal: \(activeSessionTitle)",
                              body: event.isOk ? "AI telah selesai mengerjakan tugas coding Anda." : (event.errorText ?? "Terjadi kesalahan."))
             Task { await refreshActiveTranscript() }
         case "cli.event", "cli.output":
             if let conversationId = event.conversationId { adopt(conversationId) }
+            if event.name == "cli.output", let chunk = event.data["chunk"] as? String {
+                streamingResponse += chunk
+            }
             Task { await refreshActiveTranscript() }
         default:
             break
