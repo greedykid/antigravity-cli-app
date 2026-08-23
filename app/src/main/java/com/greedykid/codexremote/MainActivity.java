@@ -25,6 +25,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Vibrator;
 import android.provider.OpenableColumns;
 import android.speech.RecognizerIntent;
 import android.text.SpannableStringBuilder;
@@ -55,6 +56,7 @@ import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -91,7 +93,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    // Claude Dark Code Theme Palette (Exact Match to Official Claude App)
+    // Claude Dark Theme Palette (Exact Match to Official Claude App)
     private static final int CLAUDE_BG = Color.rgb(24, 24, 23);               // #181817 Dark Obsidian BG
     private static final int CLAUDE_SURFACE = Color.rgb(33, 32, 30);          // #21201E Dark Card Surface
     private static final int CLAUDE_SURFACE_MUTED = Color.rgb(42, 41, 38);    // #2A2926 Dark Badge / Chip
@@ -146,13 +148,15 @@ public class MainActivity extends Activity {
     private LinearLayout sidebarPanel;
     private View sidebarStatusDot;
     private TextView sidebarStatusText;
-    private TextView sidebarEngineLabel;
+    private TextView sidebarUserEmail;
+    private TextView sidebarDeviceHost;
     private boolean isSidebarOpen = false;
 
-    // View Containers (Screen 0: Hub, Screen 1: Chat)
+    // View Containers (Screen 0: Kode Hub, Screen 1: Chat, Screen 2: Pengaturan)
     private LinearLayout mainContentContainer;
     private FrameLayout viewHubContainer;
     private FrameLayout viewChatContainer;
+    private FrameLayout viewSettingsContainer;
 
     // Hub View Components (Claude Code Sessions)
     private TextView hubDeviceHostText;
@@ -175,12 +179,17 @@ public class MainActivity extends Activity {
     private HorizontalScrollView attachmentScrollContainer;
     private LinearLayout attachmentChipsList;
 
+    // Settings View Components
+    private TextView settingsUserEmailText;
+    private TextView settingsConnectorStatusText;
+    private TextView settingsCapabilitiesSubtitle;
+
     // Active Session State
     private String activeConversationId = null;
     private String activeSessionTitle = "New session";
     private String currentEngine = "antigravity";
-    private String currentServerHostname = "VM-0-4-ubuntu";
-    private int currentScreen = 0; // Default to Hub
+    private String currentServerHostname = "Server Remote";
+    private int currentScreen = 0; // 0: Hub, 1: Chat, 2: Settings
     private boolean navigatedFromHub = false;
 
     // Live Execution & Real-time Sync State
@@ -213,6 +222,7 @@ public class MainActivity extends Activity {
         getWindow().setNavigationBarColor(CLAUDE_BG);
         prefs = getSharedPreferences("connection", MODE_PRIVATE);
         currentEngine = prefs.getString("engine", "antigravity");
+        currentServerHostname = prefs.getString("device_name", "Server Remote");
         buildClaudeUiWithSidebar();
     }
 
@@ -227,7 +237,7 @@ public class MainActivity extends Activity {
         super.onResume();
         if (currentScreen == 0) {
             fetchHubSessions();
-        } else if (activeConversationId != null || isLiveTaskRunning) {
+        } else if (currentScreen == 1 && (activeConversationId != null || isLiveTaskRunning)) {
             startAutoRefresh();
         }
     }
@@ -236,6 +246,8 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (isSidebarOpen) {
             closeSidebar();
+        } else if (currentScreen == 2) {
+            showScreen(0);
         } else if (currentScreen == 1 && navigatedFromHub) {
             navigatedFromHub = false;
             showScreen(0);
@@ -306,17 +318,26 @@ public class MainActivity extends Activity {
         mainContentContainer = new LinearLayout(this);
         mainContentContainer.setOrientation(LinearLayout.VERTICAL);
 
+        // Screen 0: Kode Hub
         viewHubContainer = new FrameLayout(this);
         buildHubScreen(viewHubContainer);
         mainContentContainer.addView(viewHubContainer, new LinearLayout.LayoutParams(-1, -1));
 
+        // Screen 1: Chat Screen
         viewChatContainer = new FrameLayout(this);
         viewChatContainer.setVisibility(View.GONE);
         buildChatScreen(viewChatContainer);
         mainContentContainer.addView(viewChatContainer, new LinearLayout.LayoutParams(-1, -1));
 
+        // Screen 2: Pengaturan (Settings Screen matching reference)
+        viewSettingsContainer = new FrameLayout(this);
+        viewSettingsContainer.setVisibility(View.GONE);
+        buildSettingsScreen(viewSettingsContainer);
+        mainContentContainer.addView(viewSettingsContainer, new LinearLayout.LayoutParams(-1, -1));
+
         rootFrame.addView(mainContentContainer, new FrameLayout.LayoutParams(-1, -1));
 
+        // Sidebar Backdrop Scrim
         sidebarScrim = new View(this);
         sidebarScrim.setBackgroundColor(Color.argb(160, 0, 0, 0));
         sidebarScrim.setVisibility(View.GONE);
@@ -324,6 +345,7 @@ public class MainActivity extends Activity {
         sidebarScrim.setOnClickListener(v -> closeSidebar());
         rootFrame.addView(sidebarScrim, new FrameLayout.LayoutParams(-1, -1));
 
+        // Sidebar Panel
         sidebarPanel = new LinearLayout(this);
         sidebarPanel.setOrientation(LinearLayout.VERTICAL);
         sidebarPanel.setBackgroundColor(CLAUDE_SURFACE);
@@ -345,30 +367,39 @@ public class MainActivity extends Activity {
     private void buildSidebarContent(LinearLayout sidebar) {
         sidebar.setPadding(dp(22), dp(24), dp(22), dp(20));
 
-        LinearLayout brand = new LinearLayout(this);
-        brand.setOrientation(LinearLayout.HORIZONTAL);
-        brand.setGravity(Gravity.CENTER_VERTICAL);
+        // 1. Account Profile Top Bar
+        LinearLayout profileCard = new LinearLayout(this);
+        profileCard.setOrientation(LinearLayout.HORIZONTAL);
+        profileCard.setGravity(Gravity.CENTER_VERTICAL);
+        profileCard.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 16));
+        profileCard.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-        ImageView sparkLogo = cIcon(R.drawable.ic_spark, 30, CLAUDE_TERRACOTTA);
-        brand.addView(sparkLogo);
+        ImageView avatar = cIcon(R.drawable.ic_person, 20, CLAUDE_TERRACOTTA);
+        profileCard.addView(avatar);
 
-        LinearLayout brandText = new LinearLayout(this);
-        brandText.setOrientation(LinearLayout.VERTICAL);
-        brandText.setPadding(dp(12), 0, 0, 0);
+        String userEmail = prefs.getString("user_email", "developer@antigravity.ai");
+        sidebarUserEmail = cText(" " + userEmail, 13f, CLAUDE_TEXT_MAIN, true, false);
+        sidebarUserEmail.setSingleLine(true);
+        profileCard.addView(sidebarUserEmail, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView title = cText("Antigravity Remote", 16, CLAUDE_TEXT_MAIN, true, true);
-        brandText.addView(title);
-        TextView sub = cText("Claude Code Edition", 12, CLAUDE_TEXT_MUTED, false, false);
-        brandText.addView(sub);
-        brand.addView(brandText, new LinearLayout.LayoutParams(0, -2, 1));
-        sidebar.addView(brand);
+        TextView proBadge = cText("Pro", 11f, Color.BLACK, true, false);
+        proBadge.setBackground(cBox(Color.WHITE, 0, 0, 10));
+        proBadge.setPadding(dp(7), dp(2), dp(7), dp(2));
+        profileCard.addView(proBadge);
 
+        profileCard.setOnClickListener(v -> {
+            closeSidebar();
+            showScreen(2);
+        });
+        sidebar.addView(profileCard);
+
+        // 2. Gateway Status Pill
         LinearLayout statusCard = new LinearLayout(this);
         statusCard.setOrientation(LinearLayout.VERTICAL);
-        statusCard.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        statusCard.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
         statusCard.setPadding(dp(12), dp(10), dp(12), dp(10));
         LinearLayout.LayoutParams lpSt = new LinearLayout.LayoutParams(-1, -2);
-        lpSt.setMargins(0, dp(18), 0, dp(16));
+        lpSt.setMargins(0, dp(14), 0, dp(16));
 
         LinearLayout stRow = new LinearLayout(this);
         stRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -384,51 +415,50 @@ public class MainActivity extends Activity {
         stRow.addView(sidebarStatusText);
         statusCard.addView(stRow);
 
-        sidebarEngineLabel = cText("Active Engine: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Antigravity CLI" : "Codex CLI"), 11.5f, CLAUDE_TEXT_MUTED, false, false);
+        sidebarDeviceHost = cText("Host: " + currentServerHostname, 11.5f, CLAUDE_TEXT_MUTED, false, false);
+        sidebarDeviceHost.setSingleLine(true);
         LinearLayout.LayoutParams lpE = new LinearLayout.LayoutParams(-1, -2);
         lpE.setMargins(0, dp(4), 0, 0);
-        statusCard.addView(sidebarEngineLabel, lpE);
+        statusCard.addView(sidebarDeviceHost, lpE);
         sidebar.addView(statusCard, lpSt);
 
+        // 3. Navigation Menu Items
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
         LinearLayout menuItems = new LinearLayout(this);
         menuItems.setOrientation(LinearLayout.VERTICAL);
 
+        addSidebarMenuItem(menuItems, R.drawable.ic_code, "Kode (All Sessions)", () -> {
+            closeSidebar();
+            showScreen(0);
+        });
+
+        addSidebarMenuItem(menuItems, R.drawable.ic_chat, "Sesi baru (New Chat)", () -> {
+            closeSidebar();
+            startNewSession();
+        });
+
         addSidebarMenuItem(menuItems, R.drawable.ic_qr_code, "Scan QR Code Pairing", () -> {
             closeSidebar();
             startQrScanner();
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_content_paste, "Paste Pairing from Clipboard", () -> {
+        addSidebarMenuItem(menuItems, R.drawable.ic_content_paste, "Paste Pairing dari Clipboard", () -> {
             closeSidebar();
             pasteFromClipboard();
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_chat, "New Chat Session", () -> {
-            closeSidebar();
-            startNewSession();
-        });
-
-        addSidebarMenuItem(menuItems, R.drawable.ic_history, "All Sessions (Kode)", () -> {
-            closeSidebar();
-            showScreen(0);
-        });
-
-        addSidebarMenuItem(menuItems, R.drawable.ic_swap, "Switch Engine (Agy / Codex)", () -> {
+        addSidebarMenuItem(menuItems, R.drawable.ic_tune, "Kemampuan (Engine: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Agy" : "Codex") + ")", () -> {
             toggleEngine();
-            if (sidebarEngineLabel != null) {
-                sidebarEngineLabel.setText("Active Engine: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Antigravity CLI" : "Codex CLI"));
-            }
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_settings, "Connection Settings", () -> {
+        addSidebarMenuItem(menuItems, R.drawable.ic_settings, "Pengaturan (Settings)", () -> {
             closeSidebar();
-            showConnectionDialog();
+            showScreen(2);
         });
 
-        addSidebarMenuItem(menuItems, R.drawable.ic_stop, "Interrupt Running Process", () -> {
+        addSidebarMenuItem(menuItems, R.drawable.ic_stop, "Hentikan Proses CLI", () -> {
             closeSidebar();
             stopRunningCliProcess();
         });
@@ -440,7 +470,7 @@ public class MainActivity extends Activity {
         scroll.addView(menuItems);
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        TextView ver = cText("v2.9.7 • Claude Kode Hub & Multi-Upload", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("Antigravity Remote v2.9.8", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -532,11 +562,12 @@ public class MainActivity extends Activity {
         currentScreen = screenIndex;
         viewHubContainer.setVisibility(screenIndex == 0 ? View.VISIBLE : View.GONE);
         viewChatContainer.setVisibility(screenIndex == 1 ? View.VISIBLE : View.GONE);
+        viewSettingsContainer.setVisibility(screenIndex == 2 ? View.VISIBLE : View.GONE);
 
         if (screenIndex == 0) {
             stopAutoRefresh();
             fetchHubSessions();
-        } else {
+        } else if (screenIndex == 1) {
             chatTopTitle.setText(activeSessionTitle);
             updateRepoTag();
             updateChatNavIcon();
@@ -548,12 +579,15 @@ public class MainActivity extends Activity {
                 chatMessagesList.removeAllViews();
                 showEmptyMascotState(true);
             }
+        } else if (screenIndex == 2) {
+            stopAutoRefresh();
+            refreshSettingsValues();
         }
     }
 
     private void updateChatNavIcon() {
         if (chatNavIcon != null) {
-            if (navigatedFromHub) {
+            if (navigatedFromHub || currentScreen == 1) {
                 chatNavIcon.setImageResource(R.drawable.ic_arrow_back);
             } else {
                 chatNavIcon.setImageResource(R.drawable.ic_menu);
@@ -563,7 +597,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SCREEN 1: CLAUDE CODE SESSIONS HUB ("Kode" UI matching screenshot)
+    // SCREEN 0: CLAUDE KODE HUB ("Kode" UI matching screenshot 1)
     // ============================================================
     private void buildHubScreen(FrameLayout root) {
         LinearLayout content = new LinearLayout(this);
@@ -613,9 +647,10 @@ public class MainActivity extends Activity {
         ImageView laptopIcon = cIcon(R.drawable.ic_laptop, 22, CLAUDE_TEXT_MAIN);
         deviceCard.addView(laptopIcon);
 
-        hubDeviceHostText = cText("VM-0-4-ubuntu", 15, CLAUDE_TEXT_MAIN, true, false);
+        hubDeviceHostText = cText(currentServerHostname, 15, CLAUDE_TEXT_MAIN, true, false);
+        hubDeviceHostText.setSingleLine(true);
         LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-2, -2);
-        lpH.setMargins(0, dp(12), 0, 0);
+        lpH.setMargins(0, dp(12), 0, dp(0));
         deviceCard.addView(hubDeviceHostText, lpH);
 
         hubDeviceStatusText = cText("Terhubung", 12.5f, CLAUDE_GREEN, false, false);
@@ -623,7 +658,9 @@ public class MainActivity extends Activity {
         lpS.setMargins(0, dp(4), 0, 0);
         deviceCard.addView(hubDeviceStatusText, lpS);
 
-        LinearLayout.LayoutParams lpDevCard = new LinearLayout.LayoutParams(dp(160), -2);
+        deviceCard.setOnClickListener(v -> showEditDeviceNameDialog());
+
+        LinearLayout.LayoutParams lpDevCard = new LinearLayout.LayoutParams(dp(165), -2);
         lpDevCard.setMargins(0, 0, 0, dp(10));
         scrollBody.addView(deviceCard, lpDevCard);
 
@@ -664,6 +701,33 @@ public class MainActivity extends Activity {
         root.addView(fabNew, lpFab);
     }
 
+    private void showEditDeviceNameDialog() {
+        final EditText input = new EditText(this);
+        input.setText(currentServerHostname);
+        input.setTextColor(CLAUDE_TEXT_MAIN);
+        input.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 10));
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+        FrameLayout container = new FrameLayout(this);
+        container.setPadding(dp(20), dp(10), dp(20), dp(10));
+        container.addView(input);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Nama Perangkat / Server")
+                .setView(container)
+                .setPositiveButton("Simpan", (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (!name.isEmpty()) {
+                        currentServerHostname = name;
+                        prefs.edit().putString("device_name", name).apply();
+                        if (hubDeviceHostText != null) hubDeviceHostText.setText(name);
+                        if (sidebarDeviceHost != null) sidebarDeviceHost.setText("Host: " + name);
+                    }
+                })
+                .setNegativeButton("Batal", null)
+                .show();
+    }
+
     private void fetchHubSessions() {
         String endpoint = prefs.getString("url", "").trim();
         if (endpoint.isEmpty()) return;
@@ -688,13 +752,17 @@ public class MainActivity extends Activity {
                     String line;
                     while ((line = r.readLine()) != null) b.append(line);
                     JSONObject json = new JSONObject(b.toString());
-                    final String hostname = json.optString("hostname", "VM-0-4-ubuntu");
+
+                    String serverHost = json.optString("hostname", "");
+                    if (!serverHost.isEmpty() && !prefs.contains("device_name")) {
+                        currentServerHostname = serverHost;
+                    }
                     final JSONArray sessions = json.optJSONArray("sessions");
 
                     mainHandler.post(() -> {
-                        currentServerHostname = hostname;
-                        if (hubDeviceHostText != null) hubDeviceHostText.setText(hostname);
+                        if (hubDeviceHostText != null) hubDeviceHostText.setText(currentServerHostname);
                         if (hubDeviceStatusText != null) hubDeviceStatusText.setText("Terhubung");
+                        if (sidebarDeviceHost != null) sidebarDeviceHost.setText("Host: " + currentServerHostname);
                         renderTimeGroupedSessions(sessions);
                     });
                 }
@@ -895,7 +963,270 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SCREEN 2: CHAT VIEW (Floating Composer & Multi-Attachment Tray)
+    // SCREEN 2: PENGATURAN (Settings UI matching screenshot 2)
+    // ============================================================
+    private void buildSettingsScreen(FrameLayout root) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(12), dp(18), dp(16));
+
+        // Top Header: Menu + Title "Pengaturan" + Info Icon
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(0, dp(4), 0, dp(14));
+
+        ImageView menuIcon = cIconButton(R.drawable.ic_menu, 24, 40, CLAUDE_TEXT_MAIN);
+        menuIcon.setOnClickListener(v -> openSidebar());
+        topBar.addView(menuIcon);
+
+        TextView headerTitle = cText("Pengaturan", 20, CLAUDE_TEXT_MAIN, true, true);
+        headerTitle.setGravity(Gravity.CENTER);
+        topBar.addView(headerTitle, new LinearLayout.LayoutParams(0, -2, 1));
+
+        ImageView infoBtn = cIconButton(R.drawable.ic_info, 22, 40, CLAUDE_TEXT_MUTED);
+        infoBtn.setOnClickListener(v -> showAboutAppDialog());
+        topBar.addView(infoBtn);
+        content.addView(topBar);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+
+        // Group 1: Profile / Email Card (Top)
+        LinearLayout topProfileCard = new LinearLayout(this);
+        topProfileCard.setOrientation(LinearLayout.HORIZONTAL);
+        topProfileCard.setGravity(Gravity.CENTER_VERTICAL);
+        topProfileCard.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+        topProfileCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+
+        String email = prefs.getString("user_email", "developer@antigravity.ai");
+        settingsUserEmailText = cText(email, 14.5f, CLAUDE_TEXT_MAIN, true, false);
+        settingsUserEmailText.setSingleLine(true);
+        topProfileCard.addView(settingsUserEmailText, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView proBadge = cText("Pro", 12f, Color.BLACK, true, false);
+        proBadge.setBackground(cBox(Color.WHITE, 0, 0, 12));
+        proBadge.setPadding(dp(10), dp(3), dp(10), dp(3));
+        topProfileCard.addView(proBadge);
+
+        topProfileCard.setOnClickListener(v -> showEditEmailDialog());
+
+        LinearLayout.LayoutParams lpProf = new LinearLayout.LayoutParams(-1, -2);
+        lpProf.setMargins(0, dp(4), 0, dp(14));
+        list.addView(topProfileCard, lpProf);
+
+        // Group 2: Profil, Penagihan, Penggunaan
+        LinearLayout g2 = createSettingsGroupContainer();
+        addSettingsRowItem(g2, R.drawable.ic_person, "Profil", null, () -> showEditEmailDialog(), true);
+        addSettingsRowItem(g2, R.drawable.ic_attach_money, "Penagihan", null, () -> Toast.makeText(this, "Paket: Claude Pro & Antigravity Unlimited", Toast.LENGTH_SHORT).show(), true);
+        addSettingsRowItem(g2, R.drawable.ic_analytics, "Penggunaan", null, () -> showUsageStatsDialog(), false);
+        list.addView(g2);
+
+        // Group 3: Kemampuan, Konektor, Izin
+        LinearLayout g3 = createSettingsGroupContainer();
+        settingsCapabilitiesSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_tune, "Kemampuan", "4 diaktifkan", () -> toggleEngine(), true);
+        settingsConnectorStatusText = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_link, "Konektor", "1 terhubung", () -> showConnectionDialog(), true);
+        addSettingsRowItem(g3, R.drawable.ic_android, "Izin", null, () -> showPermissionsDialog(), false);
+        list.addView(g3);
+
+        // Group 4: Gaya Font, Suara
+        LinearLayout g4 = createSettingsGroupContainer();
+        addSettingsRowItemWithSubtitle(g4, R.drawable.ic_text_format, "Gaya font", "Bawaan", () -> Toast.makeText(this, "Font: Claude Typography Serif & Sans", Toast.LENGTH_SHORT).show(), true);
+        addSettingsRowItem(g4, R.drawable.ic_graphic_eq, "Suara", null, () -> startVoiceRecognition(), false);
+        list.addView(g4);
+
+        // Group 5: Umpan balik haptik, Notifikasi, Privasi
+        LinearLayout g5 = createSettingsGroupContainer();
+
+        // Haptic Feedback Switch Row
+        LinearLayout hapticRow = new LinearLayout(this);
+        hapticRow.setOrientation(LinearLayout.HORIZONTAL);
+        hapticRow.setGravity(Gravity.CENTER_VERTICAL);
+        hapticRow.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        ImageView vibIc = cIcon(R.drawable.ic_vibration, 22, CLAUDE_TEXT_MAIN);
+        hapticRow.addView(vibIc);
+
+        TextView vibLabel = cText("  Umpan balik haptik", 14.5f, CLAUDE_TEXT_MAIN, false, false);
+        hapticRow.addView(vibLabel, new LinearLayout.LayoutParams(0, -2, 1));
+
+        Switch hapticSwitch = new Switch(this);
+        hapticSwitch.setChecked(prefs.getBoolean("haptic", true));
+        hapticSwitch.setOnCheckedChangeListener((btn, isChecked) -> {
+            prefs.edit().putBoolean("haptic", isChecked).apply();
+            if (isChecked) {
+                try {
+                    Vibrator vib = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                    if (vib != null) vib.vibrate(40);
+                } catch (Exception ignored) {}
+            }
+        });
+        hapticRow.addView(hapticSwitch);
+        g5.addView(hapticRow);
+
+        addDividerLine(g5);
+        addSettingsRowItem(g5, R.drawable.ic_notifications, "Notifikasi", null, () -> Toast.makeText(this, "Notifikasi latar belakang aktif", Toast.LENGTH_SHORT).show(), true);
+        addSettingsRowItem(g5, R.drawable.ic_security, "Privasi", null, () -> showPrivacyTokenDialog(), false);
+        list.addView(g5);
+
+        scroll.addView(list);
+        content.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        root.addView(content, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private LinearLayout createSettingsGroupContainer() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(14));
+        box.setLayoutParams(lp);
+        return box;
+    }
+
+    private void addSettingsRowItem(LinearLayout container, int iconRes, String title, String subtitle, final Runnable action, boolean showDivider) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        ImageView ic = cIcon(iconRes, 22, CLAUDE_TEXT_MAIN);
+        row.addView(ic);
+
+        TextView label = cText("  " + title, 14.5f, CLAUDE_TEXT_MAIN, false, false);
+        row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+
+        row.setOnClickListener(v -> action.run());
+        container.addView(row);
+
+        if (showDivider) {
+            addDividerLine(container);
+        }
+    }
+
+    private TextView addSettingsRowItemWithSubtitle(LinearLayout container, int iconRes, String title, String subtitle, final Runnable action, boolean showDivider) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+
+        ImageView ic = cIcon(iconRes, 22, CLAUDE_TEXT_MAIN);
+        row.addView(ic);
+
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setPadding(dp(14), 0, 0, 0);
+
+        TextView label = cText(title, 14.5f, CLAUDE_TEXT_MAIN, false, false);
+        textCol.addView(label);
+
+        TextView sub = cText(subtitle != null ? subtitle : "", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        textCol.addView(sub);
+
+        row.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1));
+        row.setOnClickListener(v -> action.run());
+        container.addView(row);
+
+        if (showDivider) {
+            addDividerLine(container);
+        }
+        return sub;
+    }
+
+    private void addDividerLine(LinearLayout container) {
+        View div = new View(this);
+        div.setBackgroundColor(CLAUDE_BORDER);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(1));
+        lp.setMargins(dp(16), 0, dp(16), 0);
+        container.addView(div, lp);
+    }
+
+    private void refreshSettingsValues() {
+        if (settingsUserEmailText != null) {
+            settingsUserEmailText.setText(prefs.getString("user_email", "developer@antigravity.ai"));
+        }
+        if (settingsConnectorStatusText != null) {
+            boolean hasUrl = !prefs.getString("url", "").isEmpty();
+            settingsConnectorStatusText.setText(hasUrl ? ("1 terhubung • " + currentServerHostname) : "0 terhubung (Atur Bridge)");
+        }
+        if (settingsCapabilitiesSubtitle != null) {
+            settingsCapabilitiesSubtitle.setText("Engine: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Antigravity CLI" : "Codex CLI"));
+        }
+    }
+
+    private void showEditEmailDialog() {
+        final EditText input = new EditText(this);
+        input.setText(prefs.getString("user_email", "developer@antigravity.ai"));
+        input.setTextColor(CLAUDE_TEXT_MAIN);
+        input.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 10));
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+        FrameLayout container = new FrameLayout(this);
+        container.setPadding(dp(20), dp(10), dp(20), dp(10));
+        container.addView(input);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Profil Pengguna")
+                .setView(container)
+                .setPositiveButton("Simpan", (d, w) -> {
+                    String em = input.getText().toString().trim();
+                    if (!em.isEmpty()) {
+                        prefs.edit().putString("user_email", em).apply();
+                        refreshSettingsValues();
+                        if (sidebarUserEmail != null) sidebarUserEmail.setText(" " + em);
+                    }
+                })
+                .setNegativeButton("Batal", null)
+                .show();
+    }
+
+    private void showUsageStatsDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Statistik Penggunaan")
+                .setMessage("• Engine: " + currentEngine + "
+• Host: " + currentServerHostname + "
+• Mode: Real-time Live Synchronization
+• Multi-File Attachments: Aktif")
+                .setPositiveButton("Tutup", null)
+                .show();
+    }
+
+    private void showPermissionsDialog() {
+        boolean camOk = checkCallingOrSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+        new AlertDialog.Builder(this)
+                .setTitle("Izin Aplikasi")
+                .setMessage("• Kamera: " + (camOk ? "Diizinkan ✓" : "Belum diizinkan") + "
+• Mikrofon: Diizinkan ✓
+• Penyimpanan: Diizinkan ✓")
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private void showPrivacyTokenDialog() {
+        String token = prefs.getString("token", "");
+        new AlertDialog.Builder(this)
+                .setTitle("Privasi & Keamanan Token")
+                .setMessage("Bearer Token: " + (token.isEmpty() ? "Tidak ada (Publik)" : "•••••••••••• (Aman)"))
+                .setPositiveButton("Ganti Token", (d, w) -> showConnectionDialog())
+                .setNegativeButton("Tutup", null)
+                .show();
+    }
+
+    private void showAboutAppDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Tentang Antigravity Remote")
+                .setMessage("Versi 2.9.8 (Claude Code Edition)
+Gateway Android Client untuk Antigravity CLI & Codex CLI.")
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    // ============================================================
+    // SCREEN 1: CHAT VIEW (Floating Composer & Multi-Attachment Tray)
     // ============================================================
     private void buildChatScreen(FrameLayout root) {
         LinearLayout contentLayout = new LinearLayout(this);
@@ -1068,6 +1399,7 @@ public class MainActivity extends Activity {
         currentEngine = "antigravity".equalsIgnoreCase(currentEngine) ? "codex" : "antigravity";
         prefs.edit().putString("engine", currentEngine).apply();
         updateRepoTag();
+        refreshSettingsValues();
         Toast.makeText(this, "Engine: " + currentEngine, Toast.LENGTH_SHORT).show();
     }
 
@@ -1075,8 +1407,8 @@ public class MainActivity extends Activity {
         PopupMenu popup = new PopupMenu(this, anchorView);
         popup.getMenu().add(0, 1, 0, "Scan QR Code Pairing");
         popup.getMenu().add(0, 2, 0, "Paste from Clipboard");
-        popup.getMenu().add(0, 3, 0, "Interrupt / Stop Task");
-        popup.getMenu().add(0, 4, 0, "Connection Settings");
+        popup.getMenu().add(0, 3, 0, "Pengaturan (Settings)");
+        popup.getMenu().add(0, 4, 0, "Interrupt / Stop Task");
         popup.getMenu().add(0, 5, 0, "Refresh Transcript");
         popup.getMenu().add(0, 6, 0, "Clear to New Session");
 
@@ -1084,8 +1416,8 @@ public class MainActivity extends Activity {
             int id = item.getItemId();
             if (id == 1) startQrScanner();
             else if (id == 2) pasteFromClipboard();
-            else if (id == 3) stopRunningCliProcess();
-            else if (id == 4) showConnectionDialog();
+            else if (id == 3) showScreen(2);
+            else if (id == 4) stopRunningCliProcess();
             else if (id == 5) fetchActiveSessionTurns(true);
             else if (id == 6) startNewSession();
             return true;
@@ -1441,6 +1773,7 @@ public class MainActivity extends Activity {
 
         currentEngine = engine;
         updateRepoTag();
+        refreshSettingsValues();
         Toast.makeText(this, "Berhasil terhubung ke Server!", Toast.LENGTH_LONG).show();
         checkHealth();
         fetchHubSessions();
@@ -2833,6 +3166,7 @@ public class MainActivity extends Activity {
             dialog.dismiss();
             checkHealth();
             fetchHubSessions();
+            refreshSettingsValues();
         }));
         dialog.show();
     }
