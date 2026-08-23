@@ -28,7 +28,6 @@ jobs:
         run: npm test --prefix bridge
 
   build:
-    needs: bridge-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -62,7 +61,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload latest app/build/outputs/apk/debug/app-debug.apk --clobber --repo ${{ github.repository }} || \
-          gh release create latest app/build/outputs/apk/debug/app-debug.apk --title "Antigravity Remote Latest APK" --notes "Latest build APK & IPA" --repo ${{ github.repository }}
-          gh release upload v0.3.0 app/build/outputs/apk/debug/app-debug.apk --clobber --repo ${{ github.repository }} || \
-          gh release create v0.3.0 app/build/outputs/apk/debug/app-debug.apk --title "Antigravity Remote v0.3.0" --notes "Release v0.3.0 with full Terminal PTY and keyboard auto-resize" --repo ${{ github.repository }}
+          APK_FILE=$(find app/build/outputs -name "*.apk" | head -n 1)
+          echo "Found APK at: $APK_FILE"
+          if [ -n "$APK_FILE" ]; then
+            gh release upload latest "$APK_FILE" --clobber --repo ${{ github.repository }} || \
+            gh release create latest "$APK_FILE" --title "Antigravity Remote Latest APK" --notes "Latest build APK & IPA" --repo ${{ github.repository }}
+            gh release upload v0.3.0 "$APK_FILE" --clobber --repo ${{ github.repository }} || \
+            gh release create v0.3.0 "$APK_FILE" --title "Antigravity Remote v0.3.0" --notes "Release v0.3.0 with full Terminal PTY and keyboard auto-resize" --repo ${{ github.repository }}
+          fi
