@@ -2,8 +2,6 @@ package com.greedykid.codexremote;
 
 import android.Manifest;
 import android.animation.Animator;
-import android.animation.ObjectAnimator;
-import android.animation.ValueAnimator;
 import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
 import android.app.Dialog;
@@ -63,7 +61,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
-import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.EditText;
@@ -1205,7 +1202,6 @@ public class MainActivity extends Activity {
     private LinearLayout chatSessionLoadingView;
     private FrameLayout btnScrollToBottom;
     private LinearLayout emptyMascotView;
-    private ObjectAnimator mascotFloatAnimator;
     private MarkdownRenderer markdownRenderer;
     private BridgeClient bridge;
     private WorkspacePanels panels;
@@ -5104,13 +5100,6 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpMascot = new LinearLayout.LayoutParams(dp(150), -2);
         emptyMascotView.addView(mascot, lpMascot);
 
-        // Gentle idle float so the empty session does not feel static.
-        mascotFloatAnimator = ObjectAnimator.ofFloat(mascot, "translationY", dp(6), dp(-6));
-        mascotFloatAnimator.setDuration(1700);
-        mascotFloatAnimator.setRepeatCount(ValueAnimator.INFINITE);
-        mascotFloatAnimator.setRepeatMode(ValueAnimator.REVERSE);
-        mascotFloatAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
-
         // The engine still identifies itself here, in text and in the palette.
         TextView tagline = cText(Theme.engineTagline(), 13.5f, Theme.TEXT_MUTED, false, false);
         tagline.setGravity(Gravity.CENTER);
@@ -5127,11 +5116,6 @@ public class MainActivity extends Activity {
                 chatMessagesList.addView(emptyMascotView, new LinearLayout.LayoutParams(-1, -2));
             }
             emptyMascotView.setVisibility(show ? View.VISIBLE : View.GONE);
-        }
-        // Only run the float animation while the mascot is on screen.
-        if (mascotFloatAnimator != null) {
-            if (show && !mascotFloatAnimator.isStarted()) mascotFloatAnimator.start();
-            else if (!show && mascotFloatAnimator.isStarted()) mascotFloatAnimator.cancel();
         }
     }
 
