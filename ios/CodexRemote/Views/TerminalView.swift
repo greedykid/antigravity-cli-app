@@ -134,13 +134,14 @@ struct TerminalView: View {
 
         Task {
             do {
-                guard let client = state.client else {
+                guard state.isPaired else {
                     await MainActor.run {
                         outputLogs += "Error: Bridge client not connected.\n"
                         isRunning = false
                     }
                     return
                 }
+                let client = state.client
                 let payload: [String: Any] = ["command": cmd]
                 let res = try await client.post("/api/terminal/exec", body: payload, as: TerminalExecResponse.self)
                 await MainActor.run {

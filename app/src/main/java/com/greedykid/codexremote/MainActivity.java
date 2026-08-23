@@ -909,18 +909,13 @@ public class MainActivity extends Activity {
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.parseColor("#99000000")));
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
             dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
 
-        LinearLayout rootWrapper = new LinearLayout(this);
-        rootWrapper.setOrientation(LinearLayout.VERTICAL);
-        rootWrapper.setGravity(Gravity.BOTTOM);
-
-        View topDismissArea = new View(this);
-        topDismissArea.setOnClickListener(v -> dialog.dismiss());
-        rootWrapper.addView(topDismissArea, new LinearLayout.LayoutParams(-1, 0, 1));
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        final int fullHeight = (int) (dm.heightPixels * 0.85f);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
