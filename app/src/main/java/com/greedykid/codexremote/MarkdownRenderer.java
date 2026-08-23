@@ -75,10 +75,11 @@ public class MarkdownRenderer {
     private static final Pattern MD_INLINE_CODE = Pattern.compile("`([^`\n]+)`");
     private static final Pattern MD_LINK = Pattern.compile("\\[([^\\]\n]*)\\]\\(([^)\\s]+)[^)]*\\)");
     private static final Pattern MD_AUTOLINK = Pattern.compile("(?<![\\w@/.\"'(])(https?://[^\\s<>\\)\\]]+)");
-    private static final Pattern MD_BOLD = Pattern.compile("(\\*\\*|__)(?=\\S)(.+?)(?<=\\S)\\1");
-    private static final Pattern MD_ITALIC_STAR = Pattern.compile("(?<![\\*\\w])\\*(?=\\S)([^\\*\n]+?)(?<=\\S)\\*(?!\\*)");
-    private static final Pattern MD_ITALIC_US = Pattern.compile("(?<![\\w_])_(?=\\S)([^_\n]+?)(?<=\\S)_(?![\\w_])");
-    private static final Pattern MD_STRIKE = Pattern.compile("~~(?=\\S)([^~\n]+?)(?<=\\S)~~");
+    private static final Pattern MD_BOLD_ITALIC = Pattern.compile("(\\*\\*\\*|___)(.+?)\\1");
+    private static final Pattern MD_BOLD = Pattern.compile("(\\*\\*|__)(.+?)\\1");
+    private static final Pattern MD_ITALIC_STAR = Pattern.compile("(?<!\\*)\\*([^\\*\n]+?)\\*(?!\\*)");
+    private static final Pattern MD_ITALIC_US = Pattern.compile("(?<![a-zA-Z0-9_])_([^_\n]+?)_(?![a-zA-Z0-9_])");
+    private static final Pattern MD_STRIKE = Pattern.compile("(~~)([^~\n]+?)\\1");
 
     // Rounded "pill" background for inline `code`, drawn instead of a flat highlight.
     private class CodePillSpan extends ReplacementSpan {
@@ -450,8 +451,10 @@ public class MarkdownRenderer {
 
     // ---------- inline parsing ----------
 
-    private boolean overlapsCodePill(SpannableStringBuilder ssb, int start, int end) {
-        return ssb.getSpans(start, end, CodePillSpan.class).length > 0;
+    private boolean isInsideCodePill(SpannableStringBuilder ssb, int pos) {
+        if (pos < 0 || pos >= ssb.length()) return false;
+        CodePillSpan[] spans = ssb.getSpans(pos, pos + 1, CodePillSpan.class);
+        return spans != null && spans.length > 0;
     }
 
     private SpannableStringBuilder parseInlineMarkdownLine(String rawLine) {
@@ -479,11 +482,16 @@ public class MarkdownRenderer {
             int from = 0;
             while (from < ssb.length() && m.find(from)) {
                 int start = m.start();
-                if (overlapsCodePill(ssb, start, m.end())) { from = m.end(); m = MD_LINK.matcher(ssb); continue; }
+                int end = m.end();
+                if (isInsideCodePill(ssb, start) || isInsideCodePill(ssb, end - 1)) {
+                    from = end;
+                    m = MD_LINK.matcher(ssb);
+                    continue;
+                }
                 String label = m.group(1);
                 final String url = m.group(2);
                 if (label == null || label.isEmpty()) label = url;
-                ssb.replace(start, m.end(), label);
+                ssb.replace(start, end, label);
                 applyLinkSpan(ssb, start, start + label.length(), url);
                 from = start + label.length();
                 m = MD_LINK.matcher(ssb);
@@ -497,7 +505,7 @@ public class MarkdownRenderer {
             while (from < ssb.length() && m.find(from)) {
                 int start = m.start(1);
                 int end = m.end(1);
-                if (!overlapsCodePill(ssb, start, end)
+                if (!isInsideCodePill(ssb, start) && !isInsideCodePill(ssb, end - 1)
                         && ssb.getSpans(start, end, ClickableSpan.class).length == 0) {
                     applyLinkSpan(ssb, start, end, m.group(1));
                 }
@@ -505,10 +513,11 @@ public class MarkdownRenderer {
             }
         } catch (Throwable ignored) {}
 
+        applyDelimiterStyle(ssb, MD_BOLD_ITALIC, 3, new StyleSpan(Typeface.BOLD_ITALIC));
         applyDelimiterStyle(ssb, MD_BOLD, 2, new StyleSpan(Typeface.BOLD));
         applyDelimiterStyle(ssb, MD_ITALIC_STAR, 1, new StyleSpan(Typeface.ITALIC));
         applyDelimiterStyle(ssb, MD_ITALIC_US, 1, new StyleSpan(Typeface.ITALIC));
-        applyDelimiterStyle(ssb, MD_STRIKE, 1, new StrikethroughSpan());
+        applyDelimiterStyle(ssb, MD_STRIKE, 2, new StrikethroughSpan());
 
         return ssb;
     }
@@ -528,7 +537,8 @@ public class MarkdownRenderer {
         ssb.setSpan(new UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
-    // `groupIndex` marks which capture group holds the styled text; delimiters are stripped.
+    // Delimiters are stripped by deleting opening and closing markers cleanly,
+    // preserving any child spans (like CodePillSpan, links, or nested styles) inside.
     private void applyDelimiterStyle(SpannableStringBuilder ssb, Pattern pattern, int markerLen, Object protoSpan) {
         try {
             Matcher m = pattern.matcher(ssb);
@@ -536,11 +546,36 @@ public class MarkdownRenderer {
             while (from < ssb.length() && m.find(from)) {
                 int start = m.start();
                 int end = m.end();
-                if (overlapsCodePill(ssb, start, end)) { from = end; m = pattern.matcher(ssb); continue; }
-                String inner = m.group(m.groupCount());
-                ssb.replace(start, end, inner);
-                ssb.setSpan(cloneSpan(protoSpan), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                from = start + inner.length();
+                if (isInsideCodePill(ssb, start) || isInsideCodePill(ssb, end - 1)) {
+                    from = end;
+                    m = pattern.matcher(ssb);
+                    continue;
+                }
+
+                int actualMarkerLen = markerLen;
+                if (m.groupCount() >= 1 && m.group(1) != null) {
+                    String g1 = m.group(1);
+                    if (g1.equals("***") || g1.equals("___")) {
+                        actualMarkerLen = 3;
+                    } else if (g1.equals("**") || g1.equals("__") || g1.equals("~~")) {
+                        actualMarkerLen = 2;
+                    } else if (g1.equals("*") || g1.equals("_")) {
+                        actualMarkerLen = 1;
+                    }
+                }
+
+                // Delete closing delimiter first so earlier offsets don't shift
+                ssb.delete(end - actualMarkerLen, end);
+                // Delete opening delimiter
+                ssb.delete(start, start + actualMarkerLen);
+
+                int spanEnd = end - (actualMarkerLen * 2);
+                if (spanEnd > start) {
+                    ssb.setSpan(cloneSpan(protoSpan), start, spanEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    from = spanEnd;
+                } else {
+                    from = start;
+                }
                 m = pattern.matcher(ssb);
             }
         } catch (Throwable ignored) {}
