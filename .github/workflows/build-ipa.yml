@@ -41,6 +41,7 @@ jobs:
       - name: Build unsigned app
         working-directory: ios
         run: |
+          set -o pipefail
           xcodebuild \
             -project CodexRemote.xcodeproj \
             -scheme CodexRemote \

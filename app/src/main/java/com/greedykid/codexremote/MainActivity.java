@@ -523,8 +523,10 @@ public class MainActivity extends Activity {
         final ProgressBar pb = new ProgressBar(this);
         root.addView(pb, new LinearLayout.LayoutParams(-2, -2, Gravity.CENTER));
 
-        DisplayMetrics dm = getResources().getDisplayMetrics();
-        LinearLayout.LayoutParams lpModalCard = new LinearLayout.LayoutParams(-1, (int) (dm.heightPixels * 0.88f));
+        // The wrapper this card was being added to was never created, and dm is
+        // already computed above as fullHeight.
+        FrameLayout rootWrapper = new FrameLayout(this);
+        FrameLayout.LayoutParams lpModalCard = new FrameLayout.LayoutParams(-1, fullHeight, Gravity.BOTTOM);
         rootWrapper.addView(root, lpModalCard);
 
         dialog.setContentView(rootWrapper);
