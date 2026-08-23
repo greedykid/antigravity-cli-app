@@ -16,14 +16,6 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-const CODEX_DATA_DIR = path.join(os.homedir(), ".codex-remote");
-const CODEX_SESSIONS_DIR = path.join(CODEX_DATA_DIR, "sessions");
-const CODEX_HISTORY_FILE = path.join(CODEX_DATA_DIR, "codex_history.jsonl");
-
-if (!fs.existsSync(CODEX_SESSIONS_DIR)) {
-  fs.mkdirSync(CODEX_SESSIONS_DIR, { recursive: true });
-}
-
 function send(res, code, data) {
   res.writeHead(code, {
     "Content-Type": "application/json",
@@ -139,8 +131,8 @@ function getUsageStats() {
     totalTools: totalTools || 1125,
     estimatedTokens: estimatedTokens,
     totalChars: totalChars || 1900000,
-    model: "Gemini 3.7 Flash (High Reasoning)",
-    tier: "Antigravity Developer Tier",
+    model: "Gemini 3.7 Flash / GPT-5.6",
+    tier: "Developer Tier (Unlimited)",
     quotaStatus: "Unlimited Workspace Execution",
     memoryUsage: `${totalMem - freeMem} MB / ${totalMem} MB`,
     hostname: os.hostname(),
@@ -151,21 +143,24 @@ function getUsageStats() {
 }
 
 // -------------------------------------------------------------
-// CODEX SESSION MANAGER
+// NATIVE CODEX SESSION & TRANSCRIPT PARSER
 // -------------------------------------------------------------
 function getCodexSessions() {
+  const home = os.homedir();
+  const file = path.join(home, ".codex/history.jsonl");
   const map = new Map();
-  if (fs.existsSync(CODEX_HISTORY_FILE)) {
-    const lines = fs.readFileSync(CODEX_HISTORY_FILE, "utf8").trim().split("\n").filter(Boolean);
+  if (fs.existsSync(file)) {
+    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
         const item = JSON.parse(lines[i]);
-        if (item.conversationId && !map.has(item.conversationId)) {
-          map.set(item.conversationId, {
-            conversationId: item.conversationId,
-            title: item.title || item.display || ("Codex " + item.conversationId.slice(0, 8)),
-            timestamp: item.timestamp || Date.now(),
-            workspace: item.workspace || WORKDIR,
+        const sid = item.session_id || item.conversationId;
+        if (sid && !map.has(sid)) {
+          map.set(sid, {
+            conversationId: sid,
+            title: item.text || item.title || ("Codex " + sid.slice(0, 8)),
+            timestamp: item.ts ? item.ts * 1000 : (item.timestamp || Date.now()),
+            workspace: WORKDIR,
             engine: "codex",
             hostname: os.hostname()
           });
@@ -176,37 +171,60 @@ function getCodexSessions() {
   return Array.from(map.values());
 }
 
-function saveCodexSession(convId, title, userMsg, assistantMsg) {
-  const sessionFile = path.join(CODEX_SESSIONS_DIR, `${convId}.json`);
-  let sessionData = {
-    conversationId: convId,
-    title: title,
-    workspace: WORKDIR,
-    engine: "codex",
-    messages: []
-  };
-  if (fs.existsSync(sessionFile)) {
+function findCodexRolloutFile(sessionId) {
+  if (!sessionId) return null;
+  const home = os.homedir();
+  const baseDir = path.join(home, ".codex/sessions");
+  if (!fs.existsSync(baseDir)) return null;
+
+  function search(dir) {
     try {
-      sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const ent of entries) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+          const f = search(full);
+          if (f) return f;
+        } else if (ent.isFile() && ent.name.includes(sessionId) && ent.name.endsWith(".jsonl")) {
+          return full;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+  return search(baseDir);
+}
+
+function getCodexTranscript(sessionId, limit = 1000) {
+  const file = findCodexRolloutFile(sessionId);
+  if (!file || !fs.existsSync(file)) return [];
+
+  const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+  const msgs = [];
+  for (const l of lines) {
+    try {
+      const obj = JSON.parse(l);
+      if (obj.type === "response_item" && obj.payload) {
+        const role = obj.payload.role;
+        const contents = obj.payload.content || [];
+        for (const c of contents) {
+          if (role === "user" && c.type === "input_text") {
+            const text = c.text || "";
+            if (!text.startsWith("<environment_context>") && !text.startsWith("<skills_instructions>") && !text.startsWith("<permissions instructions>")) {
+              msgs.push({ role: "user", content: text.trim(), time: obj.timestamp });
+            }
+          } else if (role === "assistant" && c.type === "output_text") {
+            msgs.push({ role: "assistant", content: (c.text || "").trim(), time: obj.timestamp });
+          }
+        }
+      }
     } catch (e) {}
   }
-  if (userMsg) sessionData.messages.push(userMsg);
-  if (assistantMsg) sessionData.messages.push(assistantMsg);
-  fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
-
-  const historyEntry = JSON.stringify({
-    conversationId: convId,
-    title: sessionData.title || title,
-    timestamp: Date.now(),
-    workspace: WORKDIR,
-    engine: "codex"
-  });
-  fs.appendFileSync(CODEX_HISTORY_FILE, historyEntry + "\n");
-  return sessionData;
+  return msgs.slice(-limit);
 }
 
 // -------------------------------------------------------------
-// MERGED SESSIONS & TRANSCRIPT RETRIEVAL
+// SESSIONS & TRANSCRIPT RETRIEVAL
 // -------------------------------------------------------------
 function getSessions() {
   const home = os.homedir();
@@ -247,13 +265,10 @@ function getSessions() {
 function getTranscript(convId, limit = 1000) {
   if (!convId) return [];
 
-  // Check if it's a Codex session
-  const codexFile = path.join(CODEX_SESSIONS_DIR, `${convId}.json`);
-  if (fs.existsSync(codexFile)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(codexFile, "utf8"));
-      return (data.messages || []).slice(-limit);
-    } catch (e) {}
+  // Check Codex first
+  const codexTurns = getCodexTranscript(convId, limit);
+  if (codexTurns && codexTurns.length > 0) {
+    return codexTurns;
   }
 
   // Antigravity session transcript
@@ -338,25 +353,76 @@ function getTranscript(convId, limit = 1000) {
 // -------------------------------------------------------------
 // CLI PROCESS EXECUTORS
 // -------------------------------------------------------------
-function runCodex(prompt) {
+function runCodex(prompt, conversationId) {
   return new Promise((resolve, reject) => {
-    const child = spawn(CODEX_BIN, ["exec", prompt], {
+    const tmpOutputFile = path.join(os.tmpdir(), `codex_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.txt`);
+    const args = ["exec"];
+    if (conversationId) {
+      args.push("resume", conversationId);
+    }
+    args.push(
+      "--output-last-message", tmpOutputFile,
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--skip-git-repo-check",
+      prompt
+    );
+
+    const child = spawn(CODEX_BIN, args, {
       cwd: WORKDIR,
-      env: process.env
+      env: Object.assign({}, process.env, {
+        PATH: (process.env.PATH || "") + ":/usr/bin:/usr/local/bin:/home/ubuntu/.local/bin"
+      }),
+      stdio: ["ignore", "pipe", "pipe"]
     });
-    let output = "";
+
+    let fullOutput = "";
     let error = "";
-    child.stdout.on("data", chunk => { output += chunk.toString(); });
+    child.stdout.on("data", chunk => { fullOutput += chunk.toString(); });
     child.stderr.on("data", chunk => { error += chunk.toString(); });
+
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
-      reject(new Error("Codex timed out after 5 minutes"));
+      reject(new Error("Codex CLI timed out after 5 minutes"));
     }, 300000);
-    child.on("error", err => { clearTimeout(timer); reject(err); });
+
+    child.on("error", err => {
+      clearTimeout(timer);
+      try { if (fs.existsSync(tmpOutputFile)) fs.unlinkSync(tmpOutputFile); } catch(e) {}
+      reject(err);
+    });
+
     child.on("close", code => {
       clearTimeout(timer);
-      if (code === 0) resolve(output.trim());
-      else reject(new Error((error || output || `Codex exited with code ${code}`).trim()));
+      let assistantMsg = "";
+      try {
+        if (fs.existsSync(tmpOutputFile)) {
+          assistantMsg = fs.readFileSync(tmpOutputFile, "utf8").trim();
+          fs.unlinkSync(tmpOutputFile);
+        }
+      } catch (e) {}
+
+      if (!assistantMsg) {
+        assistantMsg = fullOutput.trim();
+        if (assistantMsg.includes("codex\n")) {
+          const parts = assistantMsg.split("codex\n");
+          assistantMsg = parts[parts.length - 1].trim();
+        }
+      }
+
+      let returnedSessionId = conversationId || null;
+      const m = fullOutput.match(/session id:\s*([a-zA-Z0-9_-]+)/i);
+      if (m) {
+        returnedSessionId = m[1].trim();
+      }
+
+      if (code === 0 || assistantMsg) {
+        resolve({
+          response: assistantMsg || "Done.",
+          sessionId: returnedSessionId
+        });
+      } else {
+        reject(new Error((error || fullOutput || `Codex exited with code ${code}`).trim()));
+      }
     });
   });
 }
@@ -377,7 +443,8 @@ function runAgy(prompt, conversationId, resume = false) {
 
     const child = spawn(AGY_BIN, args, {
       cwd: WORKDIR,
-      env
+      env,
+      stdio: ["ignore", "pipe", "pipe"]
     });
     let output = "";
     let error = "";
@@ -567,7 +634,7 @@ const server = http.createServer((req, res) => {
       try {
         const payload = JSON.parse(raw);
         let prompt = payload.prompt;
-        const engine = (payload.engine || payload.cli || "antigravity").toLowerCase();
+        const engine = (payload.engine || payload.cli || "antigravity").toLowerCase().trim();
         let conversationId = payload.conversationId || payload.session_id || null;
         const resume = payload.resume === true && Boolean(conversationId);
 
@@ -582,35 +649,38 @@ const server = http.createServer((req, res) => {
           prompt = `[Attached File: ${payload.attachedFile}]\n` + prompt;
         }
 
-        let response;
+        let responseText;
         let activeConvId = conversationId;
         let activeSession = null;
         let updatedTurns = [];
 
         if (engine === "codex") {
-          response = await runCodex(prompt.trim());
-          if (!activeConvId) {
-            activeConvId = "codex_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
-          }
-          const nowStr = new Date().toISOString();
-          const userMsg = { role: "user", content: prompt.trim(), time: nowStr };
-          const assistantMsg = { role: "assistant", content: response, time: nowStr };
-          const sessionObj = saveCodexSession(activeConvId, prompt.trim().slice(0, 40), userMsg, assistantMsg);
-          activeSession = {
+          const result = await runCodex(prompt.trim(), conversationId);
+          responseText = result.response;
+          activeConvId = result.sessionId || conversationId;
+
+          const sData = getSessions();
+          activeSession = sData.sessions.find(s => s.conversationId === activeConvId) || {
             conversationId: activeConvId,
-            title: sessionObj.title,
+            title: prompt.trim().slice(0, 40),
             workspace: WORKDIR,
             engine: "codex"
           };
-          updatedTurns = sessionObj.messages;
+          updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
+          if (updatedTurns.length === 0) {
+            updatedTurns = [
+              { role: "user", content: prompt.trim(), time: new Date().toISOString() },
+              { role: "assistant", content: responseText, time: new Date().toISOString() }
+            ];
+          }
         } else {
           // Antigravity execution
           const isNewSession = !conversationId;
-          response = await runAgy(prompt.trim(), conversationId, resume);
+          responseText = await runAgy(prompt.trim(), conversationId, resume);
 
           const sData = getSessions();
           if (isNewSession) {
-            const newestAgy = sData.sessions.find(s => s.engine === "antigravity" || !s.conversationId.startsWith("codex_"));
+            const newestAgy = sData.sessions.find(s => s.engine === "antigravity" || !s.conversationId.startsWith("01a02"));
             if (newestAgy) {
               activeConvId = newestAgy.conversationId;
               activeSession = newestAgy;
@@ -624,7 +694,7 @@ const server = http.createServer((req, res) => {
 
         send(res, 200, {
           ok: true,
-          response,
+          response: responseText,
           engine,
           conversationId: activeConvId,
           session: activeSession,
@@ -642,7 +712,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`[Antigravity Remote Bridge] Listening on http://0.0.0.0:${PORT}`);
+  console.log(`[Antigravity & Codex Remote Bridge] Listening on http://0.0.0.0:${PORT}`);
   console.log(`[Config] Engine: agy / codex | Workdir: ${WORKDIR}`);
   console.log(`[Security] Token protection: ${TOKEN ? "ENABLED" : "DISABLED"}`);
 });
