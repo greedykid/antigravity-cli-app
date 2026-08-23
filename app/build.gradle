@@ -1,5 +1,18 @@
 plugins { id 'com.android.application' }
 
+def getGitSha = { ->
+    try {
+        def stdout = new ByteArrayOutputStream()
+        exec {
+            commandLine 'git', 'rev-parse', 'HEAD'
+            standardOutput = stdout
+        }
+        return stdout.toString().trim()
+    } catch (Exception ignored) {
+        return ""
+    }
+}
+
 android {
     namespace 'com.greedykid.codexremote'
     compileSdk 35
@@ -10,6 +23,12 @@ android {
         targetSdk 35
         versionCode System.getenv("GITHUB_RUN_NUMBER") ? Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER")) + 10 : 2
         versionName '0.3.0'
+        buildConfigField "String", "GIT_COMMIT_SHA", "\"${System.getenv("GITHUB_SHA") ?: getGitSha()}\""
+        buildConfigField "long", "BUILD_TIMESTAMP", "${System.currentTimeMillis()}L"
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     signingConfigs {

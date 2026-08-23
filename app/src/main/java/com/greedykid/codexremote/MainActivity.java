@@ -3354,7 +3354,7 @@ public class MainActivity extends Activity {
         ImageView sp = cIcon(R.drawable.ic_spark, 36, Theme.ACCENT);
         logoRow.addView(sp);
 
-        String verName = "3.0.0";
+        String verName = "0.3.0";
         int verCode = 1;
         try {
             android.content.pm.PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
@@ -3377,7 +3377,7 @@ public class MainActivity extends Activity {
         content.addView(info, lpInfo);
 
         // --- UPDATE CARD ---
-        LinearLayout updateCard = new LinearLayout(this);
+        final LinearLayout updateCard = new LinearLayout(this);
         updateCard.setOrientation(LinearLayout.VERTICAL);
         updateCard.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
         updateCard.setPadding(dp(16), dp(14), dp(16), dp(14));
@@ -3385,8 +3385,9 @@ public class MainActivity extends Activity {
         LinearLayout cardHead = new LinearLayout(this);
         cardHead.setOrientation(LinearLayout.HORIZONTAL);
         cardHead.setGravity(Gravity.CENTER_VERTICAL);
-        cardHead.addView(cIcon(R.drawable.ic_refresh, 18, Theme.ACCENT));
-        TextView cardTitle = cText("  Pembaruan Aplikasi Otomatis", 14.5f, Theme.TEXT_MAIN, true, false);
+        final ImageView cardHeadIcon = cIcon(R.drawable.ic_refresh, 18, Theme.ACCENT);
+        cardHead.addView(cardHeadIcon);
+        final TextView cardTitle = cText("  Pembaruan Aplikasi Otomatis", 14.5f, Theme.TEXT_MAIN, true, false);
         cardHead.addView(cardTitle);
         updateCard.addView(cardHead);
 
@@ -3424,6 +3425,15 @@ public class MainActivity extends Activity {
         btnDownload.addView(cIcon(R.drawable.ic_arrow_downward, 16, Theme.ON_ACCENT));
         btnDownload.addView(cText("  Unduh & Pasang Sekarang", 13.5f, Theme.ON_ACCENT, true, false));
 
+        final LinearLayout btnReinstall = new LinearLayout(this);
+        btnReinstall.setOrientation(LinearLayout.HORIZONTAL);
+        btnReinstall.setGravity(Gravity.CENTER);
+        btnReinstall.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 12));
+        btnReinstall.setPadding(dp(14), dp(9), dp(14), dp(9));
+        btnReinstall.setVisibility(View.GONE);
+        btnReinstall.addView(cIcon(R.drawable.ic_refresh, 14, Theme.TEXT_MUTED));
+        btnReinstall.addView(cText("  Pasang Ulang APK (Reinstall)", 12f, Theme.TEXT_MUTED, false, false));
+
         LinearLayout btnReleasePage = new LinearLayout(this);
         btnReleasePage.setOrientation(LinearLayout.HORIZONTAL);
         btnReleasePage.setGravity(Gravity.CENTER);
@@ -3440,7 +3450,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        btnCheck.setOnClickListener(v -> checkAppUpdates(statusView, detailsView, btnDownload, progressBar));
+        btnCheck.setOnClickListener(v -> checkAppUpdates(updateCard, cardHeadIcon, cardTitle, statusView, detailsView, btnDownload, btnReinstall, progressBar));
 
         LinearLayout.LayoutParams lpBtnC = new LinearLayout.LayoutParams(-1, dp(44));
         lpBtnC.setMargins(0, dp(8), 0, 0);
@@ -3449,6 +3459,10 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpBtnD = new LinearLayout.LayoutParams(-1, dp(44));
         lpBtnD.setMargins(0, dp(8), 0, 0);
         updateCard.addView(btnDownload, lpBtnD);
+
+        LinearLayout.LayoutParams lpBtnRe = new LinearLayout.LayoutParams(-1, dp(38));
+        lpBtnRe.setMargins(0, dp(8), 0, 0);
+        updateCard.addView(btnReinstall, lpBtnRe);
 
         LinearLayout.LayoutParams lpBtnR = new LinearLayout.LayoutParams(-1, dp(42));
         lpBtnR.setMargins(0, dp(8), 0, 0);
@@ -3463,12 +3477,20 @@ public class MainActivity extends Activity {
         dialog.show();
 
         // Auto check updates on open
-        checkAppUpdates(statusView, detailsView, btnDownload, progressBar);
+        checkAppUpdates(updateCard, cardHeadIcon, cardTitle, statusView, detailsView, btnDownload, btnReinstall, progressBar);
     }
 
-    private void checkAppUpdates(final TextView statusView, final TextView detailsView, final LinearLayout btnDownload, final ProgressBar progressBar) {
+    private void checkAppUpdates(final LinearLayout updateCard, final ImageView cardHeadIcon, final TextView cardTitle, final TextView statusView, final TextView detailsView, final LinearLayout btnDownload, final LinearLayout btnReinstall, final ProgressBar progressBar) {
         statusView.setText("Memeriksa rilis terbaru di GitHub...");
         statusView.setTextColor(Theme.TEXT_MUTED);
+        updateCard.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
+        cardHeadIcon.setImageResource(R.drawable.ic_refresh);
+        cardHeadIcon.setColorFilter(Theme.ACCENT);
+        cardTitle.setText("  Pembaruan Aplikasi Otomatis");
+        cardTitle.setTextColor(Theme.TEXT_MAIN);
+        btnDownload.setVisibility(View.GONE);
+        if (btnReinstall != null) btnReinstall.setVisibility(View.GONE);
+
         if (progressBar != null) {
             progressBar.setIndeterminate(true);
             progressBar.setVisibility(View.VISIBLE);
@@ -3510,6 +3532,8 @@ public class MainActivity extends Activity {
 
                 JSONArray assets = release.optJSONArray("assets");
                 String apkDownloadUrl = null;
+                String assetUpdatedAt = "";
+                String apkDigest = "";
                 long apkSize = 0;
                 if (assets != null) {
                     for (int i = 0; i < assets.length(); i++) {
@@ -3517,6 +3541,8 @@ public class MainActivity extends Activity {
                         if (ast != null && ast.optString("name", "").endsWith(".apk")) {
                             apkDownloadUrl = ast.optString("browser_download_url", "");
                             apkSize = ast.optLong("size", 0);
+                            assetUpdatedAt = ast.optString("updated_at", ast.optString("created_at", ""));
+                            apkDigest = ast.optString("digest", "");
                             break;
                         }
                     }
@@ -3527,50 +3553,136 @@ public class MainActivity extends Activity {
 
                 final String finalApkUrl = apkDownloadUrl;
                 final long finalApkSize = apkSize;
+                final String finalAssetUpdatedAt = assetUpdatedAt;
+                final String finalApkDigest = apkDigest;
+
+                // Determine if up-to-date
+                long installedTime = 0;
+                String installedVerName = "0.3.0";
+                try {
+                    android.content.pm.PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+                    installedTime = pInfo.lastUpdateTime;
+                    installedVerName = pInfo.versionName;
+                } catch (Exception ignored) {}
+
+                long releaseAssetTime = 0;
+                if (!assetUpdatedAt.isEmpty()) {
+                    try {
+                        SimpleDateFormat parser = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+                        parser.setTimeZone(TimeZone.getTimeZone("UTC"));
+                        releaseAssetTime = parser.parse(assetUpdatedAt).getTime();
+                    } catch (Exception ignored) {}
+                }
+
+                String releaseSha = "";
+                Matcher matcher = Pattern.compile("commit\\s+([a-f0-9]{7,40})", Pattern.CASE_INSENSITIVE).matcher(bodyNotes);
+                if (matcher.find()) {
+                    releaseSha = matcher.group(1).toLowerCase().trim();
+                }
+
+                String currentSha = "";
+                try {
+                    currentSha = BuildConfig.GIT_COMMIT_SHA != null ? BuildConfig.GIT_COMMIT_SHA.toLowerCase().trim() : "";
+                } catch (Throwable ignored) {}
+
+                boolean isShaMatch = !releaseSha.isEmpty() && !currentSha.isEmpty() &&
+                        (currentSha.startsWith(releaseSha) || releaseSha.startsWith(currentSha));
+
+                String lastInstalledSha = prefs.getString("last_installed_apk_sha", "");
+                if (!lastInstalledSha.isEmpty() && !releaseSha.isEmpty() && releaseSha.equalsIgnoreCase(lastInstalledSha)) {
+                    isShaMatch = true;
+                }
+
+                final boolean isUpToDate = isShaMatch || (installedTime > 0 && releaseAssetTime > 0 && installedTime >= (releaseAssetTime - 90000));
+                final String finalReleaseSha = releaseSha;
+                final String finalInstalledVer = installedVerName;
 
                 mainHandler.post(() -> {
                     if (progressBar != null) progressBar.setVisibility(View.GONE);
-                    statusView.setText("✓ Rilis terbaru tersedia: " + tagName);
-                    statusView.setTextColor(Theme.GREEN);
 
-                    StringBuilder info = new StringBuilder();
-                    if (!publishedAt.isEmpty()) {
-                        info.append("Diterbitkan: ").append(publishedAt.replace("T", " ").replace("Z", " UTC")).append("\n");
-                    }
-                    if (finalApkSize > 0) {
-                        info.append("Ukuran APK: ").append(String.format(Locale.US, "%.2f MB", finalApkSize / (1024.0 * 1024.0))).append("\n");
-                    }
-                    if (!bodyNotes.isEmpty()) {
-                        String cleanNotes = bodyNotes.length() > 200 ? bodyNotes.substring(0, 200) + "..." : bodyNotes;
-                        info.append("Catatan: ").append(cleanNotes);
-                    }
-                    detailsView.setText(info.toString().trim());
-                    detailsView.setVisibility(View.VISIBLE);
+                    if (isUpToDate) {
+                        // --- STATE: UP TO DATE (DISTINCT GREEN LOOK, HIDE DOWNLOAD BUTTON) ---
+                        updateCard.setBackground(cBox(Theme.GREEN_BG, Theme.GREEN, 1, 14));
+                        cardHeadIcon.setImageResource(R.drawable.ic_check);
+                        cardHeadIcon.setColorFilter(Theme.GREEN);
+                        cardTitle.setText("  Aplikasi Sudah Versi Terbaru");
+                        cardTitle.setTextColor(Theme.GREEN);
 
-                    btnDownload.setVisibility(View.VISIBLE);
-                    btnDownload.setOnClickListener(v -> downloadAndInstallApk(finalApkUrl, statusView, detailsView, btnDownload, progressBar));
+                        statusView.setText("✓ Versi aplikasi Anda sudah yang paling baru (v" + finalInstalledVer + "). Semua fitur dan perbaikan terbaru telah aktif.");
+                        statusView.setTextColor(Theme.GREEN);
+
+                        StringBuilder info = new StringBuilder();
+                        info.append("Status: Terkini & Siap Digunakan\n");
+                        if (!publishedAt.isEmpty()) {
+                            info.append("Rilis GitHub: latest • ").append(publishedAt.replace("T", " ").replace("Z", " UTC"));
+                        }
+                        detailsView.setText(info.toString().trim());
+                        detailsView.setVisibility(View.VISIBLE);
+
+                        // HIDE DOWNLOAD BUTTON AS REQUESTED!
+                        btnDownload.setVisibility(View.GONE);
+
+                        if (btnReinstall != null) {
+                            btnReinstall.setVisibility(View.VISIBLE);
+                            btnReinstall.setOnClickListener(v -> downloadAndInstallApk(finalApkUrl, statusView, detailsView, btnDownload, btnReinstall, updateCard, progressBar, finalReleaseSha));
+                        }
+                    } else {
+                        // --- STATE: UPDATE AVAILABLE (DISTINCT ACCENT LOOK, SHOW DOWNLOAD BUTTON) ---
+                        updateCard.setBackground(cBox(Theme.ACCENT_SOFT, Theme.ACCENT, 1, 14));
+                        cardHeadIcon.setImageResource(R.drawable.ic_spark);
+                        cardHeadIcon.setColorFilter(Theme.ACCENT);
+                        cardTitle.setText("  Pembaruan Baru Tersedia!");
+                        cardTitle.setTextColor(Theme.ACCENT);
+
+                        statusView.setText("⚡ Versi baru telah tersedia di GitHub! Ketuk tombol di bawah untuk mengunduh dan memasang langsung.");
+                        statusView.setTextColor(Theme.TEXT_MAIN);
+
+                        StringBuilder info = new StringBuilder();
+                        if (!publishedAt.isEmpty()) {
+                            info.append("Diterbitkan: ").append(publishedAt.replace("T", " ").replace("Z", " UTC")).append("\n");
+                        }
+                        if (finalApkSize > 0) {
+                            info.append("Ukuran APK: ").append(String.format(Locale.US, "%.2f MB", finalApkSize / (1024.0 * 1024.0))).append("\n");
+                        }
+                        if (!bodyNotes.isEmpty()) {
+                            String cleanNotes = bodyNotes.length() > 200 ? bodyNotes.substring(0, 200) + "..." : bodyNotes;
+                            info.append("Catatan: ").append(cleanNotes);
+                        }
+                        detailsView.setText(info.toString().trim());
+                        detailsView.setVisibility(View.VISIBLE);
+
+                        // SHOW PROMINENT DOWNLOAD BUTTON!
+                        btnDownload.setVisibility(View.VISIBLE);
+                        if (btnReinstall != null) btnReinstall.setVisibility(View.GONE);
+                        btnDownload.setOnClickListener(v -> downloadAndInstallApk(finalApkUrl, statusView, detailsView, btnDownload, btnReinstall, updateCard, progressBar, finalReleaseSha));
+                    }
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
                     if (progressBar != null) progressBar.setVisibility(View.GONE);
-                    statusView.setText("Rilis GitHub aktif: latest");
+                    statusView.setText("Rilis GitHub: latest");
                     statusView.setTextColor(Theme.TEXT_MAIN);
 
-                    detailsView.setText("Unduhan langsung tersedia dari server rilis.");
+                    detailsView.setText("Pemeriksaan selesai. Versi yang terpasang siap digunakan.");
                     detailsView.setVisibility(View.VISIBLE);
 
-                    btnDownload.setVisibility(View.VISIBLE);
-                    btnDownload.setOnClickListener(v -> downloadAndInstallApk(
-                            "https://github.com/greedykid/codexcli-remote-app/releases/download/latest/app-debug.apk",
-                            statusView, detailsView, btnDownload, progressBar));
+                    btnDownload.setVisibility(View.GONE);
+                    if (btnReinstall != null) {
+                        btnReinstall.setVisibility(View.VISIBLE);
+                        btnReinstall.setOnClickListener(v -> downloadAndInstallApk(
+                                "https://github.com/greedykid/codexcli-remote-app/releases/download/latest/app-debug.apk",
+                                statusView, detailsView, btnDownload, btnReinstall, updateCard, progressBar, ""));
+                    }
                 });
             }
         });
     }
 
-    private void downloadAndInstallApk(final String downloadUrl, final TextView statusView, final TextView detailsView, final LinearLayout btnDownload, final ProgressBar progressBar) {
+    private void downloadAndInstallApk(final String downloadUrl, final TextView statusView, final TextView detailsView, final LinearLayout btnDownload, final LinearLayout btnReinstall, final LinearLayout updateCard, final ProgressBar progressBar, final String releaseSha) {
         btnDownload.setEnabled(false);
         btnDownload.setAlpha(0.6f);
+        if (btnReinstall != null) btnReinstall.setEnabled(false);
+
         if (progressBar != null) {
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setIndeterminate(false);
@@ -3637,6 +3749,10 @@ public class MainActivity extends Activity {
                 }
                 out.flush();
 
+                if (!releaseSha.isEmpty()) {
+                    prefs.edit().putString("last_installed_apk_sha", releaseSha).apply();
+                }
+
                 final File finalApk = apkFile;
                 mainHandler.post(() -> {
                     if (progressBar != null) {
@@ -3647,6 +3763,7 @@ public class MainActivity extends Activity {
                     statusView.setTextColor(Theme.GREEN);
                     btnDownload.setEnabled(true);
                     btnDownload.setAlpha(1.0f);
+                    if (btnReinstall != null) btnReinstall.setEnabled(true);
                     installDownloadedApk(finalApk);
                 });
             } catch (Exception e) {
@@ -3657,6 +3774,7 @@ public class MainActivity extends Activity {
                     statusView.setTextColor(Theme.RED);
                     btnDownload.setEnabled(true);
                     btnDownload.setAlpha(1.0f);
+                    if (btnReinstall != null) btnReinstall.setEnabled(true);
                     Toast.makeText(MainActivity.this, "Gagal mengunduh: " + err, Toast.LENGTH_LONG).show();
                 });
             } finally {
