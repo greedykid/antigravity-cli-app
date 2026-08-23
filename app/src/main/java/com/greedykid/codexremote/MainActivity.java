@@ -119,6 +119,9 @@ public class MainActivity extends Activity {
     private boolean isAppInForeground = true;
     private String liveStreamingAssistantText = "";
     private String lastFailedPrompt = null;
+    private long lastLiveSyncTimestamp = 0;
+    private boolean isSyncScheduled = false;
+
 
     private static final String CHANNEL_TASK_NOTIFICATIONS = "channel_ai_task_alerts";
     private HorizontalScrollView quickActionScroll;
@@ -326,6 +329,22 @@ public class MainActivity extends Activity {
         lp.setMargins(dp(16), dp(8), dp(16), dp(8));
         chatMessagesList.addView(card, lp);
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+
+    private void scheduleThrottledSync() {
+        long now = System.currentTimeMillis();
+        if (now - lastLiveSyncTimestamp > 600) {
+            lastLiveSyncTimestamp = now;
+            if (currentScreen == 1) syncLiveExecution();
+        } else if (!isSyncScheduled) {
+            isSyncScheduled = true;
+            mainHandler.postDelayed(() -> {
+                isSyncScheduled = false;
+                lastLiveSyncTimestamp = System.currentTimeMillis();
+                if (currentScreen == 1) syncLiveExecution();
+            }, 600);
+        }
     }
 
     // Multi-File Attachment Model
@@ -2649,6 +2668,7 @@ public class MainActivity extends Activity {
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             window.getDecorView().setPadding(0, 0, 0, 0);
+            window.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
             WindowManager.LayoutParams wlp = window.getAttributes();
             wlp.gravity = Gravity.BOTTOM;
             wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
@@ -2678,6 +2698,18 @@ public class MainActivity extends Activity {
 
         if (activeBottomSheetSubtitle != null) {
             activeBottomSheetSubtitle.setText(items.size() + " actions • ketuk item untuk melihat detail" + (isActuallyRunning ? " (Live)" : ""));
+        }
+
+        int currentCount = activeBottomSheetMasterList.getChildCount();
+        if (currentCount == items.size() && currentCount > 0) {
+            // Incremental fast-path: Only update the last running badge without layout destruction!
+            View lastCard = activeBottomSheetMasterList.getChildAt(currentCount - 1);
+            if (lastCard instanceof LinearLayout) {
+                final JSONObject lastItem = items.get(currentCount - 1);
+                lastCard.setBackground(cBox(isActuallyRunning ? Theme.AMBER_BG : Theme.SURFACE, isActuallyRunning ? Theme.AMBER : Theme.BORDER, 1, 16));
+                lastCard.setOnClickListener(v -> showStepDetailView(lastItem, isActuallyRunning));
+            }
+            return;
         }
 
         activeBottomSheetMasterList.removeAllViews();
@@ -5829,7 +5861,7 @@ public class MainActivity extends Activity {
                     liveStreamingAssistantText += chunk;
                 }
             }
-            if (currentScreen == 1) syncLiveExecution();
+            scheduleThrottledSync();
         }
     });
 
