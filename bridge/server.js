@@ -51,24 +51,31 @@ function getAgyProcess() {
 function getUsageStats() {
   const home = os.homedir();
   const historyFile = path.join(home, ".gemini/antigravity-cli/history.jsonl");
-  let totalPrompts = 0;
-  let fiveHourPrompts = 0;
-  let weeklyPrompts = 0;
-  const sessionIds = new Set();
   const now = Date.now();
-  const fiveHoursAgo = now - (5 * 60 * 60 * 1000);
-  const oneWeekAgo = now - (7 * 24 * 60 * 60 * 1000);
+  const fiveHours = 5 * 60 * 60 * 1000;
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+
+  let totalPrompts = 0;
+  let promptsIn5h = 0;
+  let promptsIn7d = 0;
+  let oldestIn5h = null;
+  const sessionIds = new Set();
 
   if (fs.existsSync(historyFile)) {
     const lines = fs.readFileSync(historyFile, "utf8").trim().split("\n").filter(Boolean);
     totalPrompts = lines.length;
     for (const l of lines) {
       try {
-        const j = JSON.parse(l);
-        if (j.conversationId) sessionIds.add(j.conversationId);
-        const ts = j.timestamp || 0;
-        if (ts >= fiveHoursAgo) fiveHourPrompts++;
-        if (ts >= oneWeekAgo) weeklyPrompts++;
+        const item = JSON.parse(l);
+        if (item.conversationId) sessionIds.add(item.conversationId);
+        const ts = item.timestamp || 0;
+        if (now - ts <= fiveHours) {
+          promptsIn5h++;
+          if (!oldestIn5h || ts < oldestIn5h) oldestIn5h = ts;
+        }
+        if (now - ts <= sevenDays) {
+          promptsIn7d++;
+        }
       } catch(e) {}
     }
   }
@@ -103,11 +110,27 @@ function getUsageStats() {
   const freeMem = Math.round(os.freemem() / (1024 * 1024));
   const totalMem = Math.round(os.totalmem() / (1024 * 1024));
 
-  const fiveHourMax = 150;
-  const fiveHourPercent = Math.min(100, Math.round((fiveHourPrompts / fiveHourMax) * 100));
+  // Dynamic 5-hour rolling limit calculation
+  const fiveHourMax = 45;
+  const fiveHourPercent = Math.min(100, Math.round((promptsIn5h / fiveHourMax) * 100));
 
-  const weeklyTokenMax = 2000000;
-  const weeklyPercent = Math.min(100, Math.round((estimatedTokens / weeklyTokenMax) * 100));
+  let fiveHourResetStr = "Mereset berkala (5 jam)";
+  if (oldestIn5h) {
+    const resetAt = oldestIn5h + fiveHours;
+    const remainingMs = Math.max(0, resetAt - now);
+    const remainingMin = Math.round(remainingMs / 60000);
+    const hrs = Math.floor(remainingMin / 60);
+    const mins = remainingMin % 60;
+    if (hrs > 0) {
+      fiveHourResetStr = `Mereset dalam ${hrs} jam ${mins} mnt`;
+    } else {
+      fiveHourResetStr = `Mereset dalam ${Math.max(1, mins)} menit`;
+    }
+  }
+
+  // Dynamic weekly limit calculation
+  const weeklyMax = 300;
+  const weeklyPercent = Math.min(100, Math.round((promptsIn7d / weeklyMax) * 100));
 
   return {
     ok: true,
@@ -117,14 +140,16 @@ function getUsageStats() {
     totalTools: totalTools || 1125,
     estimatedTokens: estimatedTokens,
     totalChars: totalChars || 1900000,
-    fiveHourPrompts: fiveHourPrompts || 27,
+    fiveHourPrompts: promptsIn5h,
     fiveHourMax: fiveHourMax,
-    fiveHourPercent: Math.max(5, fiveHourPercent),
-    fiveHourReset: "Mereset berkala (5 jam)",
-    weeklyTokens: estimatedTokens,
-    weeklyTokenMax: weeklyTokenMax,
-    weeklyPercent: Math.max(10, weeklyPercent),
+    fiveHourPercent: fiveHourPercent,
+    fiveHourReset: fiveHourResetStr,
+    weeklyPrompts: promptsIn7d,
+    weeklyMax: weeklyMax,
+    weeklyPercent: weeklyPercent,
     weeklyReset: "Mereset setiap Senin",
+    weeklyTokens: estimatedTokens,
+    weeklyTokenMax: 2000000,
     model: "Gemini 3.7 Flash (High Reasoning)",
     tier: "Antigravity Developer Tier",
     quotaStatus: "Unlimited Workspace Execution",

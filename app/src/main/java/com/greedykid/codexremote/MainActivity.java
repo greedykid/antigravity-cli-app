@@ -1276,7 +1276,7 @@ public class MainActivity extends Activity {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Penggunaan Akun & Kuota", true);
 
-        TextView sub = cText("Statistik pemakaian sesi 5 jam, batas mingguan & metrik engine", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView sub = cText("Statistik pemakaian sesi 5 jam, batas mingguan & kuota akun aktif", 12.5f, CLAUDE_TEXT_MUTED, false, false);
         LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
         lpSub.setMargins(0, 0, 0, dp(14));
         root.addView(sub, lpSub);
@@ -1291,13 +1291,13 @@ public class MainActivity extends Activity {
         // 1. 5-Hour Session Limit Card (Batas 5 Jam)
         final LinearLayout fiveHourCard = createSettingsGroupContainer();
         fiveHourCard.setPadding(dp(16), dp(14), dp(16), dp(14));
-        renderUsageProgressSection(fiveHourCard, "Batas Sesi (5 Jam)", 18, "27 dari 150 pesan", "Mereset berkala (5 jam)", CLAUDE_TERRACOTTA);
+        renderUsageProgressSection(fiveHourCard, "Batas Sesi (5 Jam)", 62, "28 dari 45 pesan terpakai", "Mereset berkala (5 jam)", CLAUDE_TERRACOTTA);
         list.addView(fiveHourCard);
 
         // 2. Weekly Limit Card (Batas Mingguan)
         final LinearLayout weeklyCard = createSettingsGroupContainer();
         weeklyCard.setPadding(dp(16), dp(14), dp(16), dp(14));
-        renderUsageProgressSection(weeklyCard, "Batas Mingguan", 25, "502k dari 2.0M tokens", "Mereset setiap Senin", CLAUDE_BLUE);
+        renderUsageProgressSection(weeklyCard, "Batas Mingguan", 16, "49 dari 300 pesan terpakai", "Mereset setiap Senin", CLAUDE_BLUE);
         list.addView(weeklyCard);
 
         // 3. Detailed Account & Antigravity CLI Metrics Card
@@ -1333,7 +1333,7 @@ public class MainActivity extends Activity {
         dialog.setContentView(root);
         dialog.show();
 
-        // Fetch live Antigravity usage stats from server
+        // Fetch live Antigravity usage stats from server and sync
         String endpoint = prefs.getString("url", "").trim();
         if (!endpoint.isEmpty()) {
             executor.execute(() -> {
@@ -1342,6 +1342,7 @@ public class MainActivity extends Activity {
                     HttpURLConnection c = (HttpURLConnection) new URL(usageUrl).openConnection();
                     c.setRequestMethod("GET");
                     c.setConnectTimeout(5000);
+                    c.setReadTimeout(5000);
                     String token = prefs.getString("token", "");
                     if (!token.isEmpty()) {
                         c.setRequestProperty("Authorization", "Bearer " + token);
@@ -1355,18 +1356,19 @@ public class MainActivity extends Activity {
                         final JSONObject json = new JSONObject(b.toString());
 
                         mainHandler.post(() -> {
-                            int fHp = json.optInt("fiveHourPercent", 18);
-                            int fHprompts = json.optInt("fiveHourPrompts", 27);
-                            int fHmax = json.optInt("fiveHourMax", 150);
+                            int fHp = json.optInt("fiveHourPercent", 62);
+                            int fHprompts = json.optInt("fiveHourPrompts", 28);
+                            int fHmax = json.optInt("fiveHourMax", 45);
                             String fHreset = json.optString("fiveHourReset", "Mereset berkala (5 jam)");
                             fiveHourCard.removeAllViews();
-                            renderUsageProgressSection(fiveHourCard, "Batas Sesi (5 Jam)", fHp, fHprompts + " dari " + fHmax + " pesan", fHreset, CLAUDE_TERRACOTTA);
+                            renderUsageProgressSection(fiveHourCard, "Batas Sesi (5 Jam)", fHp, fHprompts + " dari " + fHmax + " pesan terpakai", fHreset, CLAUDE_TERRACOTTA);
 
-                            int wP = json.optInt("weeklyPercent", 25);
-                            long wTokens = json.optLong("weeklyTokens", 502000);
+                            int wP = json.optInt("weeklyPercent", 16);
+                            int wPrompts = json.optInt("weeklyPrompts", 49);
+                            int wMax = json.optInt("weeklyMax", 300);
                             String wReset = json.optString("weeklyReset", "Mereset setiap Senin");
                             weeklyCard.removeAllViews();
-                            renderUsageProgressSection(weeklyCard, "Batas Mingguan", wP, (wTokens / 1000) + "k dari 2.0M tokens", wReset, CLAUDE_BLUE);
+                            renderUsageProgressSection(weeklyCard, "Batas Mingguan", wP, wPrompts + " dari " + wMax + " pesan terpakai", wReset, CLAUDE_BLUE);
 
                             detailCard.removeAllViews();
                             addStatRow(detailCard, "Model Aktif", json.optString("model", "Gemini 3.7 Flash (High)"));
