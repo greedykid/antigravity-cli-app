@@ -165,6 +165,11 @@ public class MainActivity extends Activity {
     private int lastLoadedTurnCount = -1;
     private boolean lastRenderedWasRunning = false;
 
+    // Live Bottom Sheet Modal State (Real-time updates while open)
+    private Dialog activeBottomSheetDialog = null;
+    private LinearLayout activeBottomSheetList = null;
+    private TextView activeBottomSheetSubtitle = null;
+
     private boolean isAutoRefreshActive = false;
     private final Runnable autoRefreshRunnable = new Runnable() {
         @Override
@@ -422,7 +427,7 @@ public class MainActivity extends Activity {
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // Footer Version info
-        TextView ver = cText("v2.9.3 • Aspect Ratio True Viewport", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("v2.9.4 • Realtime Live Stream HUD", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -1148,7 +1153,7 @@ public class MainActivity extends Activity {
 
         private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int targetWidth, int targetHeight) {
             if (sizes == null) return null;
-            double targetRatio = (double) targetWidth / targetHeight; // 1280/720 = 1.777
+            double targetRatio = (double) targetWidth / targetHeight;
             Camera.Size optimalSize = null;
             double minDiff = Double.MAX_VALUE;
 
@@ -1179,15 +1184,12 @@ public class MainActivity extends Activity {
             int height = MeasureSpec.getSize(heightMeasureSpec);
 
             if (previewWidth > 0 && previewHeight > 0) {
-                // In portrait (90 degree rotation), portrait aspect ratio is previewHeight / previewWidth (e.g. 720 / 1280 = 0.5625)
                 float cameraPortraitRatio = (float) previewHeight / (float) previewWidth;
                 float viewportRatio = (float) width / (float) height;
 
                 if (viewportRatio > cameraPortraitRatio) {
-                    // Viewport is wider than camera ratio -> scale height to fill completely without black bars or squishing
                     height = (int) (width / cameraPortraitRatio);
                 } else {
-                    // Viewport is taller than camera ratio -> scale width to fill completely without black bars or squishing
                     width = (int) (height * cameraPortraitRatio);
                 }
             }
@@ -1469,7 +1471,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // REAL-TIME LIVE CHAT EXECUTION & STREAMING SYNC
+    // REAL-TIME LIVE CHAT EXECUTION & INSTANT RESPONSE RENDERING
     // ============================================================
     private void sendClaudePrompt() {
         String text = promptInput.getText().toString().trim();
@@ -1530,7 +1532,9 @@ public class MainActivity extends Activity {
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
-                    syncLiveExecution();
+
+                    // Render final output INSTANTLY from the completed response object
+                    renderActiveSessionTurns(activeConversationId, res, false);
                     chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
                 });
             } catch (Exception e) {
@@ -1660,6 +1664,7 @@ public class MainActivity extends Activity {
 
                 // Group consecutive tool & thinking turns into a SINGLE compact summary line
                 ArrayList<JSONObject> pendingTools = new ArrayList<>();
+                ArrayList<JSONObject> allSessionTools = new ArrayList<>();
 
                 for (int i = 0; i < turns.length(); i++) {
                     JSONObject turn = turns.getJSONObject(i);
@@ -1669,10 +1674,10 @@ public class MainActivity extends Activity {
 
                     if ("tool".equalsIgnoreCase(role) || "thinking".equalsIgnoreCase(role)) {
                         pendingTools.add(turn);
+                        allSessionTools.add(turn);
                     } else {
                         // Flush any pending tool & thinking executions as one compact modal pill
                         if (!pendingTools.isEmpty()) {
-                            // If an assistant/user message follows, this tool group is 100% finished (Done)
                             addCompactToolsGroupPill(new ArrayList<>(pendingTools), false);
                             pendingTools.clear();
                         }
@@ -1682,7 +1687,6 @@ public class MainActivity extends Activity {
 
                 // If there are pending tools at the very end of the chat transcript:
                 if (!pendingTools.isEmpty()) {
-                    // It is only actively running if the overall task is currently executing!
                     addCompactToolsGroupPill(pendingTools, isLiveTaskRunning);
                 } else if (isLiveTaskRunning) {
                     // Show initial thinking indicator while first tool is starting
@@ -1693,6 +1697,13 @@ public class MainActivity extends Activity {
                     o.put("content", "Starting CLI process and planning response...");
                     dummy.add(o);
                     addCompactToolsGroupPill(dummy, true);
+                    allSessionTools.addAll(dummy);
+                }
+
+                // LIVE REAL-TIME UPDATE of Bottom Sheet Modal while open!
+                if (activeBottomSheetDialog != null && activeBottomSheetDialog.isShowing()) {
+                    ArrayList<JSONObject> toolsToUpdate = !pendingTools.isEmpty() ? pendingTools : allSessionTools;
+                    updateExecutionBottomModalContent(toolsToUpdate, isLiveTaskRunning);
                 }
 
                 // Smooth scroll down
@@ -1715,14 +1726,13 @@ public class MainActivity extends Activity {
         int scrollHeight = chatScroll.getHeight();
         int contentHeight = chatMessagesList.getHeight();
         int distanceToBottom = contentHeight - (scrollY + scrollHeight);
-        return distanceToBottom <= dp(180); // within 180dp of bottom is considered bottom
+        return distanceToBottom <= dp(180);
     }
 
     // ============================================================
     // COMPACT TEXT PILL & FULLY SWIPEABLE / EXPANDABLE FULLSCREEN BOTTOM SHEET
     // ============================================================
     private void addCompactToolsGroupPill(final ArrayList<JSONObject> toolTurns, final boolean isCurrentlyWorking) {
-        // A pill is ONLY active if both requested AND the task is actively running!
         final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
 
         int toolCount = 0;
@@ -1793,7 +1803,6 @@ public class MainActivity extends Activity {
     }
 
     private void openExecutionBottomModal(final ArrayList<JSONObject> items, final boolean isCurrentlyWorking) {
-        final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
         final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
@@ -1839,7 +1848,7 @@ public class MainActivity extends Activity {
         LinearLayout subRow = new LinearLayout(this);
         subRow.setOrientation(LinearLayout.HORIZONTAL);
         subRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView sub = cText(items.size() + " actions • tap item to expand/collapse", 13f, CLAUDE_TEXT_MUTED, false, false);
+        final TextView sub = cText(items.size() + " actions • tap item to expand/collapse", 13f, CLAUDE_TEXT_MUTED, false, false);
         subRow.addView(sub, new LinearLayout.LayoutParams(0, -2, 1));
         modalRoot.addView(subRow);
 
@@ -1851,6 +1860,103 @@ public class MainActivity extends Activity {
         final LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setPadding(0, dp(12), 0, dp(12));
+
+        scroll.addView(list);
+        modalRoot.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        // Save active modal references for real-time live streaming updates!
+        activeBottomSheetDialog = dialog;
+        activeBottomSheetList = list;
+        activeBottomSheetSubtitle = sub;
+
+        updateExecutionBottomModalContent(items, isCurrentlyWorking);
+
+        dialog.setContentView(modalRoot);
+        dialog.setOnDismissListener(d -> {
+            activeBottomSheetDialog = null;
+            activeBottomSheetList = null;
+            activeBottomSheetSubtitle = null;
+        });
+
+        // Configure Bottom Sheet Window & Height State
+        final Window window = dialog.getWindow();
+        final boolean[] isFullscreen = {false};
+
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            WindowManager.LayoutParams wlp = window.getAttributes();
+            wlp.gravity = Gravity.BOTTOM;
+            wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
+            wlp.height = peekHeight;
+            wlp.windowAnimations = android.R.style.Animation_InputMethod;
+            window.setAttributes(wlp);
+        }
+
+        // Fullscreen Toggle Action
+        fullscreenBtn.setOnClickListener(v -> {
+            isFullscreen[0] = !isFullscreen[0];
+            if (window != null) {
+                WindowManager.LayoutParams lp = window.getAttributes();
+                lp.height = isFullscreen[0] ? fullHeight : peekHeight;
+                window.setAttributes(lp);
+            }
+            fullscreenBtn.setImageResource(isFullscreen[0] ? R.drawable.ic_fullscreen_exit : R.drawable.ic_fullscreen);
+        });
+
+        // Touch Drag Gesture to Swipe Up (Expand Fullscreen) or Swipe Down (Dismiss / Collapse)
+        View.OnTouchListener swipeDragListener = new View.OnTouchListener() {
+            private float startY = 0;
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startY = event.getRawY();
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        float deltaY = event.getRawY() - startY;
+                        if (deltaY < -dp(50)) {
+                            isFullscreen[0] = true;
+                            if (window != null) {
+                                WindowManager.LayoutParams lp = window.getAttributes();
+                                lp.height = fullHeight;
+                                window.setAttributes(lp);
+                            }
+                            fullscreenBtn.setImageResource(R.drawable.ic_fullscreen_exit);
+                        } else if (deltaY > dp(70)) {
+                            if (isFullscreen[0]) {
+                                isFullscreen[0] = false;
+                                if (window != null) {
+                                    WindowManager.LayoutParams lp = window.getAttributes();
+                                    lp.height = peekHeight;
+                                    window.setAttributes(lp);
+                                }
+                                fullscreenBtn.setImageResource(R.drawable.ic_fullscreen);
+                            } else {
+                                dialog.dismiss();
+                            }
+                        }
+                        return true;
+                }
+                return false;
+            }
+        };
+
+        dragArea.setOnTouchListener(swipeDragListener);
+        headerRow.setOnTouchListener(swipeDragListener);
+
+        dialog.show();
+    }
+
+    private void updateExecutionBottomModalContent(final ArrayList<JSONObject> items, final boolean isCurrentlyWorking) {
+        if (activeBottomSheetList == null) return;
+
+        final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
+
+        if (activeBottomSheetSubtitle != null) {
+            activeBottomSheetSubtitle.setText(items.size() + " actions • tap item to expand/collapse" + (isActuallyRunning ? " (Live)" : ""));
+        }
+
+        activeBottomSheetList.removeAllViews();
 
         for (int i = 0; i < items.size(); i++) {
             JSONObject it = items.get(i);
@@ -1929,83 +2035,8 @@ public class MainActivity extends Activity {
 
             LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(-1, -2);
             lpC.setMargins(0, 0, 0, dp(10));
-            list.addView(card, lpC);
+            activeBottomSheetList.addView(card, lpC);
         }
-
-        scroll.addView(list);
-        modalRoot.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        dialog.setContentView(modalRoot);
-
-        // Configure Bottom Sheet Window & Height State
-        final Window window = dialog.getWindow();
-        final boolean[] isFullscreen = {false};
-
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            WindowManager.LayoutParams wlp = window.getAttributes();
-            wlp.gravity = Gravity.BOTTOM;
-            wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
-            wlp.height = peekHeight;
-            wlp.windowAnimations = android.R.style.Animation_InputMethod;
-            window.setAttributes(wlp);
-        }
-
-        // Fullscreen Toggle Action
-        fullscreenBtn.setOnClickListener(v -> {
-            isFullscreen[0] = !isFullscreen[0];
-            if (window != null) {
-                WindowManager.LayoutParams lp = window.getAttributes();
-                lp.height = isFullscreen[0] ? fullHeight : peekHeight;
-                window.setAttributes(lp);
-            }
-            fullscreenBtn.setImageResource(isFullscreen[0] ? R.drawable.ic_fullscreen_exit : R.drawable.ic_fullscreen);
-        });
-
-        // Touch Drag Gesture to Swipe Up (Expand Fullscreen) or Swipe Down (Dismiss / Collapse)
-        View.OnTouchListener swipeDragListener = new View.OnTouchListener() {
-            private float startY = 0;
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        startY = event.getRawY();
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                        float deltaY = event.getRawY() - startY;
-                        if (deltaY < -dp(50)) {
-                            // Swiped UP -> Expand to Fullscreen!
-                            isFullscreen[0] = true;
-                            if (window != null) {
-                                WindowManager.LayoutParams lp = window.getAttributes();
-                                lp.height = fullHeight;
-                                window.setAttributes(lp);
-                            }
-                            fullscreenBtn.setImageResource(R.drawable.ic_fullscreen_exit);
-                        } else if (deltaY > dp(70)) {
-                            // Swiped DOWN -> If in fullscreen, collapse to peek; if in peek, dismiss!
-                            if (isFullscreen[0]) {
-                                isFullscreen[0] = false;
-                                if (window != null) {
-                                    WindowManager.LayoutParams lp = window.getAttributes();
-                                    lp.height = peekHeight;
-                                    window.setAttributes(lp);
-                                }
-                                fullscreenBtn.setImageResource(R.drawable.ic_fullscreen);
-                            } else {
-                                dialog.dismiss();
-                            }
-                        }
-                        return true;
-                }
-                return false;
-            }
-        };
-
-        dragArea.setOnTouchListener(swipeDragListener);
-        headerRow.setOnTouchListener(swipeDragListener);
-
-        dialog.show();
     }
 
     // Standard Message Card (User or Assistant)
@@ -2207,7 +2238,6 @@ public class MainActivity extends Activity {
         // Data Rows
         for (int r = 1; r < tableLines.size(); r++) {
             String rowLine = tableLines.get(r);
-            // Skip markdown delimiter line (e.g. |---|---|)
             if (rowLine.replace("|", "").replace("-", "").replace(":", "").replace(" ", "").isEmpty()) {
                 continue;
             }

@@ -356,11 +356,28 @@ const server = http.createServer((req, res) => {
 
         const sessions = getSessions();
         const activeConvId = conversationId || (sessions[0] ? sessions[0].conversationId : null);
+        let turns = activeConvId ? getTranscript(activeConvId, 80) : [];
+        if (turns.length === 0 && response) {
+          turns = [
+            { role: "user", content: prompt, time: new Date().toISOString() },
+            { role: "assistant", content: response, time: new Date().toISOString() }
+          ];
+        } else if (turns.length > 0 && response) {
+          const lastTurn = turns[turns.length - 1];
+          if (lastTurn.role !== "assistant") {
+            turns.push({ role: "assistant", content: response, time: new Date().toISOString() });
+          }
+        }
+
+        const foundSession = sessions.find(s => s.conversationId === activeConvId) || { conversationId: activeConvId, title: "Session" };
 
         send(res, 200, {
           ok: true,
           response,
           conversationId: activeConvId,
+          session: foundSession,
+          turns: turns,
+          messages: turns,
           engine: engine === "codex" ? "codex" : "antigravity"
         });
       } catch (error) {
