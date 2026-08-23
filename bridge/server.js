@@ -10,6 +10,7 @@ const TOKEN = process.env.TOKEN || "codex-remote-token-2026";
 const WORKDIR = process.env.WORKDIR || "/home/ubuntu";
 const AGY_BIN = process.env.AGY_BIN || "/home/ubuntu/.local/bin/agy";
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
+let activeCodexSessionId = null;
 
 const UPLOADS_DIR = path.join(WORKDIR, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -43,6 +44,17 @@ function getAgyProcess() {
       uptime: parts[3],
       cmd: parts.slice(4).join(" ")
     };
+  } catch (e) {
+    return { running: false };
+  }
+}
+
+function getCodexProcess() {
+  try {
+    const ps = execSync("ps -eo pid,pcpu,pmem,etime,args | grep -E '[c]odex exec' | head -n 1", { encoding: "utf8" }).trim();
+    if (!ps) return { running: false };
+    const parts = ps.split(/\s+/);
+    return { running: true, pid: parts[0], cpu: parts[1] + "%", mem: parts[2] + "%", uptime: parts[3], cmd: parts.slice(4).join(" ") };
   } catch (e) {
     return { running: false };
   }
@@ -255,8 +267,23 @@ function getCodexTranscript(sessionId, limit = 1000) {
     try {
       const obj = JSON.parse(l);
       if (obj.type === "response_item" && obj.payload) {
+        const payload = obj.payload;
         const role = obj.payload.role;
         const contents = obj.payload.content || [];
+        if (payload.type === "reasoning") {
+          const summary = Array.isArray(payload.summary) ? payload.summary.map(s => s.text || "").filter(Boolean).join("\n") : (payload.content || "");
+          if (summary.trim()) msgs.push({ role: "thinking", toolTitle: "Thinking", title: "Thinking Process", content: summary.trim(), time: obj.timestamp });
+        } else if (["custom_tool_call", "function_call"].includes(payload.type)) {
+          const name = payload.name || "exec";
+          let command = payload.arguments || payload.input || payload.command || "";
+          if (typeof command !== "string") command = JSON.stringify(command);
+          msgs.push({ role: "tool", toolTitle: name === "exec" ? "Exec" : name, title: name, command, content: command, time: obj.timestamp, callId: payload.call_id || "" });
+        } else if (["custom_tool_call_output", "function_call_output"].includes(payload.type)) {
+          let output = payload.output || payload.content || "";
+          if (Array.isArray(output)) output = output.map(x => x.text || "").join("\n");
+          if (typeof output !== "string") output = JSON.stringify(output);
+          if (output.trim()) msgs.push({ role: "tool", toolTitle: "Exec result", title: "Command output", content: output.trim(), command: output.trim(), time: obj.timestamp, callId: payload.call_id || "" });
+        }
         for (const c of contents) {
           if (role === "user" && c.type === "input_text") {
             const text = c.text || "";
@@ -406,7 +433,7 @@ function getTranscript(convId, limit = 1000) {
 function runCodex(prompt, conversationId, model) {
   return new Promise((resolve, reject) => {
     const tmpOutputFile = path.join(os.tmpdir(), `codex_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.txt`);
-    const args = ["exec"];
+    const args = ["exec", "--json"];
     if (model && model !== "default" && model !== "auto") args.push("--model", model);
     if (conversationId) {
       args.push("resume", conversationId);
@@ -428,7 +455,17 @@ function runCodex(prompt, conversationId, model) {
 
     let fullOutput = "";
     let error = "";
-    child.stdout.on("data", chunk => { fullOutput += chunk.toString(); });
+    child.stdout.on("data", chunk => {
+      const text = chunk.toString();
+      fullOutput += text;
+      for (const line of text.split("\n")) {
+        try {
+          const event = JSON.parse(line);
+          if (event.type === "thread.started" && event.thread_id) activeCodexSessionId = event.thread_id;
+          if (event.type === "session_meta" && event.payload && event.payload.session_id) activeCodexSessionId = event.payload.session_id;
+        } catch (e) {}
+      }
+    });
     child.stderr.on("data", chunk => { error += chunk.toString(); });
 
     const timer = setTimeout(() => {
@@ -467,6 +504,7 @@ function runCodex(prompt, conversationId, model) {
       }
 
       if (code === 0 || assistantMsg) {
+        activeCodexSessionId = returnedSessionId;
         resolve({
           response: assistantMsg || "Done.",
           sessionId: returnedSessionId
@@ -606,10 +644,13 @@ const server = http.createServer((req, res) => {
 
   // GET /api/session/live
   if (req.method === "GET" && pathname === "/api/session/live") {
-    const proc = getAgyProcess();
+    const agyProc = getAgyProcess();
+    const codexProc = getCodexProcess();
+    const proc = codexProc.running ? codexProc : agyProc;
     const sData = getSessions();
-    const latest = sData.sessions && sData.sessions[0];
-    const convId = latest ? latest.conversationId : null;
+    const latestCodex = (sData.sessions || []).find(s => s.engine === "codex");
+    const latest = activeCodexSessionId ? (sData.sessions || []).find(s => s.conversationId === activeCodexSessionId) || latestCodex : latestCodex || (sData.sessions && sData.sessions[0]);
+    const convId = activeCodexSessionId || (latest ? latest.conversationId : null);
     const msgs = convId ? getTranscript(convId, 1000) : [];
     return send(res, 200, {
       ok: true,

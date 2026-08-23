@@ -862,8 +862,9 @@ public class MainActivity extends Activity {
         SimpleDateFormat sdf = new SimpleDateFormat("d MMM", new Locale("id", "ID"));
         String dateStr = sdf.format(new Date(ts));
 
-        String subText = isMostRecent ? ("Terhubung • " + currentServerHostname) : "Terputus • Kendali jarak jauh";
-        addSessionCard(title, subText, dateStr, convId, isMostRecent);
+        String engine = s.optString("engine", "antigravity");
+        String subText = ("codex".equalsIgnoreCase(engine) ? "Codex CLI" : "Antigravity CLI") + " • " + currentServerHostname;
+        addSessionCard(title, subText, dateStr, convId, true);
     }
 
     private void addTimeSectionHeader(String title) {
