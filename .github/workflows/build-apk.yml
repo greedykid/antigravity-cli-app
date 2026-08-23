@@ -65,5 +65,7 @@ jobs:
           name: "Antigravity Remote Latest APK"
           body: "Unduh file APK langsung tanpa perlu ekstrak ZIP."
           files: app/build/outputs/apk/debug/app-debug.apk
+          overwrite: true
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
