@@ -440,7 +440,8 @@ public class MainActivity extends Activity {
     // FEATURE B: PIN & UNPIN SESSION MANAGEMENT
     // ============================================================
     private Set<String> getPinnedSessionIds() {
-        return new HashSet<>(prefs.getStringSet("pinned_sessions_ids", new HashSet<>()));
+        Set<String> set = prefs.getStringSet("pinned_sessions_ids", null);
+        return set != null ? new HashSet<>(set) : new HashSet<String>();
     }
 
     private void togglePinSession(String convId) {
@@ -527,7 +528,7 @@ public class MainActivity extends Activity {
                     }
                     final String parent = res.optString("parent", null);
                     if (parent != null && !parent.isEmpty()) {
-                        LinearLayout upRow = createFileRow("📁 .. (Kembali ke folder atas)", true, 0);
+                        LinearLayout upRow = createFileRow("📁 .. (Kembali ke folder atas)", true, 0L);
                         upRow.setOnClickListener(v -> {
                             dialog.dismiss();
                             openFileExplorerModal(parent);
@@ -4256,6 +4257,23 @@ public class MainActivity extends Activity {
     private void showSessionOptionsBottomSheet(final String convId, final String currentTitle) {
         final Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, currentTitle != null && !currentTitle.isEmpty() ? currentTitle : "Pilihan Sesi", true);
+
+        // 0. Pin / Unpin
+        final boolean isPinned = getPinnedSessionIds().contains(convId);
+        LinearLayout pinRow = new LinearLayout(this);
+        pinRow.setOrientation(LinearLayout.HORIZONTAL);
+        pinRow.setGravity(Gravity.CENTER_VERTICAL);
+        pinRow.setPadding(dp(14), dp(12), dp(14), dp(12));
+        pinRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        pinRow.addView(cIcon(R.drawable.ic_push_pin, 20, Theme.ACCENT));
+        pinRow.addView(cText(isPinned ? "   Batal Sematkan Sesi" : "   Sematkan Sesi ke Atas 📌", 14f, Theme.TEXT_MAIN, true, false));
+        pinRow.setOnClickListener(v -> {
+            dialog.dismiss();
+            togglePinSession(convId);
+        });
+        LinearLayout.LayoutParams lpPin = new LinearLayout.LayoutParams(-1, -2);
+        lpPin.setMargins(0, dp(4), 0, dp(10));
+        root.addView(pinRow, lpPin);
 
         // 1. Buka Sesi
         LinearLayout openRow = new LinearLayout(this);
