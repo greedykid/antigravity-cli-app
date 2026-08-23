@@ -472,7 +472,7 @@ public class MainActivity extends Activity {
 
         addSidebarMenuItem(body, R.drawable.ic_chat, "Obrolan", null, 1, false, () -> {
             closeSidebar();
-            showScreen(1);
+            openLatestConversation();
         });
 
         addSidebarMenuItem(body, R.drawable.ic_code, "Kode", null, 0, false, () -> {
@@ -480,8 +480,11 @@ public class MainActivity extends Activity {
             showScreen(0);
         });
 
-        addSidebarMenuItem(body, R.drawable.ic_tune, "Kemampuan",
-                "antigravity".equalsIgnoreCase(currentEngine) ? "Agy" : "Codex", -1, false, this::toggleEngine);
+        addSidebarMenuItem(body, R.drawable.ic_swap, "Engine",
+                engineShortLabel(currentEngine), -1, false, () -> {
+                    closeSidebar();
+                    showEngineSwitcher();
+                });
 
         addSidebarMenuItem(body, R.drawable.ic_qr_code, "Scan QR Pairing", null, -1, false, () -> {
             closeSidebar();
@@ -1206,6 +1209,12 @@ public class MainActivity extends Activity {
     private void openSpecificSession(String convId, String title) {
         activeConversationId = convId;
         activeSessionTitle = title != null && !title.isEmpty() ? title : "Session";
+
+        // Remembered so "Obrolan" can resume across app restarts.
+        prefs.edit()
+                .putString("last_conversation_id", convId == null ? "" : convId)
+                .putString("last_conversation_title", activeSessionTitle)
+                .apply();
         lastLoadedSessionId = null;
         lastLoadedTurnCount = -1;
         lastRenderedWasRunning = false;
@@ -1218,6 +1227,57 @@ public class MainActivity extends Activity {
         }
         mainHandler.postDelayed(this::hideSessionLoading, 4000);
         showScreen(1);
+    }
+
+    /**
+     * "Obrolan" continues where the user left off: the session already open, or
+     * the most recent one on the server. It used to call showScreen(1) with no
+     * active conversation, which lands on the same empty state as "Chat baru".
+     */
+    private void openLatestConversation() {
+        if (activeConversationId != null && !activeConversationId.isEmpty()) {
+            showScreen(1);
+            return;
+        }
+
+        String cachedId = prefs.getString("last_conversation_id", "");
+        String cachedTitle = prefs.getString("last_conversation_title", "Sesi");
+        if (!cachedId.isEmpty()) {
+            navigatedFromHub = false;
+            openSpecificSession(cachedId, cachedTitle);
+            return;
+        }
+
+        Toast.makeText(this, "Mencari sesi terakhir...", Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/sessions");
+                JSONArray sessions = json.optJSONArray("sessions");
+                if (sessions == null || sessions.length() == 0) {
+                    mainHandler.post(() -> {
+                        Toast.makeText(MainActivity.this, "Belum ada sesi — memulai yang baru", Toast.LENGTH_SHORT).show();
+                        startNewSession();
+                    });
+                    return;
+                }
+                JSONObject newest = sessions.optJSONObject(0);
+                final String convId = newest == null ? "" : newest.optString("conversationId", "");
+                final String title = newest == null ? "Sesi" : newest.optString("title", "Sesi");
+                mainHandler.post(() -> {
+                    if (convId.isEmpty()) {
+                        startNewSession();
+                    } else {
+                        navigatedFromHub = false;
+                        openSpecificSession(convId, title);
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    Toast.makeText(MainActivity.this, "Gagal memuat sesi terakhir", Toast.LENGTH_SHORT).show();
+                    showScreen(0);
+                });
+            }
+        });
     }
 
     private void startNewSession() {
@@ -1298,7 +1358,8 @@ public class MainActivity extends Activity {
 
         // Group 3: Kemampuan, Konektor, Izin
         LinearLayout g3 = createSettingsGroupContainer();
-        settingsCapabilitiesSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_tune, "Kemampuan", "4 diaktifkan", () -> toggleEngine(), true);
+        settingsCapabilitiesSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_swap, "Engine",
+                engineLabel(currentEngine), () -> showEngineSwitcher(), true);
         settingsConnectorStatusText = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_link, "Konektor", "1 terhubung", () -> showConnectionBottomSheet(), true);
         settingsSandboxSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_security, "Mode Eksekusi",
                 sandboxLabel(prefs.getString("sandbox_mode", "full")), () -> showSandboxPicker(), true);
@@ -1431,7 +1492,7 @@ public class MainActivity extends Activity {
             settingsConnectorStatusText.setText(hasUrl ? ("1 terhubung • " + currentServerHostname) : "0 terhubung (Atur Bridge)");
         }
         if (settingsCapabilitiesSubtitle != null) {
-            settingsCapabilitiesSubtitle.setText("Engine: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Antigravity CLI" : "Codex CLI"));
+            settingsCapabilitiesSubtitle.setText(engineLabel(currentEngine) + " · " + displayModel(currentModel));
         }
         if (settingsSandboxSubtitle != null) {
             settingsSandboxSubtitle.setText(sandboxLabel(prefs.getString("sandbox_mode", "full")));
@@ -2655,10 +2716,10 @@ public class MainActivity extends Activity {
         btnVoice.setOnClickListener(v -> startVoiceRecognition());
         actionRow.addView(btnVoice);
 
-        repoTagLabel = cText(currentEngine.equalsIgnoreCase("codex") ? "Codex" : "Antigravity", 12f, CLAUDE_TEXT_MUTED, true, false);
-        repoTagLabel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        repoTagLabel = cText(engineShortLabel(currentEngine), 12f, CLAUDE_TERRACOTTA, true, false);
+        repoTagLabel.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, CLAUDE_BORDER, 1, 12));
         repoTagLabel.setPadding(dp(10), dp(4), dp(10), dp(4));
-        repoTagLabel.setOnClickListener(v -> toggleEngine());
+        repoTagLabel.setOnClickListener(v -> showEngineSwitcher());
         LinearLayout.LayoutParams lpTag = new LinearLayout.LayoutParams(-2, -2);
         lpTag.setMargins(dp(6), 0, 0, 0);
         actionRow.addView(repoTagLabel, lpTag);
@@ -2809,8 +2870,7 @@ public class MainActivity extends Activity {
 
     private void updateRepoTag() {
         if (repoTagLabel != null) {
-            boolean isAgy = "antigravity".equalsIgnoreCase(currentEngine);
-            repoTagLabel.setText(isAgy ? "google/antigravity-cli" : "openai/codex-cli");
+            repoTagLabel.setText(engineShortLabel(currentEngine));
         }
         if (modelTagLabel != null) modelTagLabel.setText(displayModel(currentModel));
     }
@@ -2846,14 +2906,230 @@ public class MainActivity extends Activity {
         dialog.show();
     }
 
+    // Kept for existing call sites; the picker is the real entry point now.
     private void toggleEngine() {
-        currentEngine = "antigravity".equalsIgnoreCase(currentEngine) ? "codex" : "antigravity";
+        showEngineSwitcher();
+    }
+
+    // ============================================================
+    // ENGINE SWITCHING
+    // ============================================================
+    private boolean isCodexEngine() {
+        return "codex".equalsIgnoreCase(currentEngine);
+    }
+
+    private String engineLabel(String engine) {
+        return "codex".equalsIgnoreCase(engine) ? "Codex CLI" : "Antigravity CLI";
+    }
+
+    private String engineShortLabel(String engine) {
+        return "codex".equalsIgnoreCase(engine) ? "Codex" : "Agy";
+    }
+
+    private String engineRepo(String engine) {
+        return "codex".equalsIgnoreCase(engine) ? "openai/codex-cli" : "google/antigravity-cli";
+    }
+
+    /**
+     * Engine picker with a real toggle. Switching starts a fresh session on the
+     * other CLI, so an in-progress conversation is confirmed first instead of
+     * being discarded the moment the row is tapped.
+     */
+    private void showEngineSwitcher() {
+        final Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Engine", true);
+
+        root.addView(cText("Sesi tidak dibagi antar engine. Berpindah akan memulai sesi baru.",
+                12.5f, CLAUDE_TEXT_MUTED, false, false));
+
+        // --- toggle row ---
+        LinearLayout toggleRow = new LinearLayout(this);
+        toggleRow.setOrientation(LinearLayout.HORIZONTAL);
+        toggleRow.setGravity(Gravity.CENTER_VERTICAL);
+        toggleRow.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 16));
+        toggleRow.setPadding(dp(16), dp(14), dp(16), dp(14));
+        LinearLayout.LayoutParams lpToggle = new LinearLayout.LayoutParams(-1, -2);
+        lpToggle.setMargins(0, dp(16), 0, dp(6));
+
+        LinearLayout toggleCol = new LinearLayout(this);
+        toggleCol.setOrientation(LinearLayout.VERTICAL);
+        final TextView toggleTitle = cText(engineLabel(currentEngine), 15.5f, CLAUDE_TEXT_MAIN, true, false);
+        toggleCol.addView(toggleTitle);
+        final TextView toggleSub = cText(engineRepo(currentEngine) + " · " + displayModel(currentModel),
+                12f, CLAUDE_TEXT_MUTED, false, false);
+        toggleSub.setSingleLine(true);
+        toggleSub.setEllipsize(TextUtils.TruncateAt.END);
+        toggleCol.addView(toggleSub);
+        toggleRow.addView(toggleCol, new LinearLayout.LayoutParams(0, -2, 1));
+
+        final Switch engineSwitch = new Switch(this);
+        engineSwitch.setChecked(isCodexEngine());
+        engineSwitch.setThumbTintList(android.content.res.ColorStateList.valueOf(CLAUDE_TERRACOTTA));
+        engineSwitch.setTrackTintList(android.content.res.ColorStateList.valueOf(CLAUDE_BORDER_DARK));
+        toggleRow.addView(engineSwitch);
+        root.addView(toggleRow, lpToggle);
+
+        TextView toggleHint = cText("Mati = Antigravity · Nyala = Codex", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        toggleHint.setPadding(dp(4), 0, 0, dp(14));
+        root.addView(toggleHint);
+
+        engineSwitch.setOnClickListener(v -> {
+            final String target = engineSwitch.isChecked() ? "codex" : "antigravity";
+            if (target.equalsIgnoreCase(currentEngine)) return;
+
+            // Put the switch back until the user actually confirms.
+            engineSwitch.setChecked(isCodexEngine());
+            dialog.dismiss();
+            requestEngineSwitch(target);
+        });
+
+        // --- per-engine detail cards ---
+        root.addView(buildEngineCard("antigravity", dialog));
+        root.addView(buildEngineCard("codex", dialog));
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private LinearLayout buildEngineCard(final String engine, final Dialog dialog) {
+        boolean selected = engine.equalsIgnoreCase(currentEngine);
+        String model = prefs.getString(modelPrefKey(engine), defaultModelForEngine(engine));
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(cBox(selected ? CLAUDE_TERRACOTTA_LIGHT : CLAUDE_SURFACE_MUTED,
+                selected ? CLAUDE_TERRACOTTA : CLAUDE_BORDER, 1, 14));
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+        card.addView(cIcon(R.drawable.ic_tune, 18, selected ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(12), 0, dp(8), 0);
+        col.addView(cText(engineLabel(engine), 14.5f,
+                selected ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MAIN, true, false));
+        col.addView(cText(engineRepo(engine) + " · " + displayModel(model), 11.5f, CLAUDE_TEXT_MUTED, false, false));
+        card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+
+        if (selected) card.addView(cIcon(R.drawable.ic_check, 18, CLAUDE_TERRACOTTA));
+
+        card.setOnClickListener(v -> {
+            if (selected) {
+                dialog.dismiss();
+                showModelPicker();
+                return;
+            }
+            dialog.dismiss();
+            requestEngineSwitch(engine);
+        });
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(8), 0, 0);
+        card.setLayoutParams(lp);
+        return card;
+    }
+
+    /** Confirms first when there is a live task or an ongoing conversation. */
+    private void requestEngineSwitch(final String target) {
+        boolean hasWork = isLiveTaskRunning
+                || (activeConversationId != null && !activeConversationId.isEmpty());
+
+        if (!hasWork) {
+            applyEngineSwitch(target);
+            return;
+        }
+
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Ganti Engine?", true);
+
+        root.addView(cText("Beralih ke " + engineLabel(target) + " akan menutup sesi "
+                        + engineLabel(currentEngine) + " yang sedang terbuka.",
+                13.5f, CLAUDE_TEXT_MAIN, false, false));
+
+        TextView note = cText(isLiveTaskRunning
+                        ? "Ada task yang sedang berjalan. Task tetap jalan di server, tapi layar akan pindah ke sesi baru."
+                        : "Sesi lama tetap tersimpan dan bisa dibuka lagi dari daftar Kode.",
+                12.5f, isLiveTaskRunning ? CLAUDE_AMBER : CLAUDE_TEXT_MUTED, false, false);
+        note.setPadding(0, dp(8), 0, dp(16));
+        root.addView(note);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView cancel = cText("Batal", 14f, CLAUDE_TEXT_MAIN, true, false);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setPadding(dp(16), dp(13), dp(16), dp(13));
+        cancel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(0, -2, 1);
+        lpC.setMargins(0, 0, dp(8), 0);
+        actions.addView(cancel, lpC);
+
+        TextView confirm = cText("Ganti", 14f, Color.WHITE, true, false);
+        confirm.setGravity(Gravity.CENTER);
+        confirm.setPadding(dp(16), dp(13), dp(16), dp(13));
+        confirm.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
+        confirm.setOnClickListener(v -> {
+            dialog.dismiss();
+            applyEngineSwitch(target);
+        });
+        actions.addView(confirm, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(actions);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void applyEngineSwitch(String target) {
+        final String previous = currentEngine;
+        currentEngine = "codex".equalsIgnoreCase(target) ? "codex" : "antigravity";
         currentModel = prefs.getString(modelPrefKey(currentEngine), defaultModelForEngine(currentEngine));
         prefs.edit().putString("engine", currentEngine).apply();
+
         updateRepoTag();
         refreshSettingsValues();
+        rebuildSidebarContent();
         startNewSession();
-        Toast.makeText(this, "Engine beralih ke: " + ("antigravity".equalsIgnoreCase(currentEngine) ? "Antigravity CLI" : "Codex CLI"), Toast.LENGTH_SHORT).show();
+
+        // Say what happened inside the chat, not just in a toast that vanishes.
+        renderEngineSwitchNotice(previous, currentEngine);
+
+        Toast.makeText(this, "Engine: " + engineLabel(currentEngine)
+                + " · " + displayModel(currentModel), Toast.LENGTH_SHORT).show();
+    }
+
+    /** A centered notice card in the transcript marking the engine change. */
+    private void renderEngineSwitchNotice(String from, String to) {
+        if (chatMessagesList == null) return;
+
+        LinearLayout notice = new LinearLayout(this);
+        notice.setOrientation(LinearLayout.HORIZONTAL);
+        notice.setGravity(Gravity.CENTER_VERTICAL);
+        notice.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 14));
+        notice.setPadding(dp(14), dp(11), dp(14), dp(11));
+
+        notice.addView(cIcon(R.drawable.ic_swap, 16, CLAUDE_TERRACOTTA));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(10), 0, 0, 0);
+        col.addView(cText(engineLabel(from) + "  →  " + engineLabel(to), 13f, CLAUDE_TEXT_MAIN, true, false));
+        col.addView(cText("Sesi baru dimulai · model " + displayModel(currentModel),
+                11.5f, CLAUDE_TEXT_MUTED, false, false));
+        notice.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(dp(8), dp(10), dp(8), dp(6));
+        chatMessagesList.addView(notice, lp);
+    }
+
+    // The sidebar shows the active engine as a chip, so it has to be rebuilt
+    // when the engine changes.
+    private void rebuildSidebarContent() {
+        if (sidebarPanel == null) return;
+        sidebarPanel.removeAllViews();
+        buildSidebarContent(sidebarPanel);
     }
 
     private void showMoreDropdownMenu(View anchorView) {
@@ -4275,15 +4551,34 @@ public class MainActivity extends Activity {
     }
 
     private void showServerSwitcher() {
-        Dialog dialog = createBaseBottomSheet(true);
-        LinearLayout root = createBottomSheetRoot(dialog, "Server Tersimpan", true);
+        final Dialog dialog = createBaseBottomSheet(true);
+        final LinearLayout root = createBottomSheetRoot(dialog, "Server Tersimpan", true);
+
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        root.addView(list, new LinearLayout.LayoutParams(-1, -2));
+
+        renderServerList(list, dialog);
+
+        TextView hint = cText("Ketuk untuk beralih · ketuk ikon hapus untuk membuang server.",
+                12f, CLAUDE_TEXT_LIGHT, false, false);
+        hint.setPadding(0, dp(14), 0, 0);
+        root.addView(hint);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void renderServerList(final LinearLayout list, final Dialog dialog) {
+        list.removeAllViews();
 
         JSONArray servers = loadSavedServers();
         final String activeUrl = prefs.getString("url", "");
 
         if (servers.length() == 0) {
-            root.addView(cText("Belum ada server tersimpan. Pairing lewat QR akan menyimpannya otomatis.",
+            list.addView(cText("Belum ada server tersimpan. Pairing lewat QR akan menyimpannya otomatis.",
                     13.5f, CLAUDE_TEXT_MUTED, false, false));
+            return;
         }
 
         for (int i = 0; i < servers.length(); i++) {
@@ -4298,38 +4593,128 @@ public class MainActivity extends Activity {
             card.setOrientation(LinearLayout.HORIZONTAL);
             card.setGravity(Gravity.CENTER_VERTICAL);
             card.setBackground(cBox(CLAUDE_SURFACE_MUTED, isActive ? CLAUDE_TERRACOTTA : CLAUDE_BORDER, 1, 14));
-            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            card.setPadding(dp(14), dp(10), dp(8), dp(10));
 
             card.addView(cIcon(R.drawable.ic_laptop, 18, isActive ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
 
             LinearLayout col = new LinearLayout(this);
             col.setOrientation(LinearLayout.VERTICAL);
             col.setPadding(dp(12), 0, dp(8), 0);
-            col.addView(cText(name, 14f, CLAUDE_TEXT_MAIN, true, false));
+
+            LinearLayout titleRow = new LinearLayout(this);
+            titleRow.setOrientation(LinearLayout.HORIZONTAL);
+            titleRow.setGravity(Gravity.CENTER_VERTICAL);
+            titleRow.addView(cText(name, 14f, CLAUDE_TEXT_MAIN, true, false));
+            if (isActive) {
+                TextView chip = cText("Aktif", 10.5f, CLAUDE_TERRACOTTA, true, false);
+                chip.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, 0, 0, 8));
+                chip.setPadding(dp(8), dp(2), dp(8), dp(2));
+                LinearLayout.LayoutParams lpChip = new LinearLayout.LayoutParams(-2, -2);
+                lpChip.setMargins(dp(8), 0, 0, 0);
+                titleRow.addView(chip, lpChip);
+            }
+            col.addView(titleRow);
+
             TextView urlView = cText(url, 11.5f, CLAUDE_TEXT_LIGHT, false, false);
             urlView.setSingleLine(true);
             urlView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
             col.addView(urlView);
             card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
 
-            if (isActive) card.addView(cIcon(R.drawable.ic_check, 18, CLAUDE_TERRACOTTA));
+            ImageView remove = cIconButton(R.drawable.ic_close, 16, 38, CLAUDE_TEXT_LIGHT);
+            remove.setOnClickListener(v -> confirmRemoveServer(name, url, isActive, list, dialog));
+            card.addView(remove);
 
             card.setOnClickListener(v -> {
-                prefs.edit().putString("url", url).putString("token", token).apply();
+                if (isActive) {
+                    Toast.makeText(this, name + " sudah aktif", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                switchToServer(name, url, token);
                 dialog.dismiss();
-                Toast.makeText(this, "Beralih ke " + name, Toast.LENGTH_SHORT).show();
-                restartLiveEvents();
-                startNewSession();
-                showScreen(0);
             });
 
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             lp.setMargins(0, dp(8), 0, 0);
-            root.addView(card, lp);
+            list.addView(card, lp);
         }
+    }
+
+    private void switchToServer(String name, String url, String token) {
+        prefs.edit().putString("url", url).putString("token", token).apply();
+        currentServerHostname = name;
+        Toast.makeText(this, "Beralih ke " + name, Toast.LENGTH_SHORT).show();
+
+        restartLiveEvents();
+        startNewSession();
+        showScreen(0);
+        checkHealth();
+    }
+
+    // Removing the active server would leave the app pointing at nothing, so
+    // that case is called out rather than silently disconnecting.
+    private void confirmRemoveServer(final String name, final String url, final boolean isActive,
+                                     final LinearLayout list, final Dialog parent) {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Hapus Server", true);
+
+        root.addView(cText("Hapus \"" + name + "\" dari daftar?", 14.5f, CLAUDE_TEXT_MAIN, true, false));
+        TextView detail = cText(isActive
+                        ? "Ini server yang sedang aktif. Setelah dihapus aplikasi tidak terhubung ke mana pun sampai Anda pairing lagi."
+                        : url,
+                12.5f, isActive ? CLAUDE_AMBER : CLAUDE_TEXT_MUTED, false, false);
+        detail.setPadding(0, dp(6), 0, dp(16));
+        root.addView(detail);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView cancel = cText("Batal", 14f, CLAUDE_TEXT_MAIN, true, false);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setPadding(dp(16), dp(13), dp(16), dp(13));
+        cancel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(0, -2, 1);
+        lpC.setMargins(0, 0, dp(8), 0);
+        actions.addView(cancel, lpC);
+
+        TextView confirm = cText("Hapus", 14f, Color.WHITE, true, false);
+        confirm.setGravity(Gravity.CENTER);
+        confirm.setPadding(dp(16), dp(13), dp(16), dp(13));
+        confirm.setBackground(cBox(CLAUDE_RED, 0, 0, 12));
+        confirm.setOnClickListener(v -> {
+            removeServerProfile(url);
+            dialog.dismiss();
+            if (isActive) {
+                prefs.edit().remove("url").remove("token").apply();
+                stopLiveEvents();
+                if (parent != null) parent.dismiss();
+                startNewSession();
+                showScreen(0);
+                Toast.makeText(this, "Server dihapus. Pairing lagi untuk terhubung.", Toast.LENGTH_LONG).show();
+            } else {
+                renderServerList(list, parent);
+                Toast.makeText(this, "Server dihapus", Toast.LENGTH_SHORT).show();
+            }
+        });
+        actions.addView(confirm, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(actions);
 
         dialog.setContentView(root);
         dialog.show();
+    }
+
+    private void removeServerProfile(String url) {
+        try {
+            JSONArray current = loadSavedServers();
+            JSONArray next = new JSONArray();
+            for (int i = 0; i < current.length(); i++) {
+                JSONObject s = current.optJSONObject(i);
+                if (s == null || url.equals(s.optString("url"))) continue;
+                next.put(s);
+            }
+            prefs.edit().putString("servers", next.toString()).apply();
+        } catch (Exception ignored) {}
     }
 
     // ============================================================
@@ -4415,9 +4800,20 @@ public class MainActivity extends Activity {
         });
     }
 
+    // Reconnect in place. Stopping and immediately restarting a foreground
+    // service races the system's startForeground deadline and force-closed the
+    // app whenever the user switched servers.
     private void restartLiveEvents() {
-        stopLiveEvents();
-        startLiveEvents();
+        if (!bridge.isPaired()) {
+            stopLiveEvents();
+            return;
+        }
+        try {
+            Intent intent = new Intent(this, LiveEventService.class);
+            intent.setAction(LiveEventService.ACTION_RECONNECT);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
+            else startService(intent);
+        } catch (Throwable ignored) {}
     }
 
     private void startLiveEvents() {

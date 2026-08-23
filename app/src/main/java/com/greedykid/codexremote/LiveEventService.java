@@ -28,6 +28,8 @@ public class LiveEventService extends Service {
 
     public static final String ACTION_START = "com.greedykid.codexremote.START_EVENTS";
     public static final String ACTION_STOP = "com.greedykid.codexremote.STOP_EVENTS";
+    /** Re-open the stream against a new server without tearing the service down. */
+    public static final String ACTION_RECONNECT = "com.greedykid.codexremote.RECONNECT_EVENTS";
 
     private static final String CHANNEL_ONGOING = "codex_remote_ongoing";
     private static final String CHANNEL_ALERTS = "codex_remote_alerts";
@@ -53,14 +55,29 @@ public class LiveEventService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+        // startForegroundService() gives us five seconds to call startForeground()
+        // or the system kills the process with ForegroundServiceDidNotStartInTime
+        // — an exception thrown on the looper that no try/catch of ours can see.
+        // Satisfying the contract first, before deciding what to do, makes that
+        // impossible even when a stop and a start race each other.
+        startForeground(NOTIFY_ONGOING, buildOngoingNotification("Memantau sesi CLI"));
+
+        String action = intent == null ? null : intent.getAction();
+
+        if (ACTION_STOP.equals(action)) {
             stopStreaming();
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        startForeground(NOTIFY_ONGOING, buildOngoingNotification("Memantau sesi CLI"));
+        if (ACTION_RECONNECT.equals(action)) {
+            // Point the existing stream at the newly selected server. Restarting
+            // the whole service here is what used to crash on server switch.
+            stopStreaming();
+            client = new BridgeClient(getSharedPreferences("connection", Context.MODE_PRIVATE));
+        }
+
         startStreaming();
         return START_STICKY;
     }
