@@ -72,3 +72,81 @@ test("reading a missing file reports an error, not a crash", () => {
   const root = makeRoot();
   assert.ok(files.read(root, "nope.txt").error);
 });
+
+test("writes a new file inside the root", () => {
+  const root = makeRoot();
+  const result = files.write(root, "docs/notes.md", "# Catatan\n");
+  assert.equal(result.ok, true);
+  assert.equal(fs.readFileSync(path.join(root, "docs", "notes.md"), "utf8"), "# Catatan\n");
+});
+
+test("overwrites an existing file", () => {
+  const root = makeRoot();
+  files.write(root, "readme.md", "baru\n");
+  assert.equal(fs.readFileSync(path.join(root, "readme.md"), "utf8"), "baru\n");
+});
+
+test("refuses to write outside the root", () => {
+  const root = makeRoot();
+  assert.ok(files.write(root, "../escape.txt", "x").error);
+  assert.ok(files.write(root, "/etc/escape.txt", "x").error);
+});
+
+test("refuses to write over a directory", () => {
+  const root = makeRoot();
+  assert.ok(files.write(root, "src", "x").error);
+});
+
+test("rejects non-string content instead of writing junk", () => {
+  const root = makeRoot();
+  assert.ok(files.write(root, "bad.txt", { not: "a string" }).error);
+  assert.ok(files.write(root, "bad.txt", null).error);
+});
+
+test("rejects content past the write cap", () => {
+  const root = makeRoot();
+  const tooBig = "x".repeat(files.MAX_WRITE_BYTES + 1);
+  assert.ok(files.write(root, "huge.txt", tooBig).error);
+  assert.equal(fs.existsSync(path.join(root, "huge.txt")), false);
+});
+
+test("a failed write leaves no temporary file behind", () => {
+  const root = makeRoot();
+  files.write(root, "src", "x");
+  assert.equal(fs.readdirSync(root).some(n => n.includes(".codexremote.tmp")), false);
+});
+
+test("prune removes files older than the window and keeps the rest", () => {
+  const root = makeRoot();
+  const dir = path.join(root, "uploads");
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, "old.png"), "old");
+  fs.writeFileSync(path.join(dir, "fresh.png"), "fresh");
+
+  const longAgo = Date.now() / 1000 - 40 * 24 * 60 * 60;
+  fs.utimesSync(path.join(dir, "old.png"), longAgo, longAgo);
+
+  const result = files.pruneOlderThan(dir, 14);
+  assert.deepEqual(result.removed, ["old.png"]);
+  assert.equal(result.kept, 1);
+  assert.ok(result.freedBytes > 0);
+  assert.equal(fs.existsSync(path.join(dir, "fresh.png")), true);
+});
+
+test("a retention of zero disables pruning entirely", () => {
+  const root = makeRoot();
+  const dir = path.join(root, "uploads");
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, "old.png"), "old");
+  const longAgo = Date.now() / 1000 - 400 * 24 * 60 * 60;
+  fs.utimesSync(path.join(dir, "old.png"), longAgo, longAgo);
+
+  const result = files.pruneOlderThan(dir, 0);
+  assert.equal(result.skipped, true);
+  assert.equal(fs.existsSync(path.join(dir, "old.png")), true);
+});
+
+test("pruning a missing directory is harmless", () => {
+  const root = makeRoot();
+  assert.equal(files.pruneOlderThan(path.join(root, "nope"), 14).ok, true);
+});

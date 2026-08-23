@@ -94,4 +94,58 @@ function read(root, relative) {
   };
 }
 
-module.exports = { list, read, safeResolve, MAX_READ_BYTES };
+const MAX_WRITE_BYTES = 2 * 1024 * 1024;
+
+function write(root, relative, content) {
+  if (typeof content !== "string") return { error: "content must be a string" };
+  if (Buffer.byteLength(content, "utf8") > MAX_WRITE_BYTES) {
+    return { error: "File terlalu besar (maks 2 MB)" };
+  }
+
+  const file = safeResolve(root, relative);
+  if (!file) return { error: "Path outside workspace" };
+
+  if (fs.existsSync(file) && fs.statSync(file).isDirectory()) {
+    return { error: "Is a directory" };
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // Write beside the target then rename, so a failure cannot leave a
+    // half-written file where working code used to be.
+    const tmp = file + ".codexremote.tmp";
+    fs.writeFileSync(tmp, content, "utf8");
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    return { error: e.message };
+  }
+
+  return { ok: true, path: relative, size: Buffer.byteLength(content, "utf8") };
+}
+
+// Deletes uploads older than the retention window. Returns what it removed so
+// the caller can report it rather than silently reclaiming space.
+function pruneOlderThan(dir, maxAgeDays) {
+  const result = { ok: true, removed: [], freedBytes: 0, kept: 0 };
+  if (!maxAgeDays || maxAgeDays <= 0) return Object.assign(result, { skipped: true });
+  if (!fs.existsSync(dir)) return result;
+
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const full = path.join(dir, entry.name);
+    try {
+      const st = fs.statSync(full);
+      if (st.mtimeMs >= cutoff) {
+        result.kept++;
+        continue;
+      }
+      fs.unlinkSync(full);
+      result.removed.push(entry.name);
+      result.freedBytes += st.size;
+    } catch (e) {}
+  }
+  return result;
+}
+
+module.exports = { list, read, write, pruneOlderThan, safeResolve, MAX_READ_BYTES, MAX_WRITE_BYTES };

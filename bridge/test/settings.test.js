@@ -52,3 +52,41 @@ test("a corrupt settings file falls back to defaults", () => {
   fs.writeFileSync(settings.SETTINGS_FILE, "{ this is not json");
   assert.equal(settings.load().sandboxMode, "full");
 });
+
+test("task timeout is clamped to a sane range", () => {
+  settings.save({ taskTimeoutMinutes: 0 });
+  assert.equal(settings.load().taskTimeoutMinutes, 1);
+  settings.save({ taskTimeoutMinutes: 9999 });
+  assert.equal(settings.load().taskTimeoutMinutes, 240);
+  settings.save({ taskTimeoutMinutes: "not a number" });
+  assert.equal(settings.load().taskTimeoutMinutes, 30);
+});
+
+test("taskTimeoutMs reflects the stored minutes", () => {
+  settings.save({ taskTimeoutMinutes: 12 });
+  assert.equal(settings.taskTimeoutMs(), 12 * 60 * 1000);
+});
+
+test("project paths that climb out of the workdir are dropped", () => {
+  const saved = settings.save({
+    projects: ["app", "../etc", "a/../../b", "", ".", { name: "Bridge", path: "bridge" }]
+  });
+  assert.deepEqual(saved.projects.map(p => p.path), ["app", "bridge"]);
+});
+
+test("duplicate project paths are collapsed", () => {
+  const saved = settings.save({ projects: ["app", "app", { path: "app", name: "Again" }] });
+  assert.equal(saved.projects.length, 1);
+});
+
+test("a leading slash is stripped rather than escaping to the filesystem root", () => {
+  const saved = settings.save({ projects: ["/etc/passwd"] });
+  assert.deepEqual(saved.projects.map(p => p.path), ["etc/passwd"]);
+});
+
+test("upload retention is clamped", () => {
+  settings.save({ uploadRetentionDays: -5 });
+  assert.equal(settings.load().uploadRetentionDays, 0);
+  settings.save({ uploadRetentionDays: 100000 });
+  assert.equal(settings.load().uploadRetentionDays, 365);
+});

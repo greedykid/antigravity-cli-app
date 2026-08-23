@@ -10,6 +10,9 @@ const events = require("./events");
 const files = require("./files");
 const git = require("./git");
 const settings = require("./settings");
+const jobs = require("./jobs");
+const auditLog = require("./audit");
+const searchIndex = require("./search");
 
 const PORT = config.port();
 const HOST = config.bindHost();
@@ -527,10 +530,11 @@ function runCodex(prompt, conversationId, model) {
     });
     child.stderr.on("data", chunk => { error += chunk.toString(); });
 
+    const timeoutMs = settings.taskTimeoutMs();
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
-      reject(new Error("Codex CLI timed out after 5 minutes"));
-    }, 300000);
+      reject(new Error(`Codex CLI timed out after ${Math.round(timeoutMs / 60000)} minutes`));
+    }, timeoutMs);
 
     child.on("error", err => {
       clearTimeout(timer);
@@ -605,10 +609,11 @@ function runAgy(prompt, conversationId, resume = false, model) {
       events.broadcast("cli.output", { engine: "antigravity", conversationId, chunk: text });
     });
     child.stderr.on("data", chunk => { error += chunk.toString(); });
+    const timeoutMs = settings.taskTimeoutMs();
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
-      reject(new Error("Antigravity CLI timed out after 5 minutes"));
-    }, 300000);
+      reject(new Error(`Antigravity CLI timed out after ${Math.round(timeoutMs / 60000)} minutes`));
+    }, timeoutMs);
     child.on("error", err => { clearTimeout(timer); reject(err); });
     child.on("close", code => {
       clearTimeout(timer);
@@ -621,49 +626,192 @@ function runAgy(prompt, conversationId, resume = false, model) {
 // -------------------------------------------------------------
 // TRANSCRIPT SEARCH
 // -------------------------------------------------------------
+// Files whose mtime tells us a session's transcript changed.
+function transcriptSources(convId) {
+  const home = os.homedir();
+  const sources = [
+    path.join(home, ".gemini/antigravity-cli/brain", convId, ".system_generated/logs/transcript.jsonl")
+  ];
+  const rollout = findCodexRolloutFile(convId);
+  if (rollout) sources.push(rollout);
+  return sources;
+}
+
 function searchTranscripts(query, limit) {
-  const needle = query.toLowerCase();
   const sData = getSessions();
-  const results = [];
+  const sessions = sData.sessions || [];
 
-  for (const session of sData.sessions || []) {
-    if (results.length >= limit) break;
+  // Only sessions whose transcript actually changed get re-read.
+  for (const session of sessions) {
+    if (!session.conversationId) continue;
+    searchIndex.sync(
+      session,
+      transcriptSources(session.conversationId),
+      () => getTranscript(session.conversationId, 1000)
+    );
+  }
+  searchIndex.dropMissing(sessions.map(s => s.conversationId).filter(Boolean));
+  searchIndex.persist();
 
-    // A title hit is worth reporting even when no message body matches.
-    if ((session.title || "").toLowerCase().includes(needle)) {
-      results.push({
-        conversationId: session.conversationId,
-        title: session.title,
-        engine: session.engine,
-        timestamp: session.timestamp,
-        matchIn: "title",
-        snippet: session.title
-      });
-      continue;
-    }
+  const results = searchIndex.query(query, limit);
+  return { ok: true, query, count: results.length, results, indexed: searchIndex.stats().sessions };
+}
 
-    let turns = [];
-    try { turns = getTranscript(session.conversationId, 1000); } catch (e) { continue; }
+function exportFilename(session) {
+  const safeTitle = (session.title || "sesi")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50) || "sesi";
+  return `${safeTitle}-${(session.conversationId || "").slice(0, 8)}.md`;
+}
 
-    for (const turn of turns) {
-      const content = typeof turn.content === "string" ? turn.content : "";
-      const at = content.toLowerCase().indexOf(needle);
-      if (at === -1) continue;
+function transcriptToMarkdown(session, turns) {
+  const lines = [];
+  lines.push(`# ${session.title || "Sesi"}`);
+  lines.push("");
+  lines.push(`- Engine: ${session.engine || "unknown"}`);
+  lines.push(`- Session: \`${session.conversationId}\``);
+  if (session.timestamp) lines.push(`- Terakhir: ${new Date(session.timestamp).toISOString()}`);
+  lines.push("");
+  lines.push("---");
+  lines.push("");
 
-      const start = Math.max(0, at - 60);
-      results.push({
-        conversationId: session.conversationId,
-        title: session.title,
-        engine: session.engine,
-        timestamp: session.timestamp,
-        matchIn: turn.role || "message",
-        snippet: (start > 0 ? "..." : "") + content.slice(start, at + needle.length + 90).replace(/\s+/g, " ").trim()
-      });
-      break;
+  for (const turn of turns || []) {
+    const content = typeof turn.content === "string" ? turn.content.trim() : "";
+    if (!content) continue;
+
+    if (turn.role === "user") {
+      lines.push("## 👤 User", "", content, "");
+    } else if (turn.role === "assistant") {
+      lines.push("## 🤖 Assistant", "", content, "");
+    } else if (turn.role === "thinking") {
+      lines.push("<details><summary>💭 Thinking</summary>", "", content, "", "</details>", "");
+    } else if (turn.role === "tool") {
+      const title = turn.title || turn.toolTitle || "Tool";
+      lines.push(`<details><summary>🔧 ${title}</summary>`, "", "```", content, "```", "", "</details>", "");
     }
   }
+  return lines.join("\n");
+}
 
-  return { ok: true, query, count: results.length, results };
+function audit(event, details) {
+  auditLog.log(event, details);
+}
+
+// Runs one chat job to completion, broadcasting lifecycle events and storing
+// the outcome so a client that disconnected can still collect it.
+async function runChatJob(job, payload) {
+  let prompt = job.prompt;
+  const engine = job.engine;
+  const model = job.model;
+  const conversationId = job.conversationId;
+  const resume = payload.resume === true && Boolean(conversationId);
+
+  if (Array.isArray(payload.attachedFiles) && payload.attachedFiles.length > 0) {
+    prompt = payload.attachedFiles.map(f => `[Attached File: ${f}]`).join("\n") + "\n" + prompt;
+  } else if (payload.attachedFile) {
+    prompt = `[Attached File: ${payload.attachedFile}]\n` + prompt;
+  }
+
+  events.broadcast("task.started", {
+    jobId: job.id,
+    engine,
+    conversationId,
+    prompt: prompt.slice(0, 200),
+    startedAt: new Date(job.createdAt).toISOString()
+  });
+
+  try {
+    let responseText;
+    let activeConvId = conversationId;
+    let activeSession = null;
+    let updatedTurns = [];
+
+    if (engine === "codex") {
+      const result = await runCodex(prompt, conversationId, model);
+      responseText = result.response;
+      activeConvId = result.sessionId || conversationId;
+
+      const sData = getSessions();
+      activeSession = sData.sessions.find(s => s.conversationId === activeConvId) || {
+        conversationId: activeConvId,
+        title: prompt.slice(0, 40),
+        workspace: WORKDIR,
+        engine: "codex"
+      };
+      updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
+      if (updatedTurns.length === 0) {
+        updatedTurns = [
+          { role: "user", content: prompt, time: new Date().toISOString() },
+          { role: "assistant", content: responseText, time: new Date().toISOString() }
+        ];
+      }
+    } else {
+      const isNewSession = !conversationId;
+      responseText = await runAgy(prompt, conversationId, resume, model);
+
+      const sData = getSessions();
+      if (isNewSession) {
+        const newestAgy = sData.sessions.find(s => s.engine === "antigravity" || !s.conversationId.startsWith("01a02"));
+        if (newestAgy) {
+          activeConvId = newestAgy.conversationId;
+          activeSession = newestAgy;
+        }
+      } else {
+        activeConvId = conversationId;
+        activeSession = sData.sessions.find(s => s.conversationId === activeConvId)
+          || { conversationId: activeConvId, title: "Session", engine: "antigravity" };
+      }
+      updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
+    }
+
+    const result = {
+      response: responseText,
+      engine,
+      model: model || "default",
+      conversationId: activeConvId,
+      session: activeSession,
+      turns: updatedTurns,
+      timestamp: new Date().toISOString()
+    };
+
+    jobs.finish(job.id, {
+      state: "done",
+      response: responseText,
+      conversationId: activeConvId,
+      session: activeSession,
+      turns: updatedTurns
+    });
+
+    audit("chat.finished", { jobId: job.id, engine, conversationId: activeConvId });
+
+    events.broadcast("task.finished", {
+      ok: true,
+      jobId: job.id,
+      engine,
+      conversationId: activeConvId,
+      title: activeSession && activeSession.title ? activeSession.title : "Sesi",
+      summary: (responseText || "").slice(0, 200),
+      finishedAt: new Date().toISOString()
+    });
+
+    return result;
+  } catch (err) {
+    const message = err.message || "Failed to execute command";
+    jobs.finish(job.id, { state: "failed", error: message });
+    audit("chat.failed", { jobId: job.id, engine, error: message });
+
+    events.broadcast("task.finished", {
+      ok: false,
+      jobId: job.id,
+      engine,
+      conversationId,
+      error: message,
+      finishedAt: new Date().toISOString()
+    });
+    throw err;
+  }
 }
 
 // -------------------------------------------------------------
@@ -688,7 +836,8 @@ const server = http.createServer((req, res) => {
       hostname: os.hostname(),
       engines: ["antigravity", "codex"],
       features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload",
-                 "usage_stats", "sse", "files", "git", "search", "sandbox_modes"],
+                 "usage_stats", "sse", "files", "git", "search", "sandbox_modes",
+                 "jobs", "file_write", "projects", "audit", "session_export", "uploads_cleanup"],
       sandboxMode: settings.load().sandboxMode
     });
   }
@@ -744,6 +893,100 @@ const server = http.createServer((req, res) => {
     return send(res, result.error ? 400 : 200, result);
   }
 
+  // POST /api/files/write
+  if (req.method === "POST" && pathname === "/api/files/write") {
+    let raw = "";
+    req.on("data", chunk => {
+      raw += chunk;
+      if (raw.length > 4 * 1024 * 1024) req.destroy();
+    });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const result = files.write(WORKDIR, payload.path, payload.content);
+        audit("file.write", { path: payload.path, ok: Boolean(result.ok), error: result.error });
+        if (result.ok) events.broadcast("file.changed", { path: payload.path });
+        send(res, result.ok ? 200 : 400, result);
+      } catch (err) {
+        send(res, 400, { error: err.message });
+      }
+    });
+    return;
+  }
+
+  // GET /api/session/export?id=...  -> Markdown transcript
+  if (req.method === "GET" && pathname === "/api/session/export") {
+    const convId = parsedUrl.query.id;
+    if (!convId) return send(res, 400, { error: "Missing session id parameter" });
+    const sData = getSessions();
+    const session = (sData.sessions || []).find(x => x.conversationId === convId)
+      || { conversationId: convId, title: "Sesi", engine: "unknown" };
+    return send(res, 200, {
+      ok: true,
+      conversationId: convId,
+      title: session.title,
+      filename: exportFilename(session),
+      markdown: transcriptToMarkdown(session, getTranscript(convId, 2000))
+    });
+  }
+
+  // GET /api/projects  |  POST /api/projects
+  if (pathname === "/api/projects") {
+    if (req.method === "GET") {
+      const saved = settings.load().projects || [];
+      return send(res, 200, {
+        ok: true,
+        workdir: WORKDIR,
+        projects: saved.map(p => Object.assign({}, p, {
+          exists: Boolean(files.safeResolve(WORKDIR, p.path)) && fs.existsSync(files.safeResolve(WORKDIR, p.path)),
+          isRepo: Boolean(files.safeResolve(WORKDIR, p.path)) && git.isRepo(files.safeResolve(WORKDIR, p.path))
+        }))
+      });
+    }
+    if (req.method === "POST") {
+      let raw = "";
+      req.on("data", chunk => { raw += chunk; });
+      req.on("end", () => {
+        try {
+          const payload = JSON.parse(raw || "{}");
+          const saved = settings.save({ projects: payload.projects });
+          audit("projects.updated", { count: saved.projects.length });
+          send(res, 200, { ok: true, projects: saved.projects });
+        } catch (err) {
+          send(res, 400, { error: err.message });
+        }
+      });
+      return;
+    }
+  }
+
+  // POST /api/uploads/cleanup
+  if (req.method === "POST" && pathname === "/api/uploads/cleanup") {
+    let raw = "";
+    req.on("data", chunk => { raw += chunk; });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const days = payload.olderThanDays !== undefined
+          ? settings.clampNumber(payload.olderThanDays, 0, 365, settings.load().uploadRetentionDays)
+          : settings.load().uploadRetentionDays;
+        const result = files.pruneOlderThan(UPLOADS_DIR, days);
+        audit("uploads.cleanup", { days, removed: result.removed.length, freedBytes: result.freedBytes });
+        send(res, 200, Object.assign({ olderThanDays: days }, result));
+      } catch (err) {
+        send(res, 400, { error: err.message });
+      }
+    });
+    return;
+  }
+
+  // GET /api/uploads
+  if (req.method === "GET" && pathname === "/api/uploads") {
+    const listing = files.list(WORKDIR, path.relative(WORKDIR, UPLOADS_DIR) || "uploads");
+    const total = (listing.entries || []).reduce((sum, e) => sum + (e.size || 0), 0);
+    return send(res, 200, Object.assign({ totalBytes: total, retentionDays: settings.load().uploadRetentionDays }, listing));
+  }
+
   // GET /api/git/status  |  /api/git/diff
   if (req.method === "GET" && pathname === "/api/git/status") {
     const repo = parsedUrl.query.path ? files.safeResolve(WORKDIR, parsedUrl.query.path) : WORKDIR;
@@ -769,6 +1012,11 @@ const server = http.createServer((req, res) => {
         const result = pathname === "/api/git/commit"
           ? git.commit(repo, payload.message, payload.addAll !== false)
           : git.push(repo);
+        audit(pathname === "/api/git/commit" ? "git.commit" : "git.push", {
+          path: payload.path || ".",
+          ok: result.ok,
+          message: payload.message ? String(payload.message).slice(0, 120) : undefined
+        });
         events.broadcast("git.changed", { path: payload.path || "." });
         send(res, result.ok ? 200 : 400, result);
       } catch (err) {
@@ -919,6 +1167,8 @@ const server = http.createServer((req, res) => {
   }
 
   // POST /api/chat
+  // Pass async:true to get a jobId immediately; otherwise the request waits
+  // for the run to finish, which is what older app builds expect.
   if (req.method === "POST" && pathname === "/api/chat") {
     let raw = "";
     req.on("data", chunk => {
@@ -927,110 +1177,87 @@ const server = http.createServer((req, res) => {
     });
 
     req.on("end", async () => {
+      let payload;
       try {
-        const payload = JSON.parse(raw);
-        let prompt = payload.prompt;
-        const engine = (payload.engine || payload.cli || "antigravity").toLowerCase().trim();
-        const model = typeof payload.model === "string" ? payload.model.trim() : "";
-        let conversationId = payload.conversationId || payload.session_id || null;
-        const resume = payload.resume === true && Boolean(conversationId);
-
-        if (typeof prompt !== "string" || !prompt.trim()) {
-          return send(res, 400, { error: "prompt is required" });
-        }
-
-        if (Array.isArray(payload.attachedFiles) && payload.attachedFiles.length > 0) {
-          const fileHeaders = payload.attachedFiles.map(f => `[Attached File: ${f}]`).join("\n");
-          prompt = fileHeaders + "\n" + prompt;
-        } else if (payload.attachedFile) {
-          prompt = `[Attached File: ${payload.attachedFile}]\n` + prompt;
-        }
-
-        let responseText;
-        let activeConvId = conversationId;
-        let activeSession = null;
-        let updatedTurns = [];
-
-        events.broadcast("task.started", {
-          engine,
-          conversationId,
-          prompt: prompt.trim().slice(0, 200),
-          startedAt: new Date().toISOString()
-        });
-
-        if (engine === "codex") {
-          const result = await runCodex(prompt.trim(), conversationId, model);
-          responseText = result.response;
-          activeConvId = result.sessionId || conversationId;
-
-          const sData = getSessions();
-          activeSession = sData.sessions.find(s => s.conversationId === activeConvId) || {
-            conversationId: activeConvId,
-            title: prompt.trim().slice(0, 40),
-            workspace: WORKDIR,
-            engine: "codex"
-          };
-          updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
-          if (updatedTurns.length === 0) {
-            updatedTurns = [
-              { role: "user", content: prompt.trim(), time: new Date().toISOString() },
-              { role: "assistant", content: responseText, time: new Date().toISOString() }
-            ];
-          }
-        } else {
-          // Antigravity execution
-          const isNewSession = !conversationId;
-          responseText = await runAgy(prompt.trim(), conversationId, resume, model);
-
-          const sData = getSessions();
-          if (isNewSession) {
-            const newestAgy = sData.sessions.find(s => s.engine === "antigravity" || !s.conversationId.startsWith("01a02"));
-            if (newestAgy) {
-              activeConvId = newestAgy.conversationId;
-              activeSession = newestAgy;
-            }
-          } else {
-            activeConvId = conversationId;
-            activeSession = sData.sessions.find(s => s.conversationId === activeConvId) || { conversationId: activeConvId, title: "Session", engine: "antigravity" };
-          }
-          updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
-        }
-
-        events.broadcast("task.finished", {
-          ok: true,
-          engine,
-          conversationId: activeConvId,
-          title: activeSession && activeSession.title ? activeSession.title : "Sesi",
-          summary: (responseText || "").slice(0, 200),
-          finishedAt: new Date().toISOString()
-        });
-
-        send(res, 200, {
-          ok: true,
-          response: responseText,
-          engine,
-          model: model || "default",
-          conversationId: activeConvId,
-          session: activeSession,
-          turns: updatedTurns,
-          timestamp: new Date().toISOString()
-        });
+        payload = JSON.parse(raw);
       } catch (err) {
-        events.broadcast("task.finished", {
-          ok: false,
-          engine,
-          conversationId,
-          error: err.message || "Failed to execute command",
-          finishedAt: new Date().toISOString()
+        return send(res, 400, { error: "Invalid JSON body" });
+      }
+
+      if (typeof payload.prompt !== "string" || !payload.prompt.trim()) {
+        return send(res, 400, { error: "prompt is required" });
+      }
+
+      // A leaked token should not be able to spawn CLI runs in a loop.
+      const limit = auditLog.rateLimit("chat", 20, 60 * 1000);
+      if (!limit.allowed) {
+        audit("chat.rate_limited", { retryAfterMs: limit.retryAfterMs });
+        return send(res, 429, {
+          error: "Terlalu banyak permintaan. Coba lagi sebentar.",
+          retryAfterMs: limit.retryAfterMs
         });
-        send(res, 500, { error: err.message || "Failed to execute command" });
+      }
+
+      const wantsAsync = payload.async === true;
+      const job = jobs.create({
+        engine: (payload.engine || payload.cli || "antigravity").toLowerCase().trim(),
+        model: typeof payload.model === "string" ? payload.model.trim() : "",
+        prompt: payload.prompt.trim(),
+        conversationId: payload.conversationId || payload.session_id || null
+      });
+
+      audit("chat.started", {
+        jobId: job.id,
+        engine: job.engine,
+        model: job.model,
+        conversationId: job.conversationId,
+        promptPreview: job.prompt.slice(0, 120)
+      });
+
+      if (wantsAsync) {
+        send(res, 202, { ok: true, accepted: true, jobId: job.id, state: job.state });
+      }
+
+      try {
+        const result = await runChatJob(job, payload);
+        if (!wantsAsync) {
+          send(res, 200, Object.assign({ ok: true, jobId: job.id }, result));
+        }
+      } catch (err) {
+        if (!wantsAsync) {
+          send(res, 500, { error: err.message || "Failed to execute command", jobId: job.id });
+        }
       }
     });
     return;
   }
 
+  // GET /api/audit
+  if (req.method === "GET" && pathname === "/api/audit") {
+    return send(res, 200, { ok: true, entries: auditLog.read(Number(parsedUrl.query.limit) || 200) });
+  }
+
+  // GET /api/jobs  |  GET /api/jobs/:id
+  if (req.method === "GET" && pathname === "/api/jobs") {
+    return send(res, 200, { ok: true, running: jobs.running(), recent: jobs.list(20) });
+  }
+
+  if (req.method === "GET" && pathname.startsWith("/api/jobs/")) {
+    const job = jobs.get(pathname.slice("/api/jobs/".length));
+    if (!job) return send(res, 404, { error: "Job not found" });
+    return send(res, 200, { ok: true, job });
+  }
+
   send(res, 404, { error: "Not found" });
 });
+
+// Uploads used to accumulate forever; sweep once at boot.
+try {
+  const swept = files.pruneOlderThan(UPLOADS_DIR, settings.load().uploadRetentionDays);
+  if (swept.removed && swept.removed.length) {
+    console.log(`[Uploads] Removed ${swept.removed.length} file(s), freed ${Math.round(swept.freedBytes / 1024)} KB`);
+  }
+} catch (e) {}
 
 server.listen(PORT, HOST, () => {
   console.log(`[Antigravity & Codex Remote Bridge] Listening on http://${HOST}:${PORT}`);
