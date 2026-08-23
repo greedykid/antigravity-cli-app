@@ -5161,17 +5161,25 @@ public class MainActivity extends Activity {
     }
 
     private void showModelPicker() {
-        final boolean isCodex = "codex".equalsIgnoreCase(currentEngine);
-        final String[] models = isCodex
-                ? new String[]{"gpt-5.6-luna", "gpt-5.6-sol", "default"}
-                : new String[]{"auto", "gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.1-pro-high", "claude-sonnet-4-6", "gpt-oss-120b-medium"};
+        if (isCodexEngine()) {
+            showCodexModelPicker();
+            return;
+        }
+        showStaticModelPicker();
+    }
+
+    /** Antigravity's models are fixed by the CLI, so the list stays static. */
+    private void showStaticModelPicker() {
+        final String[] models = {"auto", "gemini-3.7-flash-high", "gemini-3.7-flash-medium",
+                "gemini-3.1-pro-high", "claude-sonnet-4-6", "gpt-oss-120b-medium"};
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Pilih Model", true);
-        TextView subtitle = cText(isCodex ? "Model Codex yang dipakai untuk prompt baru" : "Model Antigravity yang dipakai untuk prompt baru", 12.5f, Theme.TEXT_MUTED, false, false);
-        root.addView(subtitle);
+        root.addView(cText("Model Antigravity yang dipakai untuk prompt baru",
+                12.5f, Theme.TEXT_MUTED, false, false));
+
         for (String model : models) {
-            TextView option = cText((model.equalsIgnoreCase(currentModel) ? "✓  " : "    ") + displayModel(model), 14f,
-                    model.equalsIgnoreCase(currentModel) ? Theme.ACCENT : Theme.TEXT_MAIN, true, false);
+            TextView option = cText((model.equalsIgnoreCase(currentModel) ? "✓  " : "    ") + displayModel(model),
+                    14f, model.equalsIgnoreCase(currentModel) ? Theme.ACCENT : Theme.TEXT_MAIN, true, false);
             option.setGravity(Gravity.CENTER_VERTICAL);
             option.setPadding(dp(14), 0, dp(14), 0);
             option.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
@@ -5189,6 +5197,165 @@ public class MainActivity extends Activity {
         }
         dialog.setContentView(root);
         dialog.show();
+    }
+
+    /**
+     * Codex's model list belongs to whichever provider it is pointed at, so it
+     * is fetched from that provider rather than hardcoded. Choosing one writes
+     * to config.toml — the CLI reads the model from there, so setting only the
+     * app's preference would have changed nothing.
+     */
+    private void showCodexModelPicker() {
+        final Dialog dialog = createBaseBottomSheet(true);
+        final LinearLayout root = createBottomSheetRoot(dialog, "Pilih Model Codex", true);
+
+        final TextView subtitle = cText("Memuat daftar model dari provider...",
+                12.5f, Theme.TEXT_MUTED, false, false);
+        root.addView(subtitle);
+
+        final EditText search = new EditText(this);
+        search.setHint("Cari model, atau ketik nama model manual");
+        search.setTextSize(14f);
+        search.setSingleLine(true);
+        search.setTextColor(Theme.TEXT_MAIN);
+        search.setHintTextColor(Theme.TEXT_LIGHT);
+        search.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 14));
+        search.setPadding(dp(14), dp(11), dp(14), dp(11));
+        LinearLayout.LayoutParams lpSearch = new LinearLayout.LayoutParams(-1, -2);
+        lpSearch.setMargins(0, dp(12), 0, dp(4));
+        root.addView(search, lpSearch);
+
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(list);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, dp(340)));
+
+        // Always available: a provider may host models its catalogue omits.
+        TextView useTyped = cText("Pakai yang diketik", 14f, Theme.ON_ACCENT, true, false);
+        useTyped.setGravity(Gravity.CENTER);
+        useTyped.setPadding(dp(16), dp(13), dp(16), dp(13));
+        useTyped.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
+        useTyped.setOnClickListener(v -> {
+            String typed = search.getText().toString().trim();
+            if (typed.isEmpty()) {
+                Toast.makeText(this, "Ketik nama model dulu", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            applyCodexModel(typed, dialog);
+        });
+        LinearLayout.LayoutParams lpUse = new LinearLayout.LayoutParams(-1, -2);
+        lpUse.setMargins(0, dp(10), 0, 0);
+        root.addView(useTyped, lpUse);
+
+        final ArrayList<String> all = new ArrayList<>();
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {
+                renderCodexModelList(list, all, s.toString().trim(), dialog);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        list.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/codex/models", 25000);
+                final boolean ok = json.optBoolean("ok", false);
+                final String provider = json.optString("provider", "");
+                final String error = json.optString("error", "");
+                JSONArray arr = json.optJSONArray("models");
+                final ArrayList<String> fetched = new ArrayList<>();
+                if (arr != null) {
+                    for (int i = 0; i < arr.length(); i++) fetched.add(arr.optString(i));
+                }
+                mainHandler.post(() -> {
+                    all.clear();
+                    all.addAll(fetched);
+                    if (ok) {
+                        subtitle.setText(fetched.size() + " model dari " + provider);
+                    } else {
+                        // A provider without a catalogue is normal; typing still works.
+                        subtitle.setText("Daftar model tidak tersedia: " + error
+                                + " — ketik nama model manual.");
+                        subtitle.setTextColor(Theme.AMBER);
+                    }
+                    renderCodexModelList(list, all, search.getText().toString().trim(), dialog);
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    subtitle.setText("Gagal memuat daftar model — ketik nama model manual.");
+                    subtitle.setTextColor(Theme.AMBER);
+                    list.removeAllViews();
+                });
+            }
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void renderCodexModelList(final LinearLayout list, final ArrayList<String> all,
+                                      final String filter, final Dialog dialog) {
+        list.removeAllViews();
+        if (all.isEmpty()) return;
+
+        final String needle = filter.toLowerCase(Locale.ROOT);
+        int shown = 0;
+        for (final String model : all) {
+            if (!needle.isEmpty() && !model.toLowerCase(Locale.ROOT).contains(needle)) continue;
+            // 400+ entries would take the sheet to its knees; the search narrows it.
+            if (shown >= 60) break;
+            shown++;
+
+            boolean active = model.equalsIgnoreCase(currentModel);
+            TextView option = cText((active ? "✓  " : "     ") + model, 13.5f,
+                    active ? Theme.ACCENT : Theme.TEXT_MAIN, active, false);
+            option.setGravity(Gravity.CENTER_VERTICAL);
+            option.setSingleLine(true);
+            option.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            option.setPadding(dp(14), 0, dp(14), 0);
+            option.setBackground(cBox(Theme.SURFACE_MUTED, active ? Theme.ACCENT : Theme.BORDER, 1, 12));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(44));
+            lp.setMargins(0, dp(6), 0, 0);
+            list.addView(option, lp);
+            option.setOnClickListener(v -> applyCodexModel(model, dialog));
+        }
+
+        if (shown == 0) {
+            list.addView(cText("Tidak ada yang cocok. Ketuk \"Pakai yang diketik\" untuk memakainya apa adanya.",
+                    13f, Theme.TEXT_MUTED, false, false));
+        } else if (!needle.isEmpty() && shown >= 60) {
+            list.addView(cText("Menampilkan 60 teratas — persempit pencarian.",
+                    11.5f, Theme.TEXT_LIGHT, false, false));
+        }
+    }
+
+    private void applyCodexModel(final String model, final Dialog dialog) {
+        executor.execute(() -> {
+            try {
+                // config.toml is what Codex actually reads.
+                JSONObject result = bridge.post("/api/codex/active",
+                        new JSONObject().put("model", model), 30000);
+                mainHandler.post(() -> {
+                    if (result.optBoolean("ok", false)) {
+                        currentModel = model;
+                        prefs.edit().putString(modelPrefKey("codex"), model).apply();
+                        updateRepoTag();
+                        refreshSettingsValues();
+                        dialog.dismiss();
+                        startNewSession();
+                        Toast.makeText(MainActivity.this, "Model: " + model, Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(MainActivity.this,
+                                describeApiError(result, "Gagal menyimpan model"), Toast.LENGTH_LONG).show();
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                        "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
     }
 
     // ============================================================

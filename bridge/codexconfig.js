@@ -166,6 +166,19 @@ function read() {
   };
 }
 
+/**
+ * The raw credentials for one provider. Server-side only — the HTTP layer
+ * never returns this; it exists so the model list can be fetched.
+ */
+function providerSecret(id) {
+  const p = parse(readRaw()).providers[id];
+  if (!p) return null;
+  return {
+    baseUrl: p.base_url || "",
+    token: p.experimental_bearer_token || (p.env_key ? process.env[p.env_key] : "") || ""
+  };
+}
+
 function backup(raw) {
   try {
     fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
@@ -318,7 +331,7 @@ function setActive(input) {
 }
 
 module.exports = {
-  CONFIG_FILE, ALL_WIRE_APIS, supportedWireApis, validateText,
+  CONFIG_FILE, providerSecret, ALL_WIRE_APIS, supportedWireApis, validateText,
   read, parse, setActive, upsertProvider, removeProvider,
   setTopLevelKey, providerBlock, maskSecret, validateId, validateUrl
 };

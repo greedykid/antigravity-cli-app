@@ -15,6 +15,7 @@ const auditLog = require("./audit");
 const searchIndex = require("./search");
 const quota = require("./quota");
 const codexConfig = require("./codexconfig");
+const providerModels = require("./models");
 
 const PORT = config.port();
 const HOST = config.bindHost();
@@ -1339,6 +1340,20 @@ const server = http.createServer((req, res) => {
       filename: exportFilename(session),
       markdown: transcriptToMarkdown(session, getTranscript(convId, 2000))
     });
+  }
+
+  // GET /api/codex/models — the active provider's own catalogue
+  if (req.method === "GET" && pathname === "/api/codex/models") {
+    const current = codexConfig.read();
+    const id = parsedUrl.query.provider || current.activeProvider;
+    const secret = codexConfig.providerSecret(id);
+    if (!secret) {
+      return send(res, 200, { ok: false, error: "Provider tidak ditemukan di config.toml", models: [] });
+    }
+    providerModels.list(secret, parsedUrl.query.refresh === "1").then(result => {
+      send(res, 200, Object.assign({ provider: id, activeModel: current.activeModel }, result));
+    }).catch(err => send(res, 200, { ok: false, error: err.message, models: [] }));
+    return;
   }
 
   // GET /api/codex/config
