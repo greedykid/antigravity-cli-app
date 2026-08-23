@@ -81,13 +81,9 @@ jobs:
           if-no-files-found: error
 
       - name: Create Direct IPA Release
-        uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
-        with:
-          tag_name: latest
-          files: ios/build/CodexRemote.ipa
-          overwrite: true
-          make_latest: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload latest ios/build/CodexRemote.ipa --clobber
 
