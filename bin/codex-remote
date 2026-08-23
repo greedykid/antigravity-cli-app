@@ -41,11 +41,11 @@ TOKEN="${REMOTE_TOKEN:-$DEFAULT_TOKEN}"
 ENGINE="${DEFAULT_ENGINE:-antigravity}"
 
 save_env() {
-    cat <<EOF > "$ENV_FILE"
+    cat <<EOENV > "$ENV_FILE"
 BRIDGE_PORT="$PORT"
 REMOTE_TOKEN="$TOKEN"
 DEFAULT_ENGINE="$ENGINE"
-EOF
+EOENV
 }
 
 is_bridge_running() {
@@ -134,7 +134,7 @@ start_tunnel() {
 
     local attempts=0
     local url=""
-    while [ $attempts -lt 20 ]; do
+    while [ $attempts -lt 25 ]; do
         sleep 0.5
         url=$(get_tunnel_url)
         if [ -n "$url" ]; then
@@ -207,15 +207,23 @@ show_qr_pair() {
     start_bridge
     start_tunnel
 
-    local tunnel_url
-    tunnel_url=$(get_tunnel_url)
-    
+    local tunnel_url=""
+    local attempts=0
+    while [ $attempts -lt 20 ]; do
+        tunnel_url=$(get_tunnel_url)
+        if [ -n "$tunnel_url" ]; then
+            break
+        fi
+        sleep 0.5
+        attempts=$((attempts + 1))
+    done
+
     local endpoint_url
     if [ -n "$tunnel_url" ]; then
         endpoint_url="$tunnel_url/api/chat"
     else
         local local_ip
-        local_ip=$(hostname -I 2>/dev/null | awk "{print $1}" || echo "127.0.0.1")
+        local_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
         endpoint_url="http://$local_ip:$PORT/api/chat"
     fi
 

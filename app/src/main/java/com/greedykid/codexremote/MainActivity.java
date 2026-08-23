@@ -1737,11 +1737,8 @@ public class MainActivity extends Activity {
         btnSave.setOnClickListener(v -> {
             String u = urlInput.getText().toString().trim();
             String t = tokenInput.getText().toString().trim();
-            prefs.edit().putString("url", u).putString("token", t).apply();
+            saveConnectionCredentials(u, t, currentEngine);
             dialog.dismiss();
-            checkHealth();
-            fetchHubSessions();
-            refreshSettingsValues();
         });
         form.addView(btnSave, new LinearLayout.LayoutParams(-1, dp(46)));
 
@@ -2855,16 +2852,46 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String normalizeEndpointUrl(String rawUrl) {
+        if (rawUrl == null) return "";
+        String u = rawUrl.trim();
+        if (u.isEmpty()) return "";
+
+        if (!u.startsWith("http://") && !u.startsWith("https://")) {
+            if (u.contains("trycloudflare.com") || u.contains("cloudflare") || u.contains("ngrok") || u.contains(".app") || u.contains(".dev")) {
+                u = "https://" + u;
+            } else {
+                u = "http://" + u;
+            }
+        }
+
+        while (u.endsWith("/")) {
+            u = u.substring(0, u.length() - 1);
+        }
+
+        if (!u.endsWith("/api/chat")) {
+            if (u.endsWith("/api")) {
+                u = u + "/chat";
+            } else {
+                u = u + "/api/chat";
+            }
+        }
+
+        return u;
+    }
+
     private void saveConnectionCredentials(String url, String token, String engine) {
+        String cleanUrl = normalizeEndpointUrl(url);
         prefs.edit()
-                .putString("url", url)
-                .putString("token", token)
-                .putString("engine", engine)
+                .putString("url", cleanUrl)
+                .putString("token", token != null ? token.trim() : "")
+                .putString("engine", engine != null ? engine.trim() : "antigravity")
                 .apply();
 
-        currentEngine = engine;
+        currentEngine = engine != null ? engine.trim() : "antigravity";
         updateRepoTag();
         refreshSettingsValues();
+        startNewSession();
         Toast.makeText(this, "Berhasil terhubung ke Server!", Toast.LENGTH_LONG).show();
         checkHealth();
         fetchHubSessions();
@@ -4134,28 +4161,39 @@ public class MainActivity extends Activity {
             showConnectionBottomSheet();
             return;
         }
+        final String normalizedUrl = normalizeEndpointUrl(endpoint);
+        if (!normalizedUrl.equals(endpoint)) {
+            prefs.edit().putString("url", normalizedUrl).apply();
+        }
         executor.execute(() -> {
             try {
-                String healthUrl = endpoint.replace("/api/chat", "/health");
+                String healthUrl = normalizedUrl.replace("/api/chat", "/health");
                 HttpURLConnection c = (HttpURLConnection) new URL(healthUrl).openConnection();
                 c.setRequestMethod("GET");
-                c.setConnectTimeout(5000);
+                c.setConnectTimeout(6000);
+                c.setReadTimeout(6000);
+                String token = prefs.getString("token", "");
+                if (!token.isEmpty()) {
+                    c.setRequestProperty("Authorization", "Bearer " + token);
+                }
                 int code = c.getResponseCode();
                 mainHandler.post(() -> {
                     if (code == 200) {
                         if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_GREEN, 0, 0, 4));
                         if (sidebarStatusText != null) sidebarStatusText.setText("  Gateway Online");
-                        Toast.makeText(this, "Gateway online & connected!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Gateway Online! Terhubung sukses.", Toast.LENGTH_SHORT).show();
                     } else {
                         if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_RED, 0, 0, 4));
                         if (sidebarStatusText != null) sidebarStatusText.setText("  HTTP " + code);
+                        Toast.makeText(this, "Gateway HTTP " + code, Toast.LENGTH_LONG).show();
                     }
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
                     if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_RED, 0, 0, 4));
                     if (sidebarStatusText != null) sidebarStatusText.setText("  Gateway Offline");
-                    Toast.makeText(this, "Gateway offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    Toast.makeText(this, "Gagal koneksi: " + msg, Toast.LENGTH_LONG).show();
                 });
             }
         });
