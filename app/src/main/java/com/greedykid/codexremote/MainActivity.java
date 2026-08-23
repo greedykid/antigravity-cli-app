@@ -18,6 +18,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
@@ -1049,7 +1050,38 @@ public class MainActivity extends Activity {
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, fullHeight);
             dialog.getWindow().setGravity(Gravity.BOTTOM);
         }
+
+        // The window has a fixed height anchored to the bottom, so ADJUST_RESIZE
+        // has nothing to shrink and the keyboard simply covered the input row and
+        // the Run button. Padding the sheet by the keyboard height lifts them
+        // above it; the output console takes the loss because it holds the weight.
+        keepAboveKeyboard(root, dp(14));
+
         dialog.show();
+    }
+
+    /**
+     * Pads a view's bottom by the on-screen keyboard height while it is open.
+     *
+     * Measured from the visible display frame rather than WindowInsets.ime(),
+     * which is only reliable from API 30 and this app supports 26.
+     */
+    private void keepAboveKeyboard(final View target, final int basePaddingBottom) {
+        final int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        target.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            Rect visible = new Rect();
+            target.getRootView().getWindowVisibleDisplayFrame(visible);
+            int keyboardHeight = screenHeight - visible.bottom;
+            // Gesture bars and notches produce small values; only a real keyboard
+            // takes a meaningful slice of the screen.
+            if (keyboardHeight < screenHeight * 0.15f) keyboardHeight = 0;
+
+            int desired = basePaddingBottom + keyboardHeight;
+            if (target.getPaddingBottom() != desired) {
+                target.setPadding(target.getPaddingLeft(), target.getPaddingTop(),
+                        target.getPaddingRight(), desired);
+            }
+        });
     }
 
 
@@ -1152,6 +1184,7 @@ public class MainActivity extends Activity {
     private volatile boolean isLiveTaskRunning = false;
     private String pendingOptimisticUserPrompt = null;
     private String pendingOptimisticUserTime = null;
+    private String lastRenderedSignature = "";
     private String lastLoadedSessionId = null;
     private int lastLoadedTurnCount = -1;
     private boolean lastRenderedWasRunning = false;
@@ -2273,6 +2306,7 @@ public class MainActivity extends Activity {
     }
 
     private void openSpecificSession(String convId, String title) {
+        lastRenderedSignature = "";
         sessionEpoch++;
         activeJobId = null;
         activeConversationId = convId;
@@ -2375,6 +2409,7 @@ public class MainActivity extends Activity {
     }
 
     private void startNewSession() {
+        lastRenderedSignature = "";
         sessionEpoch++;
         activeJobId = null;
         activeConversationId = null;
@@ -3447,6 +3482,8 @@ public class MainActivity extends Activity {
         dialog.setContentView(modalRoot);
         dialog.setOnDismissListener(d -> {
             activeBottomSheetDialog = null;
+            // Renders were suppressed while this was open; catch up now.
+            if (currentScreen == 1) syncLiveExecution();
             activeBottomSheetMasterList = null;
             activeBottomSheetContainer = null;
             activeBottomSheetMasterView = null;
@@ -5796,6 +5833,30 @@ public class MainActivity extends Activity {
         return pending.contains(candidate) || candidate.contains(pending);
     }
 
+    /**
+     * Cheap fingerprint of what a render would produce. Covers the turn count
+     * and the tail of the transcript, which is the only part that grows during
+     * a run, plus the live state that changes the rendering.
+     */
+    private String transcriptSignature(String convId, JSONArray turns) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(convId).append('|').append(turns.length()).append('|')
+          .append(isLiveTaskRunning).append('|')
+          .append(liveStreamingAssistantText == null ? 0 : liveStreamingAssistantText.length())
+          .append('|').append(pendingOptimisticUserPrompt == null ? 0 : pendingOptimisticUserPrompt.length());
+
+        // Only the last few turns can change without the count changing.
+        for (int i = Math.max(0, turns.length() - 3); i < turns.length(); i++) {
+            JSONObject turn = turns.optJSONObject(i);
+            if (turn == null) continue;
+            String content = turn.optString("content", "");
+            sb.append('|').append(turn.optString("role", ""))
+              .append(':').append(content.length())
+              .append(':').append(content.hashCode());
+        }
+        return sb.toString();
+    }
+
     private void renderActiveSessionTurns(String requestedConvId, JSONObject json, boolean showToast) {
         try {
             hideSessionLoading();
@@ -5822,6 +5883,25 @@ public class MainActivity extends Activity {
                     return;
                 }
 
+                // While a task runs the poll fires every 600ms, and the guard below
+                // is bypassed, so the entire transcript — every markdown block —
+                // was rebuilt on the main thread whether or not it had changed.
+                // That is what made taps feel delayed. A cheap signature skips
+                // the rebuild when the content is identical; the running spinner
+                // animates on its own and needs no repaint.
+                String signature = transcriptSignature(requestedConvId, turns);
+                if (signature.equals(lastRenderedSignature)) {
+                    return;
+                }
+
+                // Rebuilding the chat behind an open bottom sheet is invisible
+                // work that competes with the sheet for the main thread, which
+                // is exactly when taps felt sluggish. The signature is left
+                // untouched so the catch-up render happens on dismiss.
+                if (activeBottomSheetDialog != null && activeBottomSheetDialog.isShowing()) {
+                    return;
+                }
+
                 // A running task must never be repainted from an empty transcript.
                 // The Codex rollout is read while it is still being written, so a
                 // poll can momentarily come back with nothing; rebuilding from
@@ -5834,6 +5914,7 @@ public class MainActivity extends Activity {
                 boolean isNearBottom = isScrollNearBottom();
                 boolean isInitialSessionLoad = requestedConvId != null && !requestedConvId.equals(lastLoadedSessionId);
 
+                lastRenderedSignature = signature;
                 lastLoadedSessionId = requestedConvId;
                 lastLoadedTurnCount = newTurnCount;
                 lastRenderedWasRunning = isLiveTaskRunning;
@@ -6113,7 +6194,12 @@ public class MainActivity extends Activity {
         pillText.setTextColor(Theme.TEXT_MUTED);
         pillText.setSingleLine(true);
         pillText.setEllipsize(TextUtils.TruncateAt.END);
-        actionHeader.addView(pillText, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        // Wrap to the text instead of taking a weight: with weight 1 the label
+        // stretched across the row and shoved the spinner and chevron against
+        // the right edge of the screen. A max width still keeps long labels
+        // from pushing the chevron off-screen.
+        pillText.setMaxWidth(getResources().getDisplayMetrics().widthPixels - dp(130));
+        actionHeader.addView(pillText, new LinearLayout.LayoutParams(-2, -2));
 
         // Dynamic diff badge (+added in green, -deleted in red)
         if (totalAdded > 0 || totalDeleted > 0) {
@@ -6144,6 +6230,11 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpChev = new LinearLayout.LayoutParams(dp(14), dp(14));
         lpChev.setMargins(dp(4), 0, 0, 0);
         actionHeader.addView(chevron, lpChev);
+
+        // Absorbs the leftover width after the chevron so the whole group stays
+        // grouped next to the label.
+        View headerSpacer = new View(this);
+        actionHeader.addView(headerSpacer, new LinearLayout.LayoutParams(0, dp(1), 1.0f));
 
         pillRow.addView(actionHeader);
 
