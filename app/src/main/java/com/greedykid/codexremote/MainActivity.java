@@ -2474,12 +2474,12 @@ public class MainActivity extends Activity {
         card.addView(dateView);
 
         if (archivedSessionIds.contains(convId)) {
-            TextView badge = cText("Arsip", 10.5f, Theme.AMBER, true, false);
-            badge.setBackground(cBox(Theme.AMBER_BG, 0, 0, 8));
-            badge.setPadding(dp(8), dp(2), dp(8), dp(2));
-            LinearLayout.LayoutParams lpBadge = new LinearLayout.LayoutParams(-2, -2);
-            lpBadge.setMargins(dp(6), 0, 0, 0);
-            card.addView(badge, lpBadge);
+            TextView archiveBadge = cText("Arsip", 10.5f, Theme.AMBER, true, false);
+            archiveBadge.setBackground(cBox(Theme.AMBER_BG, 0, 0, 8));
+            archiveBadge.setPadding(dp(8), dp(2), dp(8), dp(2));
+            LinearLayout.LayoutParams lpArchiveBadge = new LinearLayout.LayoutParams(-2, -2);
+            lpArchiveBadge.setMargins(dp(6), 0, 0, 0);
+            card.addView(archiveBadge, lpArchiveBadge);
             card.setAlpha(0.6f);
         }
 
