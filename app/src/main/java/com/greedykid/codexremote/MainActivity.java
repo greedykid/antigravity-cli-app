@@ -1623,7 +1623,7 @@ public class MainActivity extends Activity {
         scroll.addView(body);
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        // 5. Account footer
+        // 5. Creator Account footer
         View footRule = new View(this);
         footRule.setBackgroundColor(Theme.BORDER);
         LinearLayout.LayoutParams lpFr = new LinearLayout.LayoutParams(-1, dp(1));
@@ -1635,21 +1635,29 @@ public class MainActivity extends Activity {
         footer.setGravity(Gravity.CENTER_VERTICAL);
         footer.setPadding(sidePad, dp(8), sidePad - dp(6), dp(8));
 
-        String userEmail = prefs.getString("user_email", "developer@antigravity.ai");
-        footer.addView(buildAvatarBadge(userEmail), new LinearLayout.LayoutParams(dp(40), dp(40)));
+        footer.addView(buildAvatarBadge("greedykid@github.com"), new LinearLayout.LayoutParams(dp(40), dp(40)));
 
-        sidebarUserEmail = cText(shortUserName(userEmail), 15, Theme.TEXT_MAIN, false, false);
+        LinearLayout footTextCol = new LinearLayout(this);
+        footTextCol.setOrientation(LinearLayout.VERTICAL);
+        footTextCol.setGravity(Gravity.CENTER_VERTICAL);
+        footTextCol.setPadding(dp(12), 0, dp(8), 0);
+
+        sidebarUserEmail = cText("greedykid", 14.5f, Theme.TEXT_MAIN, true, false);
         sidebarUserEmail.setSingleLine(true);
         sidebarUserEmail.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams lpEmail = new LinearLayout.LayoutParams(0, -2, 1);
-        lpEmail.setMargins(dp(12), 0, dp(8), 0);
-        footer.addView(sidebarUserEmail, lpEmail);
+        footTextCol.addView(sidebarUserEmail);
+
+        TextView footSub = cText("Creator • @greedykid", 11.5f, Theme.TEXT_MUTED, false, false);
+        footSub.setSingleLine(true);
+        footTextCol.addView(footSub);
+
+        footer.addView(footTextCol, new LinearLayout.LayoutParams(0, -2, 1));
 
         ImageView footGear = cIconButton(R.drawable.ic_settings, 20, 40, Theme.TEXT_MUTED);
         footGear.setOnClickListener(v -> { closeSidebar(); showScreen(2); });
         footer.addView(footGear);
 
-        footer.setOnClickListener(v -> { closeSidebar(); showScreen(2); });
+        footer.setOnClickListener(v -> { closeSidebar(); showCreatorCreditBottomSheet(); });
         sidebar.addView(footer);
 
         updateSidebarActiveState();
