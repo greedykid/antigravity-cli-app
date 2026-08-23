@@ -223,3 +223,44 @@ Struktur kode:
 | `app/.../BridgeClient.java` | Klien HTTP |
 | `app/.../LiveEventService.java` | SSE latar belakang + notifikasi |
 | `app/.../Theme.java` | Palet & pembuat view |
+
+
+---
+
+## 🍏 Versi iOS (.ipa)
+
+Klien iOS native (SwiftUI) ada di `ios/`, berbicara ke bridge server yang sama.
+
+### Mengunduh
+
+Setiap push yang menyentuh `ios/` menjalankan workflow **Build IPA** di runner macOS GitHub (gratis untuk repo publik). Hasilnya:
+
+* **Artifact** `codex-remote-unsigned-ipa` di halaman run Actions, atau
+* **Release** bertag `latest` untuk unduhan langsung.
+
+### ⚠️ IPA ini belum ditandatangani
+
+Tanpa akun Apple Developer, iOS tidak bisa memasang aplikasi begitu saja. Pilihannya:
+
+| Cara | Yang dibutuhkan | Masa berlaku |
+|---|---|---|
+| **AltStore / SideStore** | Apple ID gratis | 7 hari, perlu refresh |
+| **Sideloadly** | Apple ID gratis | 7 hari |
+| **Tanda tangani sendiri** | Akun Developer ($99/th) | 1 tahun |
+
+Untuk build yang langsung bisa dipasang, tambahkan sertifikat dan provisioning profile sebagai secret repo lalu ubah langkah build menjadi `xcodebuild -exportArchive`.
+
+### Yang sudah ada di iOS
+
+Pairing (QR kamera, QR dari galeri, clipboard, manual) · chat dengan job latar + SSE · render markdown · daftar sesi per engine · pergantian engine dengan tema masing-masing · mode eksekusi · penggunaan dan kuota provider.
+
+### Belum diporting
+
+File browser, panel Git, pencarian dan ekspor transkrip, notifikasi latar belakang, multi-server, pemeliharaan. Semua itu ada di versi Android.
+
+### Membangun lokal (butuh macOS)
+
+```bash
+brew install xcodegen
+cd ios && xcodegen generate && open CodexRemote.xcodeproj
+```
