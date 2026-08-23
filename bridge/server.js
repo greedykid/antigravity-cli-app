@@ -94,7 +94,9 @@ function getTranscript(convId, limit = 80) {
         if (s.thinking && s.thinking.trim()) {
           msgs.push({
             role: "thinking",
+            toolTitle: "Thinking",
             title: "Thinking Process",
+            command: "Internal Reasoning",
             content: s.thinking.trim(),
             time: s.created_at,
             index: s.step_index
@@ -109,25 +111,36 @@ function getTranscript(convId, limit = 80) {
             }
             let argsStr = typeof argsObj === "object" ? JSON.stringify(argsObj, null, 2) : String(argsObj || "");
 
+            let toolTitle = "Action";
+            let commandText = "";
             let friendlyTitle = "Aksi: " + toolName;
-            if (toolName === "view_file" && argsObj && argsObj.AbsolutePath) {
-              friendlyTitle = "Dibaca " + path.basename(argsObj.AbsolutePath);
-            } else if (toolName === "run_command" && argsObj && argsObj.CommandLine) {
-              friendlyTitle = "Menjalankan: " + (argsObj.CommandLine.length > 35 ? argsObj.CommandLine.slice(0, 32) + "..." : argsObj.CommandLine);
-            } else if ((toolName === "replace_file_content" || toolName === "write_to_file") && argsObj && argsObj.TargetFile) {
-              friendlyTitle = "Mengedit " + path.basename(argsObj.TargetFile);
+
+            if (toolName === "run_command") {
+              toolTitle = "Bash";
+              commandText = (argsObj && argsObj.CommandLine) || "";
+              friendlyTitle = "Menjalankan: " + (commandText.length > 35 ? commandText.slice(0, 32) + "..." : commandText);
+            } else if (toolName === "replace_file_content" || toolName === "write_to_file") {
+              toolTitle = "Edit file";
+              commandText = (argsObj && argsObj.TargetFile) || "";
+              friendlyTitle = "Mengedit " + path.basename(commandText);
+            } else if (toolName === "view_file") {
+              toolTitle = "Read file";
+              commandText = (argsObj && argsObj.AbsolutePath) || "";
+              friendlyTitle = "Dibaca " + path.basename(commandText);
             } else if (toolName === "grep_search" || toolName === "find_by_name") {
+              toolTitle = "Search files";
+              commandText = (argsObj && (argsObj.Query || argsObj.Pattern)) || "";
               friendlyTitle = "Mencari file di project...";
             } else if (tc.toolSummary) {
               friendlyTitle = tc.toolSummary;
-            } else if (tc.toolAction) {
-              friendlyTitle = tc.toolAction;
             }
 
             msgs.push({
               role: "tool",
               toolName: toolName,
+              toolTitle: toolTitle,
               title: friendlyTitle,
+              command: commandText || argsStr,
               content: argsStr || ("Action: " + toolName),
               time: s.created_at,
               index: s.step_index

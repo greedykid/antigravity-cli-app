@@ -4,7 +4,6 @@ import android.Manifest;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -198,10 +197,14 @@ public class MainActivity extends Activity {
     private int lastLoadedTurnCount = -1;
     private boolean lastRenderedWasRunning = false;
 
-    // Live Bottom Sheet Modal State
+    // Live Execution Bottom Sheet State (Interactive 2-Level View)
     private Dialog activeBottomSheetDialog = null;
-    private LinearLayout activeBottomSheetList = null;
+    private LinearLayout activeBottomSheetMasterList = null;
+    private LinearLayout activeBottomSheetContainer = null;
+    private LinearLayout activeBottomSheetMasterView = null;
+    private LinearLayout activeBottomSheetDetailView = null;
     private TextView activeBottomSheetSubtitle = null;
+    private ArrayList<JSONObject> currentActiveSteps = new ArrayList<>();
 
     private boolean isAutoRefreshActive = false;
     private final Runnable autoRefreshRunnable = new Runnable() {
@@ -362,12 +365,12 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SMOOTH ANIMATED SIDEBAR NAVIGATION
+    // SMOOTH ANIMATED SIDEBAR NAVIGATION (No Pro Badge)
     // ============================================================
     private void buildSidebarContent(LinearLayout sidebar) {
         sidebar.setPadding(dp(22), dp(24), dp(22), dp(20));
 
-        // 1. Account Profile Top Bar
+        // 1. Account Profile Top Bar (Clean, no Pro badge)
         LinearLayout profileCard = new LinearLayout(this);
         profileCard.setOrientation(LinearLayout.HORIZONTAL);
         profileCard.setGravity(Gravity.CENTER_VERTICAL);
@@ -378,14 +381,9 @@ public class MainActivity extends Activity {
         profileCard.addView(avatar);
 
         String userEmail = prefs.getString("user_email", "developer@antigravity.ai");
-        sidebarUserEmail = cText(" " + userEmail, 13f, CLAUDE_TEXT_MAIN, true, false);
+        sidebarUserEmail = cText("  " + userEmail, 13.5f, CLAUDE_TEXT_MAIN, true, false);
         sidebarUserEmail.setSingleLine(true);
         profileCard.addView(sidebarUserEmail, new LinearLayout.LayoutParams(0, -2, 1));
-
-        TextView proBadge = cText("Pro", 11f, Color.BLACK, true, false);
-        proBadge.setBackground(cBox(Color.WHITE, 0, 0, 10));
-        proBadge.setPadding(dp(7), dp(2), dp(7), dp(2));
-        profileCard.addView(proBadge);
 
         profileCard.setOnClickListener(v -> {
             closeSidebar();
@@ -470,7 +468,7 @@ public class MainActivity extends Activity {
         scroll.addView(menuItems);
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        TextView ver = cText("Antigravity Remote v2.9.8", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView ver = cText("Antigravity Remote v2.9.9", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dp(10), 0, 0);
         sidebar.addView(ver);
@@ -658,7 +656,7 @@ public class MainActivity extends Activity {
         lpS.setMargins(0, dp(4), 0, 0);
         deviceCard.addView(hubDeviceStatusText, lpS);
 
-        deviceCard.setOnClickListener(v -> showEditDeviceNameDialog());
+        deviceCard.setOnClickListener(v -> showEditDeviceNameBottomSheet());
 
         LinearLayout.LayoutParams lpDevCard = new LinearLayout.LayoutParams(dp(165), -2);
         lpDevCard.setMargins(0, 0, 0, dp(10));
@@ -699,33 +697,6 @@ public class MainActivity extends Activity {
         lpFab.gravity = Gravity.BOTTOM | Gravity.END;
         lpFab.setMargins(0, 0, dp(18), dp(20));
         root.addView(fabNew, lpFab);
-    }
-
-    private void showEditDeviceNameDialog() {
-        final EditText input = new EditText(this);
-        input.setText(currentServerHostname);
-        input.setTextColor(CLAUDE_TEXT_MAIN);
-        input.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 10));
-        input.setPadding(dp(12), dp(10), dp(12), dp(10));
-
-        FrameLayout container = new FrameLayout(this);
-        container.setPadding(dp(20), dp(10), dp(20), dp(10));
-        container.addView(input);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Nama Perangkat / Server")
-                .setView(container)
-                .setPositiveButton("Simpan", (d, w) -> {
-                    String name = input.getText().toString().trim();
-                    if (!name.isEmpty()) {
-                        currentServerHostname = name;
-                        prefs.edit().putString("device_name", name).apply();
-                        if (hubDeviceHostText != null) hubDeviceHostText.setText(name);
-                        if (sidebarDeviceHost != null) sidebarDeviceHost.setText("Host: " + name);
-                    }
-                })
-                .setNegativeButton("Batal", null)
-                .show();
     }
 
     private void fetchHubSessions() {
@@ -963,7 +934,7 @@ public class MainActivity extends Activity {
     }
 
     // ============================================================
-    // SCREEN 2: PENGATURAN (Settings UI matching screenshot 2)
+    // SCREEN 2: PENGATURAN (Settings UI - Clean, No Penagihan, No Pro)
     // ============================================================
     private void buildSettingsScreen(FrameLayout root) {
         LinearLayout content = new LinearLayout(this);
@@ -985,7 +956,7 @@ public class MainActivity extends Activity {
         topBar.addView(headerTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
         ImageView infoBtn = cIconButton(R.drawable.ic_info, 22, 40, CLAUDE_TEXT_MUTED);
-        infoBtn.setOnClickListener(v -> showAboutAppDialog());
+        infoBtn.setOnClickListener(v -> showAboutAppBottomSheet());
         topBar.addView(infoBtn);
         content.addView(topBar);
 
@@ -996,7 +967,7 @@ public class MainActivity extends Activity {
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
 
-        // Group 1: Profile / Email Card (Top)
+        // Group 1: Profile / Email Card (Top, clean without Pro badge)
         LinearLayout topProfileCard = new LinearLayout(this);
         topProfileCard.setOrientation(LinearLayout.HORIZONTAL);
         topProfileCard.setGravity(Gravity.CENTER_VERTICAL);
@@ -1008,29 +979,26 @@ public class MainActivity extends Activity {
         settingsUserEmailText.setSingleLine(true);
         topProfileCard.addView(settingsUserEmailText, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView proBadge = cText("Pro", 12f, Color.BLACK, true, false);
-        proBadge.setBackground(cBox(Color.WHITE, 0, 0, 12));
-        proBadge.setPadding(dp(10), dp(3), dp(10), dp(3));
-        topProfileCard.addView(proBadge);
+        ImageView editIcon = cIcon(R.drawable.ic_person, 18, CLAUDE_TEXT_MUTED);
+        topProfileCard.addView(editIcon);
 
-        topProfileCard.setOnClickListener(v -> showEditEmailDialog());
+        topProfileCard.setOnClickListener(v -> showEditEmailBottomSheet());
 
         LinearLayout.LayoutParams lpProf = new LinearLayout.LayoutParams(-1, -2);
         lpProf.setMargins(0, dp(4), 0, dp(14));
         list.addView(topProfileCard, lpProf);
 
-        // Group 2: Profil, Penagihan, Penggunaan
+        // Group 2: Profil & Penggunaan (Penagihan removed!)
         LinearLayout g2 = createSettingsGroupContainer();
-        addSettingsRowItem(g2, R.drawable.ic_person, "Profil", null, () -> showEditEmailDialog(), true);
-        addSettingsRowItem(g2, R.drawable.ic_attach_money, "Penagihan", null, () -> Toast.makeText(this, "Paket: Claude Pro & Antigravity Unlimited", Toast.LENGTH_SHORT).show(), true);
-        addSettingsRowItem(g2, R.drawable.ic_analytics, "Penggunaan", null, () -> showUsageStatsDialog(), false);
+        addSettingsRowItem(g2, R.drawable.ic_person, "Profil", null, () -> showEditEmailBottomSheet(), true);
+        addSettingsRowItem(g2, R.drawable.ic_analytics, "Penggunaan", null, () -> showUsageStatsBottomSheet(), false);
         list.addView(g2);
 
         // Group 3: Kemampuan, Konektor, Izin
         LinearLayout g3 = createSettingsGroupContainer();
         settingsCapabilitiesSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_tune, "Kemampuan", "4 diaktifkan", () -> toggleEngine(), true);
-        settingsConnectorStatusText = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_link, "Konektor", "1 terhubung", () -> showConnectionDialog(), true);
-        addSettingsRowItem(g3, R.drawable.ic_android, "Izin", null, () -> showPermissionsDialog(), false);
+        settingsConnectorStatusText = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_link, "Konektor", "1 terhubung", () -> showConnectionBottomSheet(), true);
+        addSettingsRowItem(g3, R.drawable.ic_android, "Izin", null, () -> showPermissionsBottomSheet(), false);
         list.addView(g3);
 
         // Group 4: Gaya Font, Suara
@@ -1070,7 +1038,7 @@ public class MainActivity extends Activity {
 
         addDividerLine(g5);
         addSettingsRowItem(g5, R.drawable.ic_notifications, "Notifikasi", null, () -> Toast.makeText(this, "Notifikasi latar belakang aktif", Toast.LENGTH_SHORT).show(), true);
-        addSettingsRowItem(g5, R.drawable.ic_security, "Privasi", null, () -> showPrivacyTokenDialog(), false);
+        addSettingsRowItem(g5, R.drawable.ic_security, "Privasi", null, () -> showPrivacyTokenBottomSheet(), false);
         list.addView(g5);
 
         scroll.addView(list);
@@ -1158,65 +1126,734 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showEditEmailDialog() {
+    // ============================================================
+    // UNIVERSAL SMOOTH BOTTOM SHEET BUILDER (Replaces all Alert Modals!)
+    // ============================================================
+    private Dialog createBaseBottomSheet(boolean fullWidth) {
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            WindowManager.LayoutParams wlp = window.getAttributes();
+            wlp.gravity = Gravity.BOTTOM;
+            wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
+            wlp.height = WindowManager.LayoutParams.WRAP_CONTENT;
+            wlp.windowAnimations = android.R.style.Animation_InputMethod;
+            window.setAttributes(wlp);
+        }
+        return dialog;
+    }
+
+    private LinearLayout createBottomSheetRoot(Dialog dialog, String title, boolean showClose) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 24));
+        root.setPadding(dp(20), dp(10), dp(20), dp(20));
+
+        // Drag Handle Pill
+        LinearLayout dragArea = new LinearLayout(this);
+        dragArea.setOrientation(LinearLayout.VERTICAL);
+        dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
+        dragArea.setPadding(0, dp(4), 0, dp(12));
+
+        View dragHandle = new View(this);
+        dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
+        dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
+        root.addView(dragArea);
+
+        // Header Title Row
+        if (title != null) {
+            LinearLayout head = new LinearLayout(this);
+            head.setOrientation(LinearLayout.HORIZONTAL);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView t = cText(title, 18f, CLAUDE_TEXT_MAIN, true, true);
+            head.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+
+            if (showClose) {
+                ImageView close = cIconButton(R.drawable.ic_close, 20, 36, CLAUDE_TEXT_MUTED);
+                close.setOnClickListener(v -> dialog.dismiss());
+                head.addView(close);
+            }
+            LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
+            lpH.setMargins(0, 0, 0, dp(14));
+            root.addView(head, lpH);
+        }
+
+        return root;
+    }
+
+    private void showEditEmailBottomSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Profil Pengguna", true);
+
+        TextView sub = cText("Alamat email atau ID pengembang", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        root.addView(sub);
+
         final EditText input = new EditText(this);
         input.setText(prefs.getString("user_email", "developer@antigravity.ai"));
         input.setTextColor(CLAUDE_TEXT_MAIN);
-        input.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 10));
-        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        input.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        input.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        input.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lpIn = new LinearLayout.LayoutParams(-1, dp(48));
+        lpIn.setMargins(0, dp(8), 0, dp(16));
+        root.addView(input, lpIn);
 
-        FrameLayout container = new FrameLayout(this);
-        container.setPadding(dp(20), dp(10), dp(20), dp(10));
-        container.addView(input);
+        LinearLayout btnSave = new LinearLayout(this);
+        btnSave.setOrientation(LinearLayout.HORIZONTAL);
+        btnSave.setGravity(Gravity.CENTER);
+        btnSave.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
+        btnSave.addView(cText("Simpan Perubahan", 14f, Color.WHITE, true, false));
+        btnSave.setOnClickListener(v -> {
+            String em = input.getText().toString().trim();
+            if (!em.isEmpty()) {
+                prefs.edit().putString("user_email", em).apply();
+                refreshSettingsValues();
+                if (sidebarUserEmail != null) sidebarUserEmail.setText("  " + em);
+            }
+            dialog.dismiss();
+        });
+        root.addView(btnSave, new LinearLayout.LayoutParams(-1, dp(46)));
 
-        new AlertDialog.Builder(this)
-                .setTitle("Profil Pengguna")
-                .setView(container)
-                .setPositiveButton("Simpan", (d, w) -> {
-                    String em = input.getText().toString().trim();
-                    if (!em.isEmpty()) {
-                        prefs.edit().putString("user_email", em).apply();
-                        refreshSettingsValues();
-                        if (sidebarUserEmail != null) sidebarUserEmail.setText(" " + em);
-                    }
-                })
-                .setNegativeButton("Batal", null)
-                .show();
+        dialog.setContentView(root);
+        dialog.show();
     }
 
-    private void showUsageStatsDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("Statistik Penggunaan")
-                .setMessage("• Engine: " + currentEngine + "\n• Host: " + currentServerHostname + "\n• Mode: Real-time Live Synchronization\n• Multi-File Attachments: Aktif")
-                .setPositiveButton("Tutup", null)
-                .show();
+    private void showEditDeviceNameBottomSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Nama Perangkat / Server", true);
+
+        TextView sub = cText("Beri nama kustom untuk server remote yang terhubung", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        root.addView(sub);
+
+        final EditText input = new EditText(this);
+        input.setText(currentServerHostname);
+        input.setTextColor(CLAUDE_TEXT_MAIN);
+        input.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        input.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lpIn = new LinearLayout.LayoutParams(-1, dp(48));
+        lpIn.setMargins(0, dp(8), 0, dp(16));
+        root.addView(input, lpIn);
+
+        LinearLayout btnSave = new LinearLayout(this);
+        btnSave.setOrientation(LinearLayout.HORIZONTAL);
+        btnSave.setGravity(Gravity.CENTER);
+        btnSave.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
+        btnSave.addView(cText("Simpan Nama Perangkat", 14f, Color.WHITE, true, false));
+        btnSave.setOnClickListener(v -> {
+            String name = input.getText().toString().trim();
+            if (!name.isEmpty()) {
+                currentServerHostname = name;
+                prefs.edit().putString("device_name", name).apply();
+                if (hubDeviceHostText != null) hubDeviceHostText.setText(name);
+                if (sidebarDeviceHost != null) sidebarDeviceHost.setText("Host: " + name);
+                refreshSettingsValues();
+            }
+            dialog.dismiss();
+        });
+        root.addView(btnSave, new LinearLayout.LayoutParams(-1, dp(46)));
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
-    private void showPermissionsDialog() {
-        boolean camOk = checkCallingOrSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
-        new AlertDialog.Builder(this)
-                .setTitle("Izin Aplikasi")
-                .setMessage("• Kamera: " + (camOk ? "Diizinkan ✓" : "Belum diizinkan") + "\n• Mikrofon: Diizinkan ✓\n• Penyimpanan: Diizinkan ✓")
-                .setPositiveButton("OK", null)
-                .show();
+    private void showUsageStatsBottomSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Statistik Penggunaan", true);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        addStatRow(card, "Active Engine", currentEngine.toUpperCase(Locale.ROOT));
+        addStatRow(card, "Connected Host", currentServerHostname);
+        addStatRow(card, "Live Monitoring", "Aktif (Real-time)");
+        addStatRow(card, "Multi-Upload", "Didukung (Multi-File)");
+        root.addView(card);
+
+        LinearLayout btnClose = new LinearLayout(this);
+        btnClose.setOrientation(LinearLayout.HORIZONTAL);
+        btnClose.setGravity(Gravity.CENTER);
+        btnClose.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        btnClose.setPadding(dp(16), dp(12), dp(16), dp(12));
+        btnClose.addView(cText("Tutup", 14f, CLAUDE_TEXT_MAIN, true, false));
+        btnClose.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, dp(44));
+        lpBtn.setMargins(0, dp(14), 0, 0);
+        root.addView(btnClose, lpBtn);
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
-    private void showPrivacyTokenDialog() {
+    private void addStatRow(LinearLayout container, String label, String value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(4), 0, dp(4));
+
+        TextView lbl = cText(label, 13f, CLAUDE_TEXT_MUTED, false, false);
+        row.addView(lbl, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView val = cText(value, 13f, CLAUDE_TEXT_MAIN, true, false);
+        row.addView(val);
+
+        container.addView(row);
+    }
+
+    private void showPermissionsBottomSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Izin Aplikasi", true);
+
+        boolean camOk = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            camOk = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+        }
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        addStatRow(card, "Kamera (QR Scanner)", camOk ? "Diizinkan ✓" : "Belum diizinkan");
+        addStatRow(card, "Mikrofon (Speech-to-text)", "Diizinkan ✓");
+        addStatRow(card, "Penyimpanan (File Attachments)", "Diizinkan ✓");
+        root.addView(card);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void showPrivacyTokenBottomSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Privasi & Keamanan Token", true);
+
         String token = prefs.getString("token", "");
-        new AlertDialog.Builder(this)
-                .setTitle("Privasi & Keamanan Token")
-                .setMessage("Bearer Token: " + (token.isEmpty() ? "Tidak ada (Publik)" : "•••••••••••• (Aman)"))
-                .setPositiveButton("Ganti Token", (d, w) -> showConnectionDialog())
-                .setNegativeButton("Tutup", null)
-                .show();
+
+        TextView desc = cText("Token bearer digunakan untuk mengamankan komunikasi antara HP Android dan Bridge Server Anda.", 13f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lpD = new LinearLayout.LayoutParams(-1, -2);
+        lpD.setMargins(0, 0, 0, dp(14));
+        root.addView(desc, lpD);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        addStatRow(card, "Status Bearer Token", token.isEmpty() ? "Tidak Ada (Publik)" : "•••••••••••• (Aman)");
+        root.addView(card);
+
+        LinearLayout btnEdit = new LinearLayout(this);
+        btnEdit.setOrientation(LinearLayout.HORIZONTAL);
+        btnEdit.setGravity(Gravity.CENTER);
+        btnEdit.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        btnEdit.setPadding(dp(16), dp(12), dp(16), dp(12));
+        btnEdit.addView(cText("Ganti Token di Konektor", 14f, Color.WHITE, true, false));
+        btnEdit.setOnClickListener(v -> {
+            dialog.dismiss();
+            showConnectionBottomSheet();
+        });
+        LinearLayout.LayoutParams lpB = new LinearLayout.LayoutParams(-1, dp(46));
+        lpB.setMargins(0, dp(16), 0, 0);
+        root.addView(btnEdit, lpB);
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
-    private void showAboutAppDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("Tentang Antigravity Remote")
-                .setMessage("Versi 2.9.8 (Claude Code Edition)\nGateway Android Client untuk Antigravity CLI & Codex CLI.")
-                .setPositiveButton("OK", null)
-                .show();
+    private void showAboutAppBottomSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Tentang Antigravity Remote", true);
+
+        LinearLayout logoRow = new LinearLayout(this);
+        logoRow.setOrientation(LinearLayout.HORIZONTAL);
+        logoRow.setGravity(Gravity.CENTER_VERTICAL);
+        logoRow.setPadding(0, dp(6), 0, dp(14));
+
+        ImageView sp = cIcon(R.drawable.ic_spark, 32, CLAUDE_TERRACOTTA);
+        logoRow.addView(sp);
+
+        LinearLayout lt = new LinearLayout(this);
+        lt.setOrientation(LinearLayout.VERTICAL);
+        lt.setPadding(dp(12), 0, 0, 0);
+        lt.addView(cText("Antigravity Code Remote", 16f, CLAUDE_TEXT_MAIN, true, true));
+        lt.addView(cText("Versi 2.9.9 • Claude Dark Edition", 12.5f, CLAUDE_TEXT_MUTED, false, false));
+        logoRow.addView(lt);
+        root.addView(logoRow);
+
+        TextView info = cText("Klien remote cerdas untuk Antigravity CLI dan Codex CLI di Android dengan live synchronization dan format markdown interaktif.", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        info.setLineSpacing(0, 1.25f);
+        root.addView(info);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void showConnectionBottomSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Pengaturan Konektor Gateway", true);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout scanBtn = new LinearLayout(this);
+        scanBtn.setOrientation(LinearLayout.HORIZONTAL);
+        scanBtn.setGravity(Gravity.CENTER);
+        scanBtn.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        scanBtn.setPadding(dp(12), dp(11), dp(12), dp(11));
+        scanBtn.addView(cIcon(R.drawable.ic_qr_code, 20, Color.WHITE));
+        TextView scanLbl = cText("  Scan QR Code Pairing", 14f, Color.WHITE, true, false);
+        scanBtn.addView(scanLbl);
+        scanBtn.setOnClickListener(v -> {
+            dialog.dismiss();
+            startQrScanner();
+        });
+        form.addView(scanBtn, new LinearLayout.LayoutParams(-1, dp(46)));
+
+        LinearLayout pasteBtn = new LinearLayout(this);
+        pasteBtn.setOrientation(LinearLayout.HORIZONTAL);
+        pasteBtn.setGravity(Gravity.CENTER);
+        pasteBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        pasteBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
+        pasteBtn.addView(cIcon(R.drawable.ic_content_paste, 18, CLAUDE_TEXT_MAIN));
+        TextView pasteLbl = cText("  Tempel dari Clipboard", 13.5f, CLAUDE_TEXT_MAIN, true, false);
+        pasteBtn.addView(pasteLbl);
+        pasteBtn.setOnClickListener(v -> {
+            dialog.dismiss();
+            pasteFromClipboard();
+        });
+        LinearLayout.LayoutParams lpPBtn = new LinearLayout.LayoutParams(-1, dp(44));
+        lpPBtn.setMargins(0, dp(8), 0, dp(14));
+        form.addView(pasteBtn, lpPBtn);
+
+        TextView orLbl = cText("— atau isi manual —", 12f, CLAUDE_TEXT_LIGHT, false, false);
+        orLbl.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lpOr = new LinearLayout.LayoutParams(-1, -2);
+        lpOr.setMargins(0, 0, 0, dp(12));
+        form.addView(orLbl, lpOr);
+
+        TextView urlLbl = cText("Bridge Endpoint URL:", 12.5f, CLAUDE_TEXT_MUTED, true, false);
+        form.addView(urlLbl);
+
+        EditText urlInput = new EditText(this);
+        urlInput.setHint("https://your-bridge.trycloudflare.com/api/chat");
+        urlInput.setText(prefs.getString("url", ""));
+        urlInput.setTextColor(CLAUDE_TEXT_MAIN);
+        urlInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        urlInput.setTextSize(14);
+        urlInput.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        urlInput.setPadding(dp(14), dp(11), dp(14), dp(11));
+        LinearLayout.LayoutParams lpUrl = new LinearLayout.LayoutParams(-1, dp(48));
+        lpUrl.setMargins(0, dp(4), 0, dp(14));
+        form.addView(urlInput, lpUrl);
+
+        TextView tokLbl = cText("Bearer Token (Secret):", 12.5f, CLAUDE_TEXT_MUTED, true, false);
+        form.addView(tokLbl);
+
+        EditText tokenInput = new EditText(this);
+        tokenInput.setHint("codex-remote-token-2026");
+        tokenInput.setText(prefs.getString("token", ""));
+        tokenInput.setTextColor(CLAUDE_TEXT_MAIN);
+        tokenInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        tokenInput.setTextSize(14);
+        tokenInput.setInputType(0x00000081);
+        tokenInput.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        tokenInput.setPadding(dp(14), dp(11), dp(14), dp(11));
+        LinearLayout.LayoutParams lpTok = new LinearLayout.LayoutParams(-1, dp(48));
+        lpTok.setMargins(0, dp(4), 0, dp(16));
+        form.addView(tokenInput, lpTok);
+
+        LinearLayout btnSave = new LinearLayout(this);
+        btnSave.setOrientation(LinearLayout.HORIZONTAL);
+        btnSave.setGravity(Gravity.CENTER);
+        btnSave.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
+        btnSave.addView(cText("Simpan & Hubungkan", 14f, Color.WHITE, true, false));
+        btnSave.setOnClickListener(v -> {
+            String u = urlInput.getText().toString().trim();
+            String t = tokenInput.getText().toString().trim();
+            prefs.edit().putString("url", u).putString("token", t).apply();
+            dialog.dismiss();
+            checkHealth();
+            fetchHubSessions();
+            refreshSettingsValues();
+        });
+        form.addView(btnSave, new LinearLayout.LayoutParams(-1, dp(46)));
+
+        scroll.addView(form);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    // ============================================================
+    // REDESIGNED INTERACTIVE 2-LEVEL EXECUTION BOTTOM SHEET
+    // (Smooth slide/switch between Steps List & Step Detail View)
+    // ============================================================
+    private void addCompactToolsGroupPill(final ArrayList<JSONObject> toolTurns, final boolean isCurrentlyWorking) {
+        final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
+
+        int toolCount = 0;
+        int thinkCount = 0;
+        String latestToolName = "";
+
+        for (JSONObject t : toolTurns) {
+            if ("tool".equalsIgnoreCase(t.optString("role"))) {
+                toolCount++;
+                latestToolName = t.optString("toolTitle", t.optString("title", "tool"));
+            } else if ("thinking".equalsIgnoreCase(t.optString("role"))) {
+                thinkCount++;
+            }
+        }
+
+        String labelText;
+        if (toolCount > 0 && thinkCount > 0) {
+            labelText = (isActuallyRunning ? "Working on " : "Worked on ") + (toolCount + thinkCount) + " steps (" + toolCount + " tools, " + thinkCount + " thinking)";
+        } else if (toolCount > 0) {
+            labelText = (isActuallyRunning ? "Executing " : "Executed ") + toolCount + " tool" + (toolCount > 1 ? "s" : "") + (latestToolName.isEmpty() ? "" : ": " + latestToolName);
+        } else {
+            labelText = (isActuallyRunning ? "Thinking..." : "Viewed thought process (" + thinkCount + " step" + (thinkCount > 1 ? "s" : "") + ")");
+        }
+
+        LinearLayout pill = new LinearLayout(this);
+        pill.setOrientation(LinearLayout.HORIZONTAL);
+        pill.setGravity(Gravity.CENTER_VERTICAL);
+        pill.setBackground(cBox(isActuallyRunning ? CLAUDE_AMBER_BG : CLAUDE_SURFACE_MUTED, isActuallyRunning ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 14));
+        pill.setPadding(dp(12), dp(9), dp(12), dp(9));
+
+        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isActuallyRunning ? CLAUDE_AMBER : CLAUDE_TERRACOTTA);
+        pill.addView(actionIcon);
+
+        TextView tv = cText("  " + labelText, 13f, CLAUDE_TEXT_MAIN, true, false);
+        pill.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
+
+        LinearLayout stateBadge = new LinearLayout(this);
+        stateBadge.setOrientation(LinearLayout.HORIZONTAL);
+        stateBadge.setGravity(Gravity.CENTER_VERTICAL);
+
+        if (isActuallyRunning) {
+            stateBadge.setBackground(cBox(CLAUDE_AMBER_BG, CLAUDE_AMBER, 1, 6));
+            stateBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+            ProgressBar pb = new ProgressBar(this);
+            LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(12), dp(12));
+            stateBadge.addView(pb, lpPb);
+            TextView runText = cText(" Running", 11f, CLAUDE_AMBER, true, false);
+            stateBadge.addView(runText);
+        } else {
+            stateBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
+            stateBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+            stateBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
+            TextView doneText = cText(" Done", 11f, CLAUDE_GREEN, true, false);
+            stateBadge.addView(doneText);
+        }
+        pill.addView(stateBadge);
+
+        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
+        chevron.setPadding(dp(4), 0, 0, 0);
+        pill.addView(chevron);
+
+        pill.setOnClickListener(v -> openExecutionBottomModal(toolTurns, isActuallyRunning));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(4), 0, dp(8));
+        chatMessagesList.addView(pill, lp);
+    }
+
+    private void openExecutionBottomModal(final ArrayList<JSONObject> items, final boolean isCurrentlyWorking) {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        final int screenHeight = dm.heightPixels;
+        final int peekHeight = (int) (screenHeight * 0.70f);
+        final int fullHeight = (int) (screenHeight * 0.95f);
+
+        final LinearLayout modalRoot = new LinearLayout(this);
+        modalRoot.setOrientation(LinearLayout.VERTICAL);
+        modalRoot.setBackground(cBox(CLAUDE_BG, 0, 0, 24));
+        modalRoot.setPadding(dp(20), dp(10), dp(20), dp(16));
+
+        // Drag Area
+        final LinearLayout dragArea = new LinearLayout(this);
+        dragArea.setOrientation(LinearLayout.VERTICAL);
+        dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
+        dragArea.setPadding(0, dp(4), 0, dp(10));
+
+        View dragHandle = new View(this);
+        dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
+        dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
+        modalRoot.addView(dragArea);
+
+        // Container holding Level 1 (Master List) and Level 2 (Detail View)
+        activeBottomSheetContainer = new LinearLayout(this);
+        activeBottomSheetContainer.setOrientation(LinearLayout.VERTICAL);
+
+        // --- LEVEL 1: MASTER LIST VIEW ---
+        activeBottomSheetMasterView = new LinearLayout(this);
+        activeBottomSheetMasterView.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = cText("Execution & Thoughts", 18.5f, CLAUDE_TEXT_MAIN, true, true);
+        headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+
+        final ImageView fullscreenBtn = cIconButton(R.drawable.ic_fullscreen, 24, 40, CLAUDE_TEXT_MAIN);
+        headerRow.addView(fullscreenBtn);
+
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 22, 40, CLAUDE_TEXT_MAIN);
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        headerRow.addView(closeBtn);
+        activeBottomSheetMasterView.addView(headerRow);
+
+        activeBottomSheetSubtitle = cText(items.size() + " actions • ketuk item untuk melihat detail", 13f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
+        lpSub.setMargins(0, dp(2), 0, dp(8));
+        activeBottomSheetMasterView.addView(activeBottomSheetSubtitle, lpSub);
+
+        final ScrollView masterScroll = new ScrollView(this);
+        masterScroll.setFillViewport(true);
+        masterScroll.setVerticalScrollBarEnabled(true);
+
+        activeBottomSheetMasterList = new LinearLayout(this);
+        activeBottomSheetMasterList.setOrientation(LinearLayout.VERTICAL);
+        activeBottomSheetMasterList.setPadding(0, dp(8), 0, dp(12));
+
+        masterScroll.addView(activeBottomSheetMasterList);
+        activeBottomSheetMasterView.addView(masterScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        activeBottomSheetContainer.addView(activeBottomSheetMasterView, new LinearLayout.LayoutParams(-1, -1));
+
+        // --- LEVEL 2: DETAIL VIEW (Exact Match to Screenshot!) ---
+        activeBottomSheetDetailView = new LinearLayout(this);
+        activeBottomSheetDetailView.setOrientation(LinearLayout.VERTICAL);
+        activeBottomSheetDetailView.setVisibility(View.GONE);
+        activeBottomSheetContainer.addView(activeBottomSheetDetailView, new LinearLayout.LayoutParams(-1, -1));
+
+        modalRoot.addView(activeBottomSheetContainer, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        activeBottomSheetDialog = dialog;
+        currentActiveSteps = items;
+
+        updateExecutionBottomModalContent(items, isCurrentlyWorking);
+
+        dialog.setContentView(modalRoot);
+        dialog.setOnDismissListener(d -> {
+            activeBottomSheetDialog = null;
+            activeBottomSheetMasterList = null;
+            activeBottomSheetContainer = null;
+            activeBottomSheetMasterView = null;
+            activeBottomSheetDetailView = null;
+            activeBottomSheetSubtitle = null;
+        });
+
+        final Window window = dialog.getWindow();
+        final boolean[] isFullscreen = {false};
+
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            WindowManager.LayoutParams wlp = window.getAttributes();
+            wlp.gravity = Gravity.BOTTOM;
+            wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
+            wlp.height = peekHeight;
+            wlp.windowAnimations = android.R.style.Animation_InputMethod;
+            window.setAttributes(wlp);
+        }
+
+        fullscreenBtn.setOnClickListener(v -> {
+            isFullscreen[0] = !isFullscreen[0];
+            if (window != null) {
+                WindowManager.LayoutParams lp = window.getAttributes();
+                lp.height = isFullscreen[0] ? fullHeight : peekHeight;
+                window.setAttributes(lp);
+            }
+            fullscreenBtn.setImageResource(isFullscreen[0] ? R.drawable.ic_fullscreen_exit : R.drawable.ic_fullscreen);
+        });
+
+        dialog.show();
+    }
+
+    private void updateExecutionBottomModalContent(final ArrayList<JSONObject> items, final boolean isCurrentlyWorking) {
+        if (activeBottomSheetMasterList == null) return;
+
+        final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
+
+        if (activeBottomSheetSubtitle != null) {
+            activeBottomSheetSubtitle.setText(items.size() + " actions • ketuk item untuk melihat detail" + (isActuallyRunning ? " (Live)" : ""));
+        }
+
+        activeBottomSheetMasterList.removeAllViews();
+
+        for (int i = 0; i < items.size(); i++) {
+            final JSONObject it = items.get(i);
+            String role = it.optString("role", "tool");
+            String toolTitle = it.optString("toolTitle", "tool".equalsIgnoreCase(role) ? "Bash" : "Thinking");
+            String displayTitle = it.optString("title", toolTitle);
+            boolean isTool = "tool".equalsIgnoreCase(role);
+            final boolean isThisItemRunning = (isActuallyRunning && i == items.size() - 1);
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setGravity(Gravity.CENTER_VERTICAL);
+            card.setBackground(cBox(isThisItemRunning ? CLAUDE_AMBER_BG : CLAUDE_SURFACE, isThisItemRunning ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 16));
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 20, isThisItemRunning ? CLAUDE_AMBER : CLAUDE_TERRACOTTA);
+            card.addView(ic);
+
+            LinearLayout textCol = new LinearLayout(this);
+            textCol.setOrientation(LinearLayout.VERTICAL);
+            textCol.setPadding(dp(12), 0, dp(8), 0);
+
+            TextView tView = cText(toolTitle, 14.5f, CLAUDE_TEXT_MAIN, true, false);
+            textCol.addView(tView);
+
+            TextView subV = cText(displayTitle, 12f, CLAUDE_TEXT_MUTED, false, false);
+            subV.setSingleLine(true);
+            textCol.addView(subV);
+
+            card.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1));
+
+            LinearLayout bBadge = new LinearLayout(this);
+            bBadge.setOrientation(LinearLayout.HORIZONTAL);
+            bBadge.setGravity(Gravity.CENTER_VERTICAL);
+
+            if (isThisItemRunning) {
+                bBadge.setBackground(cBox(CLAUDE_AMBER_BG, CLAUDE_AMBER, 1, 6));
+                bBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+                ProgressBar pb = new ProgressBar(this);
+                LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(12), dp(12));
+                bBadge.addView(pb, lpPb);
+                TextView bText = cText(" Running", 11f, CLAUDE_AMBER, true, false);
+                bBadge.addView(bText);
+            } else {
+                bBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
+                bBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
+                bBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
+                TextView bText = cText(" Selesai", 11f, CLAUDE_GREEN, true, false);
+                bBadge.addView(bText);
+            }
+            card.addView(bBadge);
+
+            ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
+            chevron.setPadding(dp(4), 0, 0, 0);
+            card.addView(chevron);
+
+            card.setOnClickListener(v -> showStepDetailView(it, isThisItemRunning));
+
+            LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(-1, -2);
+            lpC.setMargins(0, 0, 0, dp(10));
+            activeBottomSheetMasterList.addView(card, lpC);
+        }
+    }
+
+    // --- LEVEL 2: STEP DETAIL VIEW (Exact Match to Screenshot!) ---
+    private void showStepDetailView(JSONObject item, boolean isRunning) {
+        if (activeBottomSheetDetailView == null || activeBottomSheetMasterView == null) return;
+
+        activeBottomSheetDetailView.removeAllViews();
+
+        String role = item.optString("role", "tool");
+        String toolTitle = item.optString("toolTitle", "tool".equalsIgnoreCase(role) ? "Bash" : "Thinking");
+        String commandText = item.optString("command", item.optString("title", ""));
+        String outputText = item.optString("content", "");
+        String statusText = isRunning ? "Sedang berjalan..." : "Selesai";
+
+        // Top Bar: Back Arrow (<--) + Centered Title ("Bash") + Subtitle ("Selesai")
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(0, 0, 0, dp(16));
+
+        ImageView backBtn = cIconButton(R.drawable.ic_arrow_back, 24, 40, CLAUDE_TEXT_MAIN);
+        backBtn.setOnClickListener(v -> {
+            activeBottomSheetDetailView.setVisibility(View.GONE);
+            activeBottomSheetMasterView.setVisibility(View.VISIBLE);
+        });
+        topBar.addView(backBtn);
+
+        LinearLayout titleCol = new LinearLayout(this);
+        titleCol.setOrientation(LinearLayout.VERTICAL);
+        titleCol.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        TextView titleView = cText(toolTitle, 19f, CLAUDE_TEXT_MAIN, true, false);
+        titleView.setGravity(Gravity.CENTER);
+        titleCol.addView(titleView);
+
+        TextView statusView = cText(statusText, 13f, isRunning ? CLAUDE_AMBER : CLAUDE_TEXT_MUTED, false, false);
+        statusView.setGravity(Gravity.CENTER);
+        titleCol.addView(statusView);
+
+        topBar.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1));
+
+        // Right spacer to keep title perfectly centered
+        View spacer = new View(this);
+        topBar.addView(spacer, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        activeBottomSheetDetailView.addView(topBar);
+
+        ScrollView detailScroll = new ScrollView(this);
+        detailScroll.setFillViewport(true);
+        detailScroll.setVerticalScrollBarEnabled(true);
+
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+
+        // Section 1: "Perintah" / Command Box
+        TextView cmdLabel = cText("Perintah", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lpCmdL = new LinearLayout.LayoutParams(-1, -2);
+        lpCmdL.setMargins(0, 0, 0, dp(8));
+        body.addView(cmdLabel, lpCmdL);
+
+        LinearLayout cmdBox = new LinearLayout(this);
+        cmdBox.setOrientation(LinearLayout.VERTICAL);
+        cmdBox.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
+        cmdBox.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+        TextView cmdView = new TextView(this);
+        cmdView.setText(commandText.isEmpty() ? toolTitle : commandText);
+        cmdView.setTextSize(13.5f);
+        cmdView.setTextColor(Color.rgb(255, 204, 128)); // Highlighted amber command syntax
+        cmdView.setTypeface(Typeface.MONOSPACE);
+        cmdView.setTextIsSelectable(true);
+        cmdBox.addView(cmdView);
+        body.addView(cmdBox);
+
+        // Section 2: "Keluaran" / Output Box
+        TextView outLabel = cText("Keluaran", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lpOutL = new LinearLayout.LayoutParams(-1, -2);
+        lpOutL.setMargins(0, dp(18), 0, dp(8));
+        body.addView(outLabel, lpOutL);
+
+        LinearLayout outBox = new LinearLayout(this);
+        outBox.setOrientation(LinearLayout.VERTICAL);
+        outBox.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
+        outBox.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+        TextView outView = new TextView(this);
+        outView.setText(outputText.isEmpty() ? "Tidak ada keluaran" : outputText);
+        outView.setTextSize(12.5f);
+        outView.setTextColor(Color.rgb(240, 240, 245));
+        outView.setTypeface(Typeface.MONOSPACE);
+        outView.setLineSpacing(0, 1.25f);
+        outView.setTextIsSelectable(true);
+        outBox.addView(outView);
+        body.addView(outBox);
+
+        detailScroll.addView(body);
+        activeBottomSheetDetailView.addView(detailScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        activeBottomSheetMasterView.setVisibility(View.GONE);
+        activeBottomSheetDetailView.setVisibility(View.VISIBLE);
     }
 
     // ============================================================
@@ -1444,32 +2081,12 @@ public class MainActivity extends Activity {
 
     private void showNativeQrScannerModal() {
         try {
-            final Dialog dialog = new Dialog(this);
-            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-
-            LinearLayout root = new LinearLayout(this);
-            root.setOrientation(LinearLayout.VERTICAL);
-            root.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 24));
-            root.setPadding(dp(20), dp(16), dp(20), dp(20));
-
-            LinearLayout head = new LinearLayout(this);
-            head.setOrientation(LinearLayout.HORIZONTAL);
-            head.setGravity(Gravity.CENTER_VERTICAL);
-
-            ImageView qrIcon = cIcon(R.drawable.ic_qr_code, 22, CLAUDE_TERRACOTTA);
-            head.addView(qrIcon);
-
-            TextView title = cText(" Scan QR Pairing", 17, CLAUDE_TEXT_MAIN, true, true);
-            head.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-
-            ImageView close = cIconButton(R.drawable.ic_close, 20, 36, CLAUDE_TEXT_MUTED);
-            close.setOnClickListener(v -> dialog.dismiss());
-            head.addView(close);
-            root.addView(head);
+            final Dialog dialog = createBaseBottomSheet(true);
+            LinearLayout root = createBottomSheetRoot(dialog, "Scan QR Code Pairing", true);
 
             TextView sub = cText("Arahkan kamera ke QR Code di terminal (agy-pair)", 12.5f, CLAUDE_TEXT_MUTED, false, false);
             LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
-            lpSub.setMargins(0, dp(4), 0, dp(14));
+            lpSub.setMargins(0, 0, 0, dp(14));
             root.addView(sub, lpSub);
 
             FrameLayout frame = new FrameLayout(this);
@@ -1512,12 +2129,6 @@ public class MainActivity extends Activity {
 
             dialog.setContentView(root);
             dialog.setOnDismissListener(d -> scannerView.stopCamera());
-
-            Window w = dialog.getWindow();
-            if (w != null) {
-                w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-                w.setLayout(dp(340), -2);
-            }
             dialog.show();
         } catch (Throwable t) {
             Toast.makeText(this, "Tidak dapat membuka kamera: " + t.getMessage(), Toast.LENGTH_LONG).show();
@@ -1712,10 +2323,10 @@ public class MainActivity extends Activity {
                 }
             }
             Toast.makeText(this, "Clipboard kosong. Salin URL/kode pairing terlebih dahulu.", Toast.LENGTH_SHORT).show();
-            showConnectionDialog();
+            showConnectionBottomSheet();
         } catch (Exception e) {
             Toast.makeText(this, "Clipboard error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            showConnectionDialog();
+            showConnectionBottomSheet();
         }
     }
 
@@ -1833,7 +2444,7 @@ public class MainActivity extends Activity {
     private void uploadMultipleSelectedFiles(final List<Uri> uris) {
         String endpoint = prefs.getString("url", "").trim();
         if (endpoint.isEmpty()) {
-            showConnectionDialog();
+            showConnectionBottomSheet();
             return;
         }
 
@@ -1989,7 +2600,7 @@ public class MainActivity extends Activity {
         String text = promptInput.getText().toString().trim();
         String endpoint = prefs.getString("url", "").trim();
         if (endpoint.isEmpty()) {
-            showConnectionDialog();
+            showConnectionBottomSheet();
             return;
         }
         if (text.isEmpty() && attachedMediaList.isEmpty()) return;
@@ -2205,7 +2816,9 @@ public class MainActivity extends Activity {
                     ArrayList<JSONObject> dummy = new ArrayList<>();
                     JSONObject o = new JSONObject();
                     o.put("role", "thinking");
+                    o.put("toolTitle", "Thinking");
                     o.put("title", "Processing prompt...");
+                    o.put("command", "Planning response & executing engine");
                     o.put("content", "Starting CLI process and planning response...");
                     dummy.add(o);
                     addCompactToolsGroupPill(dummy, true);
@@ -2214,6 +2827,7 @@ public class MainActivity extends Activity {
 
                 if (activeBottomSheetDialog != null && activeBottomSheetDialog.isShowing()) {
                     ArrayList<JSONObject> toolsToUpdate = !pendingTools.isEmpty() ? pendingTools : allSessionTools;
+                    currentActiveSteps = toolsToUpdate;
                     updateExecutionBottomModalContent(toolsToUpdate, isLiveTaskRunning);
                 }
 
@@ -2237,302 +2851,6 @@ public class MainActivity extends Activity {
         int contentHeight = chatMessagesList.getHeight();
         int distanceToBottom = contentHeight - (scrollY + scrollHeight);
         return distanceToBottom <= dp(120);
-    }
-
-    // ============================================================
-    // COMPACT TEXT PILL & FULLY SWIPEABLE / EXPANDABLE FULLSCREEN BOTTOM SHEET
-    // ============================================================
-    private void addCompactToolsGroupPill(final ArrayList<JSONObject> toolTurns, final boolean isCurrentlyWorking) {
-        final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
-
-        int toolCount = 0;
-        int thinkCount = 0;
-        String latestToolName = "";
-
-        for (JSONObject t : toolTurns) {
-            if ("tool".equalsIgnoreCase(t.optString("role"))) {
-                toolCount++;
-                latestToolName = t.optString("toolName", t.optString("title", "tool"));
-            } else if ("thinking".equalsIgnoreCase(t.optString("role"))) {
-                thinkCount++;
-            }
-        }
-
-        String labelText;
-        if (toolCount > 0 && thinkCount > 0) {
-            labelText = (isActuallyRunning ? "Working on " : "Worked on ") + (toolCount + thinkCount) + " steps (" + toolCount + " tools, " + thinkCount + " thinking)";
-        } else if (toolCount > 0) {
-            labelText = (isActuallyRunning ? "Executing " : "Executed ") + toolCount + " tool" + (toolCount > 1 ? "s" : "") + (latestToolName.isEmpty() ? "" : ": " + latestToolName);
-        } else {
-            labelText = (isActuallyRunning ? "Thinking..." : "Viewed thought process (" + thinkCount + " step" + (thinkCount > 1 ? "s" : "") + ")");
-        }
-
-        LinearLayout pill = new LinearLayout(this);
-        pill.setOrientation(LinearLayout.HORIZONTAL);
-        pill.setGravity(Gravity.CENTER_VERTICAL);
-        pill.setBackground(cBox(isActuallyRunning ? CLAUDE_AMBER_BG : CLAUDE_SURFACE_MUTED, isActuallyRunning ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 14));
-        pill.setPadding(dp(12), dp(9), dp(12), dp(9));
-
-        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isActuallyRunning ? CLAUDE_AMBER : CLAUDE_TERRACOTTA);
-        pill.addView(actionIcon);
-
-        TextView tv = cText("  " + labelText, 13f, CLAUDE_TEXT_MAIN, true, false);
-        pill.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
-
-        LinearLayout stateBadge = new LinearLayout(this);
-        stateBadge.setOrientation(LinearLayout.HORIZONTAL);
-        stateBadge.setGravity(Gravity.CENTER_VERTICAL);
-
-        if (isActuallyRunning) {
-            stateBadge.setBackground(cBox(CLAUDE_AMBER_BG, CLAUDE_AMBER, 1, 6));
-            stateBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
-            ProgressBar pb = new ProgressBar(this);
-            LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(12), dp(12));
-            stateBadge.addView(pb, lpPb);
-            TextView runText = cText(" Running", 11f, CLAUDE_AMBER, true, false);
-            stateBadge.addView(runText);
-        } else {
-            stateBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
-            stateBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
-            stateBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
-            TextView doneText = cText(" Done", 11f, CLAUDE_GREEN, true, false);
-            stateBadge.addView(doneText);
-        }
-        pill.addView(stateBadge);
-
-        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
-        chevron.setPadding(dp(4), 0, 0, 0);
-        pill.addView(chevron);
-
-        pill.setOnClickListener(v -> openExecutionBottomModal(toolTurns, isActuallyRunning));
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(4), 0, dp(8));
-        chatMessagesList.addView(pill, lp);
-    }
-
-    private void openExecutionBottomModal(final ArrayList<JSONObject> items, final boolean isCurrentlyWorking) {
-        final Dialog dialog = new Dialog(this);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-
-        DisplayMetrics dm = getResources().getDisplayMetrics();
-        final int screenHeight = dm.heightPixels;
-        final int peekHeight = (int) (screenHeight * 0.60f);
-        final int fullHeight = (int) (screenHeight * 0.94f);
-
-        final LinearLayout modalRoot = new LinearLayout(this);
-        modalRoot.setOrientation(LinearLayout.VERTICAL);
-        modalRoot.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 24));
-        modalRoot.setPadding(dp(20), dp(10), dp(20), dp(16));
-
-        final LinearLayout dragArea = new LinearLayout(this);
-        dragArea.setOrientation(LinearLayout.VERTICAL);
-        dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
-        dragArea.setPadding(0, dp(6), 0, dp(10));
-
-        View dragHandle = new View(this);
-        dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
-        LinearLayout.LayoutParams lpHandle = new LinearLayout.LayoutParams(dp(52), dp(6));
-        dragArea.addView(dragHandle, lpHandle);
-        modalRoot.addView(dragArea);
-
-        LinearLayout headerRow = new LinearLayout(this);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView title = cText("Execution & Thoughts", 18.5f, CLAUDE_TEXT_MAIN, true, true);
-        headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-
-        final ImageView fullscreenBtn = cIconButton(R.drawable.ic_fullscreen, 24, 40, CLAUDE_TEXT_MAIN);
-        headerRow.addView(fullscreenBtn);
-
-        ImageView closeBtn = cIconButton(R.drawable.ic_close, 22, 40, CLAUDE_TEXT_MAIN);
-        closeBtn.setOnClickListener(v -> dialog.dismiss());
-        headerRow.addView(closeBtn);
-        modalRoot.addView(headerRow);
-
-        LinearLayout subRow = new LinearLayout(this);
-        subRow.setOrientation(LinearLayout.HORIZONTAL);
-        subRow.setGravity(Gravity.CENTER_VERTICAL);
-        final TextView sub = cText(items.size() + " actions • tap item to expand/collapse", 13f, CLAUDE_TEXT_MUTED, false, false);
-        subRow.addView(sub, new LinearLayout.LayoutParams(0, -2, 1));
-        modalRoot.addView(subRow);
-
-        final ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.setVerticalScrollBarEnabled(true);
-
-        final LinearLayout list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(0, dp(12), 0, dp(12));
-
-        scroll.addView(list);
-        modalRoot.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        activeBottomSheetDialog = dialog;
-        activeBottomSheetList = list;
-        activeBottomSheetSubtitle = sub;
-
-        updateExecutionBottomModalContent(items, isCurrentlyWorking);
-
-        dialog.setContentView(modalRoot);
-        dialog.setOnDismissListener(d -> {
-            activeBottomSheetDialog = null;
-            activeBottomSheetList = null;
-            activeBottomSheetSubtitle = null;
-        });
-
-        final Window window = dialog.getWindow();
-        final boolean[] isFullscreen = {false};
-
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            WindowManager.LayoutParams wlp = window.getAttributes();
-            wlp.gravity = Gravity.BOTTOM;
-            wlp.width = WindowManager.LayoutParams.MATCH_PARENT;
-            wlp.height = peekHeight;
-            wlp.windowAnimations = android.R.style.Animation_InputMethod;
-            window.setAttributes(wlp);
-        }
-
-        fullscreenBtn.setOnClickListener(v -> {
-            isFullscreen[0] = !isFullscreen[0];
-            if (window != null) {
-                WindowManager.LayoutParams lp = window.getAttributes();
-                lp.height = isFullscreen[0] ? fullHeight : peekHeight;
-                window.setAttributes(lp);
-            }
-            fullscreenBtn.setImageResource(isFullscreen[0] ? R.drawable.ic_fullscreen_exit : R.drawable.ic_fullscreen);
-        });
-
-        View.OnTouchListener swipeDragListener = new View.OnTouchListener() {
-            private float startY = 0;
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        startY = event.getRawY();
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                        float deltaY = event.getRawY() - startY;
-                        if (deltaY < -dp(50)) {
-                            isFullscreen[0] = true;
-                            if (window != null) {
-                                WindowManager.LayoutParams lp = window.getAttributes();
-                                lp.height = fullHeight;
-                                window.setAttributes(lp);
-                            }
-                            fullscreenBtn.setImageResource(R.drawable.ic_fullscreen_exit);
-                        } else if (deltaY > dp(70)) {
-                            if (isFullscreen[0]) {
-                                isFullscreen[0] = false;
-                                if (window != null) {
-                                    WindowManager.LayoutParams lp = window.getAttributes();
-                                    lp.height = peekHeight;
-                                    window.setAttributes(lp);
-                                }
-                                fullscreenBtn.setImageResource(R.drawable.ic_fullscreen);
-                            } else {
-                                dialog.dismiss();
-                            }
-                        }
-                        return true;
-                }
-                return false;
-            }
-        };
-
-        dragArea.setOnTouchListener(swipeDragListener);
-        headerRow.setOnTouchListener(swipeDragListener);
-
-        dialog.show();
-    }
-
-    private void updateExecutionBottomModalContent(final ArrayList<JSONObject> items, final boolean isCurrentlyWorking) {
-        if (activeBottomSheetList == null) return;
-
-        final boolean isActuallyRunning = isCurrentlyWorking && isLiveTaskRunning;
-
-        if (activeBottomSheetSubtitle != null) {
-            activeBottomSheetSubtitle.setText(items.size() + " actions • tap item to expand/collapse" + (isActuallyRunning ? " (Live)" : ""));
-        }
-
-        activeBottomSheetList.removeAllViews();
-
-        for (int i = 0; i < items.size(); i++) {
-            JSONObject it = items.get(i);
-            String role = it.optString("role", "tool");
-            String itTitle = it.optString("title", "tool".equalsIgnoreCase(role) ? "Executed Tool" : "Thinking Process");
-            String content = it.optString("content", "");
-            boolean isTool = "tool".equalsIgnoreCase(role);
-            boolean isThisItemRunning = (isActuallyRunning && i == items.size() - 1);
-
-            LinearLayout card = new LinearLayout(this);
-            card.setOrientation(LinearLayout.VERTICAL);
-            card.setBackground(cBox(isThisItemRunning ? CLAUDE_AMBER_BG : CLAUDE_SURFACE_MUTED, isThisItemRunning ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 12));
-            card.setPadding(dp(12), dp(10), dp(12), dp(10));
-
-            LinearLayout cHead = new LinearLayout(this);
-            cHead.setOrientation(LinearLayout.HORIZONTAL);
-            cHead.setGravity(Gravity.CENTER_VERTICAL);
-
-            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isThisItemRunning ? CLAUDE_AMBER : (isTool ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
-            cHead.addView(ic);
-
-            TextView tView = cText("  " + itTitle, 13.5f, CLAUDE_TEXT_MAIN, true, false);
-            cHead.addView(tView, new LinearLayout.LayoutParams(0, -2, 1));
-
-            LinearLayout bBadge = new LinearLayout(this);
-            bBadge.setOrientation(LinearLayout.HORIZONTAL);
-            bBadge.setGravity(Gravity.CENTER_VERTICAL);
-
-            if (isThisItemRunning) {
-                bBadge.setBackground(cBox(CLAUDE_AMBER_BG, CLAUDE_AMBER, 1, 6));
-                bBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
-                ProgressBar pb = new ProgressBar(this);
-                LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(12), dp(12));
-                bBadge.addView(pb, lpPb);
-                TextView bText = cText(" Running", 11f, CLAUDE_AMBER, true, false);
-                bBadge.addView(bText);
-            } else {
-                bBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
-                bBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
-                bBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
-                TextView bText = cText(" Done", 11f, CLAUDE_GREEN, true, false);
-                bBadge.addView(bText);
-            }
-            cHead.addView(bBadge);
-
-            final ImageView expandChevron = cIcon(isThisItemRunning ? R.drawable.ic_expand_more : R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
-            expandChevron.setPadding(dp(4), 0, 0, 0);
-            cHead.addView(expandChevron);
-
-            card.addView(cHead);
-
-            final TextView body = new TextView(this);
-            body.setText(content);
-            body.setTextSize(12.5f);
-            body.setTextColor(CLAUDE_TEXT_MUTED);
-            body.setTypeface(Typeface.MONOSPACE);
-            body.setTextIsSelectable(true);
-            body.setPadding(0, dp(8), 0, dp(4));
-            body.setVisibility(isThisItemRunning ? View.VISIBLE : View.GONE);
-            card.addView(body);
-
-            cHead.setOnClickListener(v -> {
-                if (body.getVisibility() == View.VISIBLE) {
-                    body.setVisibility(View.GONE);
-                    expandChevron.setImageResource(R.drawable.ic_chevron_right);
-                } else {
-                    body.setVisibility(View.VISIBLE);
-                    expandChevron.setImageResource(R.drawable.ic_expand_more);
-                }
-            });
-
-            LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(-1, -2);
-            lpC.setMargins(0, 0, 0, dp(10));
-            activeBottomSheetList.addView(card, lpC);
-        }
     }
 
     // ============================================================
@@ -3048,7 +3366,7 @@ public class MainActivity extends Activity {
     private void checkHealth() {
         String endpoint = prefs.getString("url", "").trim();
         if (endpoint.isEmpty()) {
-            showConnectionDialog();
+            showConnectionBottomSheet();
             return;
         }
         executor.execute(() -> {
@@ -3076,92 +3394,5 @@ public class MainActivity extends Activity {
                 });
             }
         });
-    }
-
-    private void showConnectionDialog() {
-        LinearLayout form = new LinearLayout(this);
-        form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding(dp(22), dp(10), dp(22), dp(10));
-
-        LinearLayout scanBtn = new LinearLayout(this);
-        scanBtn.setOrientation(LinearLayout.HORIZONTAL);
-        scanBtn.setGravity(Gravity.CENTER);
-        scanBtn.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
-        scanBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
-        scanBtn.addView(cIcon(R.drawable.ic_qr_code, 20, Color.WHITE));
-        TextView scanLbl = cText("  Scan QR Code dari Terminal", 13.5f, Color.WHITE, true, false);
-        scanBtn.addView(scanLbl);
-        scanBtn.setOnClickListener(v -> startQrScanner());
-        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, dp(44));
-        lpBtn.setMargins(0, 0, 0, dp(8));
-        form.addView(scanBtn, lpBtn);
-
-        LinearLayout pasteBtn = new LinearLayout(this);
-        pasteBtn.setOrientation(LinearLayout.HORIZONTAL);
-        pasteBtn.setGravity(Gravity.CENTER);
-        pasteBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
-        pasteBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
-        pasteBtn.addView(cIcon(R.drawable.ic_content_paste, 18, CLAUDE_TEXT_MAIN));
-        TextView pasteLbl = cText("  Tempel Link dari Clipboard", 13, CLAUDE_TEXT_MAIN, true, false);
-        pasteBtn.addView(pasteLbl);
-        pasteBtn.setOnClickListener(v -> pasteFromClipboard());
-        LinearLayout.LayoutParams lpPBtn = new LinearLayout.LayoutParams(-1, dp(42));
-        lpPBtn.setMargins(0, 0, 0, dp(14));
-        form.addView(pasteBtn, lpPBtn);
-
-        TextView orLbl = cText("— atau isi manual —", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
-        orLbl.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams lpOr = new LinearLayout.LayoutParams(-1, -2);
-        lpOr.setMargins(0, 0, 0, dp(12));
-        form.addView(orLbl, lpOr);
-
-        TextView urlLbl = cText("Bridge Endpoint URL:", 12.5f, CLAUDE_TEXT_MUTED, true, false);
-        form.addView(urlLbl);
-
-        EditText urlInput = new EditText(this);
-        urlInput.setHint("https://your-bridge.trycloudflare.com/api/chat");
-        urlInput.setText(prefs.getString("url", ""));
-        urlInput.setTextColor(CLAUDE_TEXT_MAIN);
-        urlInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
-        urlInput.setTextSize(14);
-        urlInput.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 10));
-        urlInput.setPadding(dp(12), dp(10), dp(12), dp(10));
-        LinearLayout.LayoutParams lpUrl = new LinearLayout.LayoutParams(-1, dp(48));
-        lpUrl.setMargins(0, dp(4), 0, dp(14));
-        form.addView(urlInput, lpUrl);
-
-        TextView tokLbl = cText("Bearer Token (Secret):", 12.5f, CLAUDE_TEXT_MUTED, true, false);
-        form.addView(tokLbl);
-
-        EditText tokenInput = new EditText(this);
-        tokenInput.setHint("codex-remote-token-2026");
-        tokenInput.setText(prefs.getString("token", ""));
-        tokenInput.setTextColor(CLAUDE_TEXT_MAIN);
-        tokenInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
-        tokenInput.setTextSize(14);
-        tokenInput.setInputType(0x00000081);
-        tokenInput.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 10));
-        tokenInput.setPadding(dp(12), dp(10), dp(12), dp(10));
-        LinearLayout.LayoutParams lpTok = new LinearLayout.LayoutParams(-1, dp(48));
-        lpTok.setMargins(0, dp(4), 0, dp(8));
-        form.addView(tokenInput, lpTok);
-
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Remote Gateway Setup")
-                .setView(form)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Save & Connect", null)
-                .create();
-
-        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x -> {
-            String u = urlInput.getText().toString().trim();
-            String t = tokenInput.getText().toString().trim();
-            prefs.edit().putString("url", u).putString("token", t).apply();
-            dialog.dismiss();
-            checkHealth();
-            fetchHubSessions();
-            refreshSettingsValues();
-        }));
-        dialog.show();
     }
 }
