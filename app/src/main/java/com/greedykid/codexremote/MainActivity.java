@@ -3074,10 +3074,10 @@ public class MainActivity extends Activity {
         btnRepo.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         btnRepo.setPadding(dp(14), dp(11), dp(14), dp(11));
         btnRepo.addView(cIcon(R.drawable.ic_source_branch, 16, Theme.TEXT_MAIN));
-        btnRepo.addView(cText("  Repository: codexcli-remote-app", 13f, Theme.TEXT_MAIN, true, false));
+        btnRepo.addView(cText("  Repository: antigravity-cli-app", 13f, Theme.TEXT_MAIN, true, false));
         btnRepo.setOnClickListener(v -> {
             try {
-                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/greedykid/codexcli-remote-app"));
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/greedykid/antigravity-cli-app"));
                 startActivity(browserIntent);
             } catch (Exception e) {
                 Toast.makeText(MainActivity.this, "Gagal membuka browser", Toast.LENGTH_SHORT).show();
@@ -3635,7 +3635,7 @@ public class MainActivity extends Activity {
         btnReleasePage.addView(cText("  Buka Halaman Rilis GitHub", 13f, Theme.TEXT_MAIN, false, false));
         btnReleasePage.setOnClickListener(v -> {
             try {
-                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/greedykid/codexcli-remote-app/releases/tag/latest"));
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/greedykid/antigravity-cli-app/releases/tag/latest"));
                 startActivity(browserIntent);
             } catch (Exception e) {
                 Toast.makeText(MainActivity.this, "Gagal membuka browser", Toast.LENGTH_SHORT).show();
@@ -3741,7 +3741,7 @@ public class MainActivity extends Activity {
         // Fetch latest release body from GitHub in background
         executor.execute(() -> {
             try {
-                URL url = new URL("https://api.github.com/repos/greedykid/codexcli-remote-app/releases/tags/latest");
+                URL url = new URL("https://api.github.com/repos/greedykid/antigravity-cli-app/releases/tags/latest");
                 HttpURLConnection c = (HttpURLConnection) url.openConnection();
                 c.setRequestMethod("GET");
                 c.setConnectTimeout(10000);
@@ -3830,7 +3830,7 @@ public class MainActivity extends Activity {
 
         executor.execute(() -> {
             try {
-                URL url = new URL("https://api.github.com/repos/greedykid/codexcli-remote-app/releases/tags/latest");
+                URL url = new URL("https://api.github.com/repos/greedykid/antigravity-cli-app/releases/tags/latest");
                 HttpURLConnection c = (HttpURLConnection) url.openConnection();
                 c.setRequestMethod("GET");
                 c.setConnectTimeout(15000);
@@ -3841,7 +3841,7 @@ public class MainActivity extends Activity {
                 int code = c.getResponseCode();
                 if (code != 200) {
                     c.disconnect();
-                    url = new URL("https://api.github.com/repos/greedykid/codexcli-remote-app/releases/latest");
+                    url = new URL("https://api.github.com/repos/greedykid/antigravity-cli-app/releases/latest");
                     c = (HttpURLConnection) url.openConnection();
                     c.setRequestMethod("GET");
                     c.setConnectTimeout(15000);
@@ -3880,7 +3880,7 @@ public class MainActivity extends Activity {
                     }
                 }
                 if (apkDownloadUrl == null || apkDownloadUrl.isEmpty()) {
-                    apkDownloadUrl = "https://github.com/greedykid/codexcli-remote-app/releases/download/latest/app-debug.apk";
+                    apkDownloadUrl = "https://github.com/greedykid/antigravity-cli-app/releases/download/latest/app-debug.apk";
                 }
 
                 final String finalApkUrl = apkDownloadUrl;
@@ -4002,7 +4002,7 @@ public class MainActivity extends Activity {
                     if (btnReinstall != null) {
                         btnReinstall.setVisibility(View.VISIBLE);
                         btnReinstall.setOnClickListener(v -> downloadAndInstallApk(
-                                "https://github.com/greedykid/codexcli-remote-app/releases/download/latest/app-debug.apk",
+                                "https://github.com/greedykid/antigravity-cli-app/releases/download/latest/app-debug.apk",
                                 statusView, detailsView, btnDownload, btnReinstall, updateCard, progressBar, ""));
                     }
                 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Antigravity & Codex Remote - 1-Click Server & Tunnel Auto Installer
-# https://github.com/greedykid/codexcli-remote-app
+# https://github.com/greedykid/antigravity-cli-app
 # ==============================================================================
 
 set -e
@@ -47,13 +47,15 @@ fi
 INSTALL_DIR="$HOME/.codex-remote/app"
 if [ -d "/home/ubuntu/codexcli-remote-app" ]; then
     INSTALL_DIR="/home/ubuntu/codexcli-remote-app"
+elif [ -d "/home/ubuntu/antigravity-cli-app" ]; then
+    INSTALL_DIR="/home/ubuntu/antigravity-cli-app"
 fi
 
 if [ ! -d "$INSTALL_DIR/bridge" ]; then
     echo -e "\033[34m▶ Downloading Antigravity Remote Bridge Server...\033[0m"
     mkdir -p "$HOME/.codex-remote"
     rm -rf "$INSTALL_DIR"
-    git clone --depth=1 https://github.com/greedykid/codexcli-remote-app.git "$INSTALL_DIR"
+    git clone --depth=1 https://github.com/greedykid/antigravity-cli-app.git "$INSTALL_DIR"
 fi
 
 # 4. Install Bridge Dependencies
