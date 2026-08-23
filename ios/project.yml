@@ -1,0 +1,44 @@
+name: CodexRemote
+options:
+  bundleIdPrefix: com.greedykid
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.9"
+    # The CI build is unsigned; signing is applied later by whoever installs it.
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGN_ENTITLEMENTS: ""
+    ENABLE_BITCODE: "NO"
+
+targets:
+  CodexRemote:
+    type: application
+    platform: iOS
+    sources:
+      - path: CodexRemote
+    info:
+      path: CodexRemote/Info.plist
+      properties:
+        CFBundleDisplayName: AI CLI Remote
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIUserInterfaceStyle: Dark
+        NSCameraUsageDescription: Kamera dipakai untuk memindai QR code pairing dari terminal server.
+        NSPhotoLibraryUsageDescription: Galeri dipakai untuk membaca QR code pairing dari gambar tersimpan.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.greedykid.codexremote
+        INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
+        TARGETED_DEVICE_FAMILY: "1,2"

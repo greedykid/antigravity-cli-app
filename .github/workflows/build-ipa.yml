@@ -1,0 +1,94 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/build-ipa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # iOS builds need a real macOS toolchain; GitHub's macOS runners are free
+    # for public repositories.
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app
+
+      - name: Show toolchain
+        run: xcodebuild -version && swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build unsigned archive
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project CodexRemote.xcodeproj \
+            -scheme CodexRemote \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/CodexRemote.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive | xcpretty || \
+          xcodebuild \
+            -project CodexRemote.xcodeproj \
+            -scheme CodexRemote \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/CodexRemote.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
+
+      # No Apple Developer account is involved, so the archive is packaged by
+      # hand: an .ipa is a zip with the .app inside a Payload/ directory.
+      - name: Package unsigned IPA
+        working-directory: ios
+        run: |
+          set -e
+          APP_PATH="build/CodexRemote.xcarchive/Products/Applications/CodexRemote.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::App bundle not found at $APP_PATH"
+            find build -maxdepth 5 -name "*.app" || true
+            exit 1
+          fi
+          rm -rf build/Payload build/CodexRemote.ipa
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/
+          cd build && zip -qry CodexRemote.ipa Payload
+          echo "Built $(du -h CodexRemote.ipa | cut -f1) unsigned IPA"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-remote-unsigned-ipa
+          path: ios/build/CodexRemote.ipa
+          if-no-files-found: error
+
+      - name: Create Direct IPA Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: latest
+          files: ios/build/CodexRemote.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
