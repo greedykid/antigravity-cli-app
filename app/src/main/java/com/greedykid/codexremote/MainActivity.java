@@ -205,6 +205,8 @@ public class MainActivity extends Activity {
      */
     private int sessionEpoch = 0;
     private String activeSessionTitle = "New session";
+    /** Engine the open session belongs to; sessions cannot cross engines. */
+    private String activeSessionEngine = "";
     private String currentEngine = "antigravity";
     private String currentModel = "";
     private String currentServerHostname = "Server Remote";
@@ -571,7 +573,7 @@ public class MainActivity extends Activity {
 
         // 4. Recent sessions, filled in by fetchHubSessions()
         addSidebarDivider(body);
-        addSidebarSectionHeader(body, "Terbaru");
+        addSidebarSectionHeader(body, "Terbaru · " + engineShortLabel(currentEngine));
         sidebarRecentContainer = new LinearLayout(this);
         sidebarRecentContainer.setOrientation(LinearLayout.VERTICAL);
         body.addView(sidebarRecentContainer, new LinearLayout.LayoutParams(-1, -2));
@@ -695,7 +697,7 @@ public class MainActivity extends Activity {
         sidebarRecentContainer.removeAllViews();
 
         if (sessions == null || sessions.length() == 0) {
-            TextView empty = cText("Belum ada sesi", 14, Theme.TEXT_LIGHT, false, false);
+            TextView empty = cText("Belum ada sesi " + engineShortLabel(currentEngine), 14, Theme.TEXT_LIGHT, false, false);
             empty.setPadding(dp(14), dp(8), dp(14), dp(8));
             sidebarRecentContainer.addView(empty);
             return;
@@ -1230,6 +1232,7 @@ public class MainActivity extends Activity {
         sessionEpoch++;
         activeJobId = null;
         activeConversationId = convId;
+        activeSessionEngine = currentEngine;
         activeSessionTitle = title != null && !title.isEmpty() ? title : "Session";
 
         // Remembered so "Obrolan" can resume across app restarts.
@@ -1257,34 +1260,36 @@ public class MainActivity extends Activity {
      * the most recent one on the server. It used to call showScreen(1) with no
      * active conversation, which lands on the same empty state as "Chat baru".
      */
+    /**
+     * "Obrolan" opens the newest chat of the engine that is currently active.
+     * A session already on screen is kept — but only if it belongs to this
+     * engine; the other CLI's sessions cannot be resumed from here.
+     */
     private void openLatestConversation() {
-        if (activeConversationId != null && !activeConversationId.isEmpty()) {
+        if (activeConversationId != null && !activeConversationId.isEmpty()
+                && currentEngine.equalsIgnoreCase(activeSessionEngine)) {
             showScreen(1);
             return;
         }
 
-        String cachedId = prefs.getString("last_conversation_id", "");
-        String cachedTitle = prefs.getString("last_conversation_title", "Sesi");
-        String cachedEngine = prefs.getString("last_conversation_engine", currentEngine);
-        // A session from the other engine must not resurface after a switch.
-        if (!cachedId.isEmpty() && cachedEngine.equalsIgnoreCase(currentEngine)) {
-            navigatedFromHub = false;
-            openSpecificSession(cachedId, cachedTitle);
-            return;
-        }
-
-        Toast.makeText(this, "Mencari sesi terakhir...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Membuka sesi " + engineLabel(currentEngine) + " terbaru...", Toast.LENGTH_SHORT).show();
         executor.execute(() -> {
             try {
                 JSONObject json = bridge.get("/api/sessions?engine=" + BridgeClient.encode(currentEngine));
                 JSONArray sessions = filterSessionsForEngine(json.optJSONArray("sessions"));
+
                 if (sessions == null || sessions.length() == 0) {
                     mainHandler.post(() -> {
-                        Toast.makeText(MainActivity.this, "Belum ada sesi — memulai yang baru", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(MainActivity.this,
+                                "Belum ada sesi " + engineLabel(currentEngine) + " — memulai yang baru",
+                                Toast.LENGTH_SHORT).show();
                         startNewSession();
                     });
                     return;
                 }
+
+                // The server returns newest first, and the list is already
+                // scoped to this engine.
                 JSONObject newest = sessions.optJSONObject(0);
                 final String convId = newest == null ? "" : newest.optString("conversationId", "");
                 final String title = newest == null ? "Sesi" : newest.optString("title", "Sesi");
@@ -1297,18 +1302,36 @@ public class MainActivity extends Activity {
                     }
                 });
             } catch (Exception ex) {
-                mainHandler.post(() -> {
-                    Toast.makeText(MainActivity.this, "Gagal memuat sesi terakhir", Toast.LENGTH_SHORT).show();
-                    showScreen(0);
-                });
+                // Offline: the remembered session is the best we can do, and
+                // only when we know it came from this engine.
+                mainHandler.post(this::openRememberedConversationOrNew);
             }
         });
+    }
+
+    private void openRememberedConversationOrNew() {
+        String cachedId = prefs.getString("last_conversation_id", "");
+        String cachedTitle = prefs.getString("last_conversation_title", "Sesi");
+        // No recorded engine means it predates the tag — treat it as unknown
+        // rather than assuming it belongs to whichever engine is active now.
+        String cachedEngine = prefs.getString("last_conversation_engine", "");
+
+        if (!cachedId.isEmpty() && currentEngine.equalsIgnoreCase(cachedEngine)) {
+            Toast.makeText(this, "Offline — membuka sesi tersimpan", Toast.LENGTH_SHORT).show();
+            navigatedFromHub = false;
+            openSpecificSession(cachedId, cachedTitle);
+            return;
+        }
+
+        Toast.makeText(this, "Gagal memuat sesi terakhir", Toast.LENGTH_SHORT).show();
+        startNewSession();
     }
 
     private void startNewSession() {
         sessionEpoch++;
         activeJobId = null;
         activeConversationId = null;
+        activeSessionEngine = currentEngine;
         activeSessionTitle = "New session";
         lastLoadedSessionId = null;
         lastLoadedTurnCount = -1;
@@ -4111,7 +4134,11 @@ public class MainActivity extends Activity {
         if (convId == null || convId.isEmpty()) return;
         if (activeConversationId != null && !activeConversationId.isEmpty()) return;
         activeConversationId = convId;
-        prefs.edit().putString("last_conversation_id", convId).apply();
+        activeSessionEngine = currentEngine;
+        prefs.edit()
+                .putString("last_conversation_id", convId)
+                .putString("last_conversation_engine", currentEngine)
+                .apply();
     }
 
     private JSONObject executePost(String endpoint, String token, JSONObject req) throws Exception {
