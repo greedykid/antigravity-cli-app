@@ -2685,6 +2685,7 @@ public class MainActivity extends Activity {
                 sandboxLabel(prefs.getString("sandbox_mode", "full")), () -> showSandboxPicker(), true);
         settingsGitPathSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_source_branch, "Git repo path",
                 gitPathLabel(), () -> showGitPathBottomSheet(), true);
+        addSettingsRowItem(g3, R.drawable.ic_cloud, "API Codex", null, () -> showCodexApiConfig(), true);
         addSettingsRowItem(g3, R.drawable.ic_laptop, "Server Tersimpan", null, () -> showServerSwitcher(), true);
         addSettingsRowItem(g3, R.drawable.ic_folder, "Proyek", null, () -> showProjectPicker(), true);
         addSettingsRowItem(g3, R.drawable.ic_build, "Pemeliharaan", null, () -> showMaintenanceSheet(), true);
@@ -5232,6 +5233,19 @@ public class MainActivity extends Activity {
         // --- per-engine detail cards ---
         root.addView(buildEngineCard("antigravity", dialog));
         root.addView(buildEngineCard("codex", dialog));
+
+        // Provider config lives in the Codex CLI itself, so it belongs here.
+        TextView apiRow = cText("Konfigurasi API Codex  ›", 13.5f, Theme.ACCENT, true, false);
+        apiRow.setGravity(Gravity.CENTER);
+        apiRow.setPadding(dp(14), dp(13), dp(14), dp(13));
+        apiRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        apiRow.setOnClickListener(v -> {
+            dialog.dismiss();
+            showCodexApiConfig();
+        });
+        LinearLayout.LayoutParams lpApi = new LinearLayout.LayoutParams(-1, -2);
+        lpApi.setMargins(0, dp(14), 0, 0);
+        root.addView(apiRow, lpApi);
 
         dialog.setContentView(root);
         dialog.show();
@@ -8035,6 +8049,398 @@ public class MainActivity extends Activity {
 
     private String describeApiError(JSONObject json, String fallback) {
         return panels.describeApiError(json, fallback);
+    }
+
+    // ============================================================
+    // KONFIGURASI API CODEX (model provider di ~/.codex/config.toml)
+    // ============================================================
+    private void showCodexApiConfig() {
+        final Dialog dialog = createBaseBottomSheet(true);
+        final LinearLayout root = createBottomSheetRoot(dialog, "Konfigurasi API Codex", true);
+
+        root.addView(cText("Provider menentukan ke mana Codex CLI mengirim prompt dan kode Anda. "
+                        + "Perubahan berlaku untuk sesi Codex berikutnya.",
+                12.5f, Theme.TEXT_MUTED, false, false));
+
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        LinearLayout.LayoutParams lpScroll = new LinearLayout.LayoutParams(-1, dp(400));
+        lpScroll.setMargins(0, dp(12), 0, dp(10));
+        root.addView(scroll, lpScroll);
+
+        body.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
+        loadCodexConfig(body, dialog);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView addPreset = cText("+ OpenRouter", 13.5f, Theme.ACCENT, true, false);
+        addPreset.setGravity(Gravity.CENTER);
+        addPreset.setPadding(dp(12), dp(12), dp(12), dp(12));
+        addPreset.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        addPreset.setOnClickListener(v -> {
+            dialog.dismiss();
+            // Prefilled with what OpenRouter actually expects.
+            showCodexProviderEditor("openrouter", "OpenRouter",
+                    "https://openrouter.ai/api/v1", "chat", false);
+        });
+        LinearLayout.LayoutParams lpA = new LinearLayout.LayoutParams(0, -2, 1);
+        lpA.setMargins(0, 0, dp(8), 0);
+        actions.addView(addPreset, lpA);
+
+        TextView addCustom = cText("+ Provider lain", 13.5f, Theme.TEXT_MAIN, true, false);
+        addCustom.setGravity(Gravity.CENTER);
+        addCustom.setPadding(dp(12), dp(12), dp(12), dp(12));
+        addCustom.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        addCustom.setOnClickListener(v -> {
+            dialog.dismiss();
+            showCodexProviderEditor("", "", "", "chat", false);
+        });
+        actions.addView(addCustom, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(actions);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void loadCodexConfig(final LinearLayout body, final Dialog dialog) {
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/codex/config");
+                mainHandler.post(() -> renderCodexConfig(body, dialog, json));
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, Theme.RED, false, false));
+                });
+            }
+        });
+    }
+
+    private void renderCodexConfig(final LinearLayout body, final Dialog dialog, JSONObject json) {
+        body.removeAllViews();
+
+        if (!json.optBoolean("ok", false)) {
+            body.addView(cText(describeApiError(json, "Gagal membaca config"), 13f, Theme.RED, false, false));
+            return;
+        }
+
+        final String activeProvider = json.optString("activeProvider", "");
+        final String activeModel = json.optString("activeModel", "");
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.VERTICAL);
+        head.setBackground(cBox(Theme.ACCENT_SOFT, Theme.ACCENT, 1, 14));
+        head.setPadding(dp(14), dp(12), dp(14), dp(12));
+        head.addView(cText("Aktif: " + (activeProvider.isEmpty() ? "(bawaan)" : activeProvider),
+                14.5f, Theme.ACCENT, true, false));
+        head.addView(cText("Model: " + (activeModel.isEmpty() ? "(bawaan)" : activeModel),
+                12.5f, Theme.TEXT_MUTED, false, false));
+        TextView fileHint = cText(json.optString("file", ""), 11f, Theme.TEXT_LIGHT, false, false);
+        fileHint.setSingleLine(true);
+        fileHint.setEllipsize(TextUtils.TruncateAt.START);
+        head.addView(fileHint);
+        body.addView(head, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView section = cText("Provider terdaftar", 12.5f, Theme.TEXT_MUTED, false, false);
+        section.setPadding(0, dp(16), 0, dp(6));
+        body.addView(section);
+
+        JSONArray providers = json.optJSONArray("providers");
+        if (providers == null || providers.length() == 0) {
+            body.addView(cText("Belum ada provider kustom. Codex memakai bawaannya.",
+                    13f, Theme.TEXT_LIGHT, false, false));
+            return;
+        }
+
+        for (int i = 0; i < providers.length(); i++) {
+            JSONObject p = providers.optJSONObject(i);
+            if (p == null) continue;
+            final String id = p.optString("id");
+            final String name = p.optString("name", id);
+            final String baseUrl = p.optString("baseUrl", "");
+            final String wireApi = p.optString("wireApi", "chat");
+            final boolean hasToken = p.optBoolean("hasToken", false);
+            final String preview = p.optString("tokenPreview", "");
+            final String envKey = p.optString("envKey", "");
+            final boolean isActive = id.equals(activeProvider);
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setBackground(cBox(Theme.SURFACE_MUTED, isActive ? Theme.ACCENT : Theme.BORDER, 1, 14));
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+            LinearLayout titleRow = new LinearLayout(this);
+            titleRow.setOrientation(LinearLayout.HORIZONTAL);
+            titleRow.setGravity(Gravity.CENTER_VERTICAL);
+            titleRow.addView(cText(name, 14.5f, isActive ? Theme.ACCENT : Theme.TEXT_MAIN, true, false));
+            if (isActive) {
+                TextView chip = cText("Aktif", 10.5f, Theme.ACCENT, true, false);
+                chip.setBackground(cBox(Theme.ACCENT_SOFT, 0, 0, 8));
+                chip.setPadding(dp(8), dp(2), dp(8), dp(2));
+                LinearLayout.LayoutParams lpChip = new LinearLayout.LayoutParams(-2, -2);
+                lpChip.setMargins(dp(8), 0, 0, 0);
+                titleRow.addView(chip, lpChip);
+            }
+            titleRow.addView(new View(this), new LinearLayout.LayoutParams(0, dp(1), 1));
+            card.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
+
+            TextView urlView = cText(baseUrl, 12f, Theme.TEXT_MUTED, false, false);
+            urlView.setSingleLine(true);
+            urlView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            card.addView(urlView);
+
+            String keyLine = "wire_api: " + wireApi + "  ·  ";
+            if (!envKey.isEmpty()) keyLine += "key dari env " + envKey;
+            else if (hasToken) keyLine += "key: " + preview;
+            else keyLine += "tanpa key";
+            card.addView(cText(keyLine, 11.5f, Theme.TEXT_LIGHT, false, false));
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setPadding(0, dp(10), 0, 0);
+
+            if (!isActive) {
+                row.addView(codexSmallButton("Pakai ini", Theme.ACCENT, true, () -> {
+                    dialog.dismiss();
+                    showCodexActivate(id, activeModel);
+                }), new LinearLayout.LayoutParams(0, -2, 1));
+            }
+            row.addView(codexSmallButton("Ubah", Theme.SURFACE, false, () -> {
+                dialog.dismiss();
+                showCodexProviderEditor(id, name, baseUrl, wireApi, hasToken);
+            }), new LinearLayout.LayoutParams(0, -2, 1));
+
+            if (!isActive) {
+                row.addView(codexSmallButton("Hapus", Theme.RED, true, () ->
+                        deleteCodexProvider(id, body, dialog)), new LinearLayout.LayoutParams(0, -2, 1));
+            }
+            card.addView(row, new LinearLayout.LayoutParams(-1, -2));
+
+            LinearLayout.LayoutParams lpCard = new LinearLayout.LayoutParams(-1, -2);
+            lpCard.setMargins(0, dp(8), 0, 0);
+            body.addView(card, lpCard);
+        }
+    }
+
+    private TextView codexSmallButton(String label, int color, boolean filled, final Runnable action) {
+        TextView btn = cText(label, 13f, filled ? Theme.ON_ACCENT : Theme.TEXT_MAIN, true, false);
+        if (filled && color == Theme.RED) btn.setTextColor(Color.WHITE);
+        btn.setGravity(Gravity.CENTER);
+        btn.setPadding(dp(10), dp(9), dp(10), dp(9));
+        btn.setBackground(cBox(filled ? color : Theme.SURFACE, Theme.BORDER, filled ? 0 : 1, 10));
+        btn.setOnClickListener(v -> action.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, dp(8), 0);
+        btn.setLayoutParams(lp);
+        return btn;
+    }
+
+    /** Form for adding or editing one provider block. */
+    private void showCodexProviderEditor(String id, String name, String baseUrl,
+                                         String wireApi, final boolean hasExistingKey) {
+        final Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog,
+                id.isEmpty() ? "Provider Baru" : "Ubah Provider", true);
+
+        final boolean isNew = id.isEmpty();
+
+        final EditText idInput = codexField("ID (huruf, angka, - _)", id);
+        idInput.setEnabled(isNew);
+        if (!isNew) idInput.setTextColor(Theme.TEXT_MUTED);
+        root.addView(idInput, codexFieldParams());
+
+        final EditText nameInput = codexField("Nama tampilan", name);
+        root.addView(nameInput, codexFieldParams());
+
+        final EditText urlInput = codexField("base_url, mis. https://openrouter.ai/api/v1", baseUrl);
+        root.addView(urlInput, codexFieldParams());
+
+        final EditText keyInput = codexField(
+                hasExistingKey ? "API key (kosongkan agar tetap yang lama)" : "API key", "");
+        keyInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        root.addView(keyInput, codexFieldParams());
+
+        // wire_api decides the request shape; the wrong one fails at protocol level.
+        TextView wireLabel = cText("wire_api", 12.5f, Theme.TEXT_MUTED, false, false);
+        wireLabel.setPadding(dp(2), dp(4), 0, dp(6));
+        root.addView(wireLabel);
+
+        final String[] chosen = { "responses".equals(wireApi) ? "responses" : "chat" };
+        final LinearLayout wireRow = new LinearLayout(this);
+        wireRow.setOrientation(LinearLayout.HORIZONTAL);
+        final TextView[] wireBtns = new TextView[2];
+        final String[] wireVals = { "chat", "responses" };
+        for (int i = 0; i < 2; i++) {
+            final int idx = i;
+            TextView opt = cText(wireVals[i], 13.5f, Theme.TEXT_MAIN, true, false);
+            opt.setGravity(Gravity.CENTER);
+            opt.setPadding(dp(12), dp(10), dp(12), dp(10));
+            opt.setOnClickListener(v -> {
+                chosen[0] = wireVals[idx];
+                for (int k = 0; k < 2; k++) {
+                    boolean on = wireVals[k].equals(chosen[0]);
+                    wireBtns[k].setBackground(cBox(on ? Theme.ACCENT_SOFT : Theme.SURFACE,
+                            on ? Theme.ACCENT : Theme.BORDER, 1, 10));
+                    wireBtns[k].setTextColor(on ? Theme.ACCENT : Theme.TEXT_MAIN);
+                }
+            });
+            wireBtns[i] = opt;
+            LinearLayout.LayoutParams lpOpt = new LinearLayout.LayoutParams(0, -2, 1);
+            lpOpt.setMargins(0, 0, dp(8), 0);
+            wireRow.addView(opt, lpOpt);
+        }
+        for (int k = 0; k < 2; k++) {
+            boolean on = wireVals[k].equals(chosen[0]);
+            wireBtns[k].setBackground(cBox(on ? Theme.ACCENT_SOFT : Theme.SURFACE,
+                    on ? Theme.ACCENT : Theme.BORDER, 1, 10));
+            wireBtns[k].setTextColor(on ? Theme.ACCENT : Theme.TEXT_MAIN);
+        }
+        root.addView(wireRow);
+
+        TextView hint = cText("OpenRouter memakai chat. Endpoint bergaya OpenAI Responses memakai responses.",
+                11.5f, Theme.TEXT_LIGHT, false, false);
+        hint.setPadding(dp(2), dp(8), 0, dp(14));
+        root.addView(hint);
+
+        TextView save = cText("Simpan", 14.5f, Theme.ON_ACCENT, true, false);
+        save.setGravity(Gravity.CENTER);
+        save.setPadding(dp(16), dp(14), dp(16), dp(14));
+        save.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
+        save.setOnClickListener(v -> {
+            String pid = idInput.getText().toString().trim();
+            String purl = urlInput.getText().toString().trim();
+            if (pid.isEmpty() || purl.isEmpty()) {
+                Toast.makeText(this, "ID dan base_url wajib diisi", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            saveCodexProvider(pid, nameInput.getText().toString().trim(), purl,
+                    chosen[0], keyInput.getText().toString().trim(), dialog);
+        });
+        root.addView(save, new LinearLayout.LayoutParams(-1, -2));
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private EditText codexField(String hint, String value) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setText(value);
+        input.setTextSize(14f);
+        input.setSingleLine(true);
+        input.setTextColor(Theme.TEXT_MAIN);
+        input.setHintTextColor(Theme.TEXT_LIGHT);
+        input.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 12));
+        input.setPadding(dp(12), dp(11), dp(12), dp(11));
+        return input;
+    }
+
+    private LinearLayout.LayoutParams codexFieldParams() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(10), 0, 0);
+        return lp;
+    }
+
+    private void saveCodexProvider(final String id, final String name, final String baseUrl,
+                                   final String wireApi, final String apiKey, final Dialog dialog) {
+        executor.execute(() -> {
+            try {
+                JSONObject payload = new JSONObject()
+                        .put("id", id)
+                        .put("name", name.isEmpty() ? id : name)
+                        .put("baseUrl", baseUrl)
+                        .put("wireApi", wireApi);
+                if (!apiKey.isEmpty()) payload.put("apiKey", apiKey);
+
+                JSONObject result = bridge.post("/api/codex/provider", payload, 20000);
+                mainHandler.post(() -> {
+                    if (result.optBoolean("ok", false)) {
+                        Toast.makeText(MainActivity.this, "Provider disimpan", Toast.LENGTH_SHORT).show();
+                        dialog.dismiss();
+                        showCodexApiConfig();
+                    } else {
+                        Toast.makeText(MainActivity.this,
+                                describeApiError(result, "Gagal menyimpan"), Toast.LENGTH_LONG).show();
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                        "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    /** Switching provider usually means switching model too. */
+    private void showCodexActivate(final String providerId, String currentModel) {
+        final Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Pakai " + providerId, true);
+
+        root.addView(cText("Nama model mengikuti provider. OpenRouter memakai format "
+                        + "vendor/model, mis. anthropic/claude-sonnet-4.5.",
+                12.5f, Theme.TEXT_MUTED, false, false));
+
+        final EditText modelInput = codexField("Nama model", currentModel);
+        root.addView(modelInput, codexFieldParams());
+
+        TextView apply = cText("Aktifkan", 14.5f, Theme.ON_ACCENT, true, false);
+        apply.setGravity(Gravity.CENTER);
+        apply.setPadding(dp(16), dp(14), dp(16), dp(14));
+        apply.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
+        LinearLayout.LayoutParams lpApply = new LinearLayout.LayoutParams(-1, -2);
+        lpApply.setMargins(0, dp(16), 0, 0);
+        apply.setOnClickListener(v -> {
+            final String model = modelInput.getText().toString().trim();
+            executor.execute(() -> {
+                try {
+                    JSONObject payload = new JSONObject().put("provider", providerId);
+                    if (!model.isEmpty()) payload.put("model", model);
+                    JSONObject result = bridge.post("/api/codex/active", payload, 20000);
+                    mainHandler.post(() -> {
+                        if (result.optBoolean("ok", false)) {
+                            Toast.makeText(MainActivity.this,
+                                    "Codex sekarang memakai " + providerId, Toast.LENGTH_SHORT).show();
+                            dialog.dismiss();
+                            showCodexApiConfig();
+                        } else {
+                            Toast.makeText(MainActivity.this,
+                                    describeApiError(result, "Gagal mengaktifkan"), Toast.LENGTH_LONG).show();
+                        }
+                    });
+                } catch (Exception ex) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                            "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+                }
+            });
+        });
+        root.addView(apply, lpApply);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void deleteCodexProvider(final String id, final LinearLayout body, final Dialog dialog) {
+        executor.execute(() -> {
+            try {
+                JSONObject result = bridge.post("/api/codex/provider/delete",
+                        new JSONObject().put("id", id), 20000);
+                mainHandler.post(() -> {
+                    if (result.optBoolean("ok", false)) {
+                        Toast.makeText(MainActivity.this, "Provider dihapus", Toast.LENGTH_SHORT).show();
+                        loadCodexConfig(body, dialog);
+                    } else {
+                        Toast.makeText(MainActivity.this,
+                                describeApiError(result, "Gagal menghapus"), Toast.LENGTH_LONG).show();
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                        "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
     }
 
     // ============================================================

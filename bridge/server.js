@@ -14,6 +14,7 @@ const jobs = require("./jobs");
 const auditLog = require("./audit");
 const searchIndex = require("./search");
 const quota = require("./quota");
+const codexConfig = require("./codexconfig");
 
 const PORT = config.port();
 const HOST = config.bindHost();
@@ -1090,7 +1091,8 @@ const server = http.createServer((req, res) => {
       engines: ["antigravity", "codex"],
       features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload",
                  "usage_stats", "sse", "files", "git", "search", "sandbox_modes",
-                 "jobs", "file_write", "projects", "audit", "session_export", "uploads_cleanup"],
+                 "jobs", "file_write", "projects", "audit", "session_export", "uploads_cleanup",
+                 "codex_config"],
       sandboxMode: settings.load().sandboxMode
     });
   }
@@ -1254,6 +1256,47 @@ const server = http.createServer((req, res) => {
       filename: exportFilename(session),
       markdown: transcriptToMarkdown(session, getTranscript(convId, 2000))
     });
+  }
+
+  // GET /api/codex/config
+  if (req.method === "GET" && pathname === "/api/codex/config") {
+    return send(res, 200, codexConfig.read());
+  }
+
+  // POST /api/codex/provider        upsert a model provider
+  // POST /api/codex/provider/delete remove one
+  // POST /api/codex/active          switch the active provider/model
+  if (req.method === "POST" && pathname.startsWith("/api/codex/")) {
+    let raw = "";
+    req.on("data", chunk => {
+      raw += chunk;
+      if (raw.length > 64 * 1024) req.destroy();
+    });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        let result;
+        if (pathname === "/api/codex/provider") {
+          result = codexConfig.upsertProvider(payload);
+          // This decides where prompts and code are sent, so it is recorded.
+          audit("codex.provider.saved", { id: payload.id, baseUrl: payload.baseUrl, ok: result.ok });
+        } else if (pathname === "/api/codex/provider/delete") {
+          result = codexConfig.removeProvider(payload.id);
+          audit("codex.provider.deleted", { id: payload.id, ok: result.ok });
+        } else if (pathname === "/api/codex/active") {
+          result = codexConfig.setActive(payload);
+          audit("codex.provider.activated", { provider: payload.provider, model: payload.model, ok: result.ok });
+        } else {
+          return send(res, 404, { error: "Not found" });
+        }
+
+        if (result.ok) events.broadcast("codex.config.changed", codexConfig.read());
+        send(res, result.ok ? 200 : 400, Object.assign({}, result, { config: codexConfig.read() }));
+      } catch (err) {
+        send(res, 400, { error: err.message });
+      }
+    });
+    return;
   }
 
   // GET /api/projects  |  POST /api/projects
