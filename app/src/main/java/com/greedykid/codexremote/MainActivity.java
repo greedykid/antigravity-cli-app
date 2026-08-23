@@ -134,6 +134,7 @@ public class MainActivity extends Activity {
     private static final int REQ_VOICE_SPEECH = 1002;
     private static final int REQ_CAMERA_PERMISSION = 2001;
     private static final int REQ_NOTIFICATION_PERMISSION = 2004;
+    private static final int REQ_PICK_QR_IMAGE = 1003;
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -3201,8 +3202,8 @@ public class MainActivity extends Activity {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 showNativeQrScannerModal();
             } else {
-                Toast.makeText(this, "Izin kamera ditolak. Gunakan opsi Paste Clipboard.", Toast.LENGTH_LONG).show();
-                pasteFromClipboard();
+                Toast.makeText(this, "Izin kamera ditolak. Pilih gambar QR dari galeri.", Toast.LENGTH_LONG).show();
+                pickQrImageFromGallery();
             }
         }
     }
@@ -3241,6 +3242,22 @@ public class MainActivity extends Activity {
             lpFr.setMargins(0, 0, 0, dp(16));
             root.addView(frame, lpFr);
 
+            LinearLayout galleryBtn = new LinearLayout(this);
+            galleryBtn.setOrientation(LinearLayout.HORIZONTAL);
+            galleryBtn.setGravity(Gravity.CENTER);
+            galleryBtn.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, CLAUDE_TERRACOTTA, 1, 12));
+            galleryBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
+            galleryBtn.addView(cIcon(R.drawable.ic_image, 18, CLAUDE_TERRACOTTA));
+            galleryBtn.addView(cText("  Ambil QR dari Galeri", 13, CLAUDE_TERRACOTTA, true, false));
+            galleryBtn.setOnClickListener(v -> {
+                // Release the camera before handing off to the picker.
+                dialog.dismiss();
+                pickQrImageFromGallery();
+            });
+            LinearLayout.LayoutParams lpGallery = new LinearLayout.LayoutParams(-1, dp(46));
+            lpGallery.setMargins(0, 0, 0, dp(10));
+            root.addView(galleryBtn, lpGallery);
+
             LinearLayout clipBtn = new LinearLayout(this);
             clipBtn.setOrientation(LinearLayout.HORIZONTAL);
             clipBtn.setGravity(Gravity.CENTER);
@@ -3259,9 +3276,85 @@ public class MainActivity extends Activity {
             dialog.setOnDismissListener(d -> scannerView.stopCamera());
             dialog.show();
         } catch (Throwable t) {
-            Toast.makeText(this, "Tidak dapat membuka kamera: " + t.getMessage(), Toast.LENGTH_LONG).show();
-            pasteFromClipboard();
+            Toast.makeText(this, "Kamera tidak tersedia. Pilih gambar QR dari galeri.", Toast.LENGTH_LONG).show();
+            pickQrImageFromGallery();
         }
+    }
+
+    /** Opens the document picker; SAF grants read access without a permission. */
+    private void pickQrImageFromGallery() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("image/*");
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/png", "image/jpeg", "image/webp", "image/*"});
+            startActivityForResult(Intent.createChooser(intent, "Pilih gambar QR"), REQ_PICK_QR_IMAGE);
+        } catch (Throwable t) {
+            try {
+                Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+                fallback.setType("image/*");
+                startActivityForResult(fallback, REQ_PICK_QR_IMAGE);
+            } catch (Throwable inner) {
+                Toast.makeText(this, "Tidak ada aplikasi galeri yang bisa dibuka", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    private void decodeQrFromImage(final Uri uri) {
+        Toast.makeText(this, "Membaca QR dari gambar...", Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            final String text = QrImageDecoder.decode(getContentResolver(), uri);
+            mainHandler.post(() -> {
+                if (text == null || text.isEmpty()) {
+                    showQrImageFailure();
+                } else {
+                    handleQrPayload(text);
+                }
+            });
+        });
+    }
+
+    // A failed decode is usually a cropping or resolution problem, so say what
+    // to try instead of just reporting failure.
+    private void showQrImageFailure() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "QR Tidak Terbaca", true);
+
+        root.addView(cText("Tidak menemukan QR code pada gambar itu.", 14f, CLAUDE_TEXT_MAIN, true, false));
+        TextView tips = cText("Coba: potong gambar sampai QR memenuhi bingkai, pakai screenshot asli "
+                        + "(bukan foto layar), atau perbesar terminal sebelum mengambil gambar.",
+                12.5f, CLAUDE_TEXT_MUTED, false, false);
+        tips.setPadding(0, dp(8), 0, dp(16));
+        root.addView(tips);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView retry = cText("Pilih lagi", 14f, CLAUDE_TEXT_MAIN, true, false);
+        retry.setGravity(Gravity.CENTER);
+        retry.setPadding(dp(16), dp(13), dp(16), dp(13));
+        retry.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        retry.setOnClickListener(v -> {
+            dialog.dismiss();
+            pickQrImageFromGallery();
+        });
+        LinearLayout.LayoutParams lpR = new LinearLayout.LayoutParams(0, -2, 1);
+        lpR.setMargins(0, 0, dp(8), 0);
+        actions.addView(retry, lpR);
+
+        TextView paste = cText("Tempel token", 14f, Color.WHITE, true, false);
+        paste.setGravity(Gravity.CENTER);
+        paste.setPadding(dp(16), dp(13), dp(16), dp(13));
+        paste.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
+        paste.setOnClickListener(v -> {
+            dialog.dismiss();
+            pasteFromClipboard();
+        });
+        actions.addView(paste, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(actions);
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     public interface QrScanResultListener {
@@ -3590,6 +3683,13 @@ public class MainActivity extends Activity {
 
                 if (!uris.isEmpty()) {
                     uploadMultipleSelectedFiles(uris);
+                }
+            } else if (requestCode == REQ_PICK_QR_IMAGE) {
+                Uri picked = data.getData();
+                if (picked != null) {
+                    decodeQrFromImage(picked);
+                } else {
+                    Toast.makeText(this, "Tidak ada gambar yang dipilih", Toast.LENGTH_SHORT).show();
                 }
             } else if (requestCode == REQ_VOICE_SPEECH) {
                 ArrayList<String> matches = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
