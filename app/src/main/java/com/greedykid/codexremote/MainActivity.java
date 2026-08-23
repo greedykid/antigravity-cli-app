@@ -724,6 +724,11 @@ public class MainActivity extends Activity {
                 navigatedFromHub = true;
                 openSpecificSession(convId, title);
             });
+            tv.setOnLongClickListener(v -> {
+                closeSidebar();
+                showRenameSessionDialog(convId, title);
+                return true;
+            });
             sidebarRecentContainer.addView(tv, new LinearLayout.LayoutParams(-1, -2));
         }
     }
@@ -1210,9 +1215,17 @@ public class MainActivity extends Activity {
         TextView dateView = cText(dateStr, 12f, Theme.TEXT_MUTED, false, false);
         card.addView(dateView);
 
+        ImageView optBtn = cIconButton(R.drawable.ic_more_vert, 18, 32, Theme.TEXT_MUTED);
+        optBtn.setOnClickListener(v -> showSessionOptionsBottomSheet(convId, title));
+        card.addView(optBtn);
+
         card.setOnClickListener(v -> {
             navigatedFromHub = true;
             openSpecificSession(convId, title);
+        });
+        card.setOnLongClickListener(v -> {
+            showSessionOptionsBottomSheet(convId, title);
+            return true;
         });
 
         LinearLayout.LayoutParams lpCard = new LinearLayout.LayoutParams(-1, -2);
@@ -2804,6 +2817,7 @@ public class MainActivity extends Activity {
         chatTopTitle = cText("New session", 16f, Theme.TEXT_MAIN, true, false);
         chatTopTitle.setGravity(Gravity.CENTER);
         chatTopTitle.setSingleLine(true);
+        chatTopTitle.setOnClickListener(v -> showRenameSessionDialog(activeConversationId, activeSessionTitle));
         topBar.addView(chatTopTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
         ImageView qrTopBtn = cIconButton(R.drawable.ic_qr_code, 22, 40, Theme.TEXT_MAIN);
@@ -3302,6 +3316,243 @@ public class MainActivity extends Activity {
         chatMessagesList.addView(notice, lp);
     }
 
+    private void showRenameSessionDialog(final String targetConvId, final String initialTitle) {
+        final String convId = (targetConvId != null && !targetConvId.trim().isEmpty()) ? targetConvId.trim() : activeConversationId;
+        if (convId == null || convId.trim().isEmpty()) {
+            Toast.makeText(this, "Belum ada sesi aktif untuk diubah namanya", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Ubah Nama Sesi", true);
+
+        TextView sub = cText("Beri nama baru untuk sesi percakapan ini agar mudah dicari", 12.5f, Theme.TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
+        lpSub.setMargins(0, 0, 0, dp(14));
+        root.addView(sub, lpSub);
+
+        final EditText titleInput = new EditText(this);
+        String startText = initialTitle != null && !initialTitle.isEmpty() ? initialTitle : activeSessionTitle;
+        titleInput.setText(startText);
+        titleInput.setHint("Nama sesi...");
+        titleInput.setHintTextColor(Theme.TEXT_LIGHT);
+        titleInput.setTextColor(Theme.TEXT_MAIN);
+        titleInput.setTextSize(15f);
+        titleInput.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        titleInput.setPadding(dp(14), dp(12), dp(14), dp(12));
+        titleInput.setSingleLine(true);
+        titleInput.selectAll();
+        root.addView(titleInput, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow.setPadding(0, dp(18), 0, 0);
+
+        TextView cancelBtn = cText("Batal", 14f, Theme.TEXT_MUTED, true, false);
+        cancelBtn.setGravity(Gravity.CENTER);
+        cancelBtn.setPadding(dp(16), dp(12), dp(16), dp(12));
+        cancelBtn.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        cancelBtn.setOnClickListener(v -> dialog.dismiss());
+        btnRow.addView(cancelBtn, new LinearLayout.LayoutParams(0, -2, 1));
+
+        View spacer = new View(this);
+        btnRow.addView(spacer, new LinearLayout.LayoutParams(dp(10), 1));
+
+        TextView saveBtn = cText("Simpan", 14f, Theme.ON_ACCENT, true, false);
+        saveBtn.setGravity(Gravity.CENTER);
+        saveBtn.setPadding(dp(16), dp(12), dp(16), dp(12));
+        saveBtn.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
+        saveBtn.setOnClickListener(v -> {
+            final String newTitle = titleInput.getText().toString().trim();
+            if (newTitle.isEmpty()) {
+                Toast.makeText(MainActivity.this, "Nama sesi tidak boleh kosong", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            dialog.dismiss();
+            renameSessionOnServer(convId, newTitle);
+        });
+        btnRow.addView(saveBtn, new LinearLayout.LayoutParams(0, -2, 1));
+
+        root.addView(btnRow);
+        dialog.setContentView(root);
+        dialog.show();
+
+        titleInput.requestFocus();
+    }
+
+    private void renameSessionOnServer(final String convId, final String newTitle) {
+        String endpoint = prefs.getString("url", "").trim();
+        if (endpoint.isEmpty()) {
+            Toast.makeText(this, "Endpoint server belum disetel", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Optimistic UI update
+        if (convId.equals(activeConversationId)) {
+            activeSessionTitle = newTitle;
+            if (chatTopTitle != null) chatTopTitle.setText(newTitle);
+            prefs.edit().putString("last_conversation_title", newTitle).apply();
+        }
+
+        executor.execute(() -> {
+            try {
+                String renameUrl = endpoint.replace("/api/chat", "/api/session/rename");
+                HttpURLConnection c = (HttpURLConnection) new URL(renameUrl).openConnection();
+                c.setRequestMethod("POST");
+                c.setConnectTimeout(8000);
+                c.setReadTimeout(8000);
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+
+                String token = prefs.getString("token", "");
+                if (!token.isEmpty()) {
+                    c.setRequestProperty("Authorization", "Bearer " + token);
+                }
+
+                JSONObject payload = new JSONObject();
+                payload.put("id", convId);
+                payload.put("title", newTitle);
+
+                try (OutputStream os = c.getOutputStream()) {
+                    os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+                }
+
+                int code = c.getResponseCode();
+                if (code == 200) {
+                    mainHandler.post(() -> {
+                        Toast.makeText(MainActivity.this, "Nama sesi berhasil diubah", Toast.LENGTH_SHORT).show();
+                        fetchHubSessions();
+                    });
+                } else {
+                    mainHandler.post(() -> {
+                        Toast.makeText(MainActivity.this, "Gagal mengubah nama sesi (HTTP " + code + ")", Toast.LENGTH_LONG).show();
+                    });
+                }
+            } catch (Exception e) {
+                final String err = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                mainHandler.post(() -> {
+                    Toast.makeText(MainActivity.this, "Gagal sinkron nama sesi: " + err, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void showSessionOptionsBottomSheet(final String convId, final String currentTitle) {
+        final Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, currentTitle != null && !currentTitle.isEmpty() ? currentTitle : "Pilihan Sesi", true);
+
+        // 1. Buka Sesi
+        LinearLayout openRow = new LinearLayout(this);
+        openRow.setOrientation(LinearLayout.HORIZONTAL);
+        openRow.setGravity(Gravity.CENTER_VERTICAL);
+        openRow.setPadding(dp(14), dp(12), dp(14), dp(12));
+        openRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        openRow.addView(cIcon(R.drawable.ic_chat, 20, Theme.ACCENT));
+        openRow.addView(cText("   Buka Sesi Ini", 14f, Theme.TEXT_MAIN, true, false));
+        openRow.setOnClickListener(v -> {
+            dialog.dismiss();
+            navigatedFromHub = true;
+            openSpecificSession(convId, currentTitle);
+        });
+        LinearLayout.LayoutParams lpOpen = new LinearLayout.LayoutParams(-1, -2);
+        lpOpen.setMargins(0, dp(4), 0, dp(10));
+        root.addView(openRow, lpOpen);
+
+        // 2. Ubah Nama Sesi
+        LinearLayout renameRow = new LinearLayout(this);
+        renameRow.setOrientation(LinearLayout.HORIZONTAL);
+        renameRow.setGravity(Gravity.CENTER_VERTICAL);
+        renameRow.setPadding(dp(14), dp(12), dp(14), dp(12));
+        renameRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        renameRow.addView(cIcon(R.drawable.ic_edit, 20, Theme.TEXT_MAIN));
+        renameRow.addView(cText("   Ubah Nama Sesi", 14f, Theme.TEXT_MAIN, true, false));
+        renameRow.setOnClickListener(v -> {
+            dialog.dismiss();
+            showRenameSessionDialog(convId, currentTitle);
+        });
+        LinearLayout.LayoutParams lpRename = new LinearLayout.LayoutParams(-1, -2);
+        lpRename.setMargins(0, 0, 0, dp(10));
+        root.addView(renameRow, lpRename);
+
+        // 3. Ekspor Transkrip
+        LinearLayout exportRow = new LinearLayout(this);
+        exportRow.setOrientation(LinearLayout.HORIZONTAL);
+        exportRow.setGravity(Gravity.CENTER_VERTICAL);
+        exportRow.setPadding(dp(14), dp(12), dp(14), dp(12));
+        exportRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        exportRow.addView(cIcon(R.drawable.ic_content_copy, 20, Theme.TEXT_MAIN));
+        exportRow.addView(cText("   Ekspor Transkrip", 14f, Theme.TEXT_MAIN, true, false));
+        exportRow.setOnClickListener(v -> {
+            dialog.dismiss();
+            exportSessionById(convId, currentTitle);
+        });
+        root.addView(exportRow, new LinearLayout.LayoutParams(-1, -2));
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void exportSessionById(String convId, String title) {
+        String endpoint = prefs.getString("url", "").trim();
+        if (endpoint.isEmpty() || convId == null || convId.isEmpty()) {
+            Toast.makeText(this, "Tidak ada data sesi untuk diekspor", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Toast.makeText(this, "Mengunduh transkrip...", Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            try {
+                String transcriptUrl = endpoint.replace("/api/chat", "/api/session/transcript") + "?id=" + BridgeClient.encode(convId);
+                HttpURLConnection c = (HttpURLConnection) new URL(transcriptUrl).openConnection();
+                c.setRequestMethod("GET");
+                c.setConnectTimeout(8000);
+                String token = prefs.getString("token", "");
+                if (!token.isEmpty()) {
+                    c.setRequestProperty("Authorization", "Bearer " + token);
+                }
+
+                if (c.getResponseCode() == 200) {
+                    BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
+                    StringBuilder b = new StringBuilder();
+                    String line;
+                    while ((line = r.readLine()) != null) b.append(line);
+                    JSONObject json = new JSONObject(b.toString());
+                    JSONArray turns = json.optJSONArray("turns");
+                    if (turns == null) turns = json.optJSONArray("messages");
+
+                    StringBuilder out = new StringBuilder();
+                    out.append("# ").append(title != null ? title : "Session").append("
+");
+                    out.append("ID: ").append(convId).append("
+
+");
+                    if (turns != null) {
+                        for (int i = 0; i < turns.length(); i++) {
+                            JSONObject t = turns.optJSONObject(i);
+                            if (t == null) continue;
+                            String role = t.optString("role", "unknown");
+                            String content = t.optString("content", "");
+                            out.append("### ").append(role.toUpperCase()).append(":
+").append(content).append("
+
+");
+                        }
+                    }
+
+                    mainHandler.post(() -> {
+                        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                        if (cm != null) {
+                            cm.setPrimaryClip(ClipData.newPlainText("Codex Transcript", out.toString()));
+                            Toast.makeText(MainActivity.this, "Transkrip disalin ke clipboard", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal mengekspor: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
     private void showMoreDropdownMenu(View anchorView) {
         PopupMenu popup = new PopupMenu(this, anchorView);
         addDropdownItem(popup, 1, "Scan QR Code Pairing", R.drawable.ic_qr_code, Theme.TEXT_MAIN);
@@ -3314,6 +3565,7 @@ public class MainActivity extends Activity {
         addDropdownItem(popup, 8, "File Workspace", R.drawable.ic_folder, Theme.TEXT_MAIN);
         addDropdownItem(popup, 9, "Git", R.drawable.ic_source_branch, Theme.TEXT_MAIN);
         addDropdownItem(popup, 10, "Ekspor Transkrip", R.drawable.ic_content_copy, Theme.TEXT_MAIN);
+        addDropdownItem(popup, 11, "Ubah Nama Sesi", R.drawable.ic_edit, Theme.TEXT_MAIN);
         forceShowPopupIcons(popup);
 
         popup.setOnMenuItemClickListener(item -> {
@@ -3328,6 +3580,7 @@ public class MainActivity extends Activity {
             else if (id == 8) showFileBrowser(".");
             else if (id == 9) showGitPanel();
             else if (id == 10) exportActiveSession();
+            else if (id == 11) showRenameSessionDialog(activeConversationId, activeSessionTitle);
             return true;
         });
         popup.show();

@@ -22,6 +22,34 @@ const WORKDIR = config.workdir();
 const AGY_BIN = process.env.AGY_BIN || path.join(os.homedir(), ".local/bin/agy");
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
 let activeCodexSessionId = null;
+const SESSION_TITLES_FILE = path.join(os.homedir(), ".gemini/antigravity-cli/session_titles.json");
+
+function getCustomSessionTitles() {
+  try {
+    if (fs.existsSync(SESSION_TITLES_FILE)) {
+      return JSON.parse(fs.readFileSync(SESSION_TITLES_FILE, "utf8"));
+    }
+  } catch (e) {}
+  return {};
+}
+
+function saveCustomSessionTitle(convId, title) {
+  try {
+    const titles = getCustomSessionTitles();
+    if (title && title.trim()) {
+      titles[convId] = title.trim();
+    } else {
+      delete titles[convId];
+    }
+    const dir = path.dirname(SESSION_TITLES_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SESSION_TITLES_FILE, JSON.stringify(titles, null, 2), "utf8");
+    return true;
+  } catch (e) {
+    console.error("[SessionTitles] Failed to save:", e);
+    return false;
+  }
+}
 
 if (config.isLegacyToken(TOKEN)) {
   console.error("[Security] Refusing to start: the token is the public default from this repository.");
@@ -411,6 +439,14 @@ function getSessions(engineFilter) {
   let merged = [...codexSessions, ...agySessions].sort((a, b) => {
     return (b.timestamp || 0) - (a.timestamp || 0);
   });
+
+  const customTitles = getCustomSessionTitles();
+  for (const s of merged) {
+    if (customTitles[s.conversationId]) {
+      s.title = customTitles[s.conversationId];
+      s.customTitle = true;
+    }
+  }
 
   // Filter before the cap. Trimming to 50 first and filtering afterwards would
   // hide an engine's sessions whenever the other engine dominates the top 50.
@@ -1188,6 +1224,11 @@ const server = http.createServer((req, res) => {
     const msgs = getTranscript(convId, 1000);
     const sData = getSessions();
     const foundSession = (sData.sessions || []).find(s => s.conversationId === convId) || { conversationId: convId, title: "Session" };
+    const customTitles = getCustomSessionTitles();
+    if (customTitles[convId]) {
+      foundSession.title = customTitles[convId];
+      foundSession.customTitle = true;
+    }
     return send(res, 200, {
       ok: true,
       conversationId: convId,
@@ -1195,6 +1236,35 @@ const server = http.createServer((req, res) => {
       turns: msgs,
       messages: msgs
     });
+  }
+
+  // POST /api/session/rename
+  if (req.method === "POST" && pathname === "/api/session/rename") {
+    let raw = "";
+    req.on("data", chunk => { raw += chunk; });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const convId = payload.id || payload.conversationId;
+        const newTitle = (payload.title || "").trim();
+        if (!convId) {
+          return send(res, 400, { error: "Missing session id (id or conversationId)" });
+        }
+        if (!newTitle) {
+          return send(res, 400, { error: "Title cannot be empty" });
+        }
+        saveCustomSessionTitle(convId, newTitle);
+        audit("session.rename", { conversationId: convId, title: newTitle });
+        return send(res, 200, {
+          ok: true,
+          conversationId: convId,
+          title: newTitle
+        });
+      } catch (err) {
+        send(res, 500, { error: err.message });
+      }
+    });
+    return;
   }
 
   // POST /api/session/control
