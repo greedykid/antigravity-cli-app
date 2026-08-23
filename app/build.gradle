@@ -13,12 +13,6 @@ android {
     }
 
     signingConfigs {
-        debug {
-            storeFile file('release.keystore')
-            storePassword 'codexremote2026'
-            keyAlias 'codexremote'
-            keyPassword 'codexremote2026'
-        }
         release {
             storeFile file('release.keystore')
             storePassword 'codexremote2026'
@@ -29,7 +23,7 @@ android {
 
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
+            minifyEnabled false
         }
         release {
             signingConfig signingConfigs.release
