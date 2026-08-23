@@ -14,6 +14,14 @@ Antigravity Remote adalah aplikasi Android native yang memungkinkan Anda mengont
 
 ---
 
+## 📸 Tangkapan Layar Aplikasi
+
+| Sesi Baru (Empty State) | Percakapan Real-Time | Menu Navigasi Sidebar | Code Hub (Semua Sesi) |
+| :---: | :---: | :---: | :---: |
+| <img src="assets/screenshots/01_empty_state.jpg" width="220" alt="Sesi Baru" /> | <img src="assets/screenshots/02_chat_screen.jpg" width="220" alt="Chat Interaktif" /> | <img src="assets/screenshots/03_sidebar_menu.jpg" width="220" alt="Menu Sidebar" /> | <img src="assets/screenshots/04_code_hub.jpg" width="220" alt="Code Hub" /> |
+
+---
+
 ## 📱 Fitur Unggulan
 
 * **⚡ Pembaruan Otomatis In-App:** Periksa rilis terbaru dan pasang file APK langsung dari dalam aplikasi tanpa perlu membuka browser manual.
