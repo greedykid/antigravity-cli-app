@@ -193,6 +193,8 @@ public class MainActivity extends Activity {
 
     // Live Execution & Real-time Sync State
     private volatile boolean isLiveTaskRunning = false;
+    private String pendingOptimisticUserPrompt = null;
+    private String pendingOptimisticUserTime = null;
     private String lastLoadedSessionId = null;
     private int lastLoadedTurnCount = -1;
     private boolean lastRenderedWasRunning = false;
