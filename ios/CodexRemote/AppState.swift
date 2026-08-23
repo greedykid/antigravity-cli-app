@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UserNotifications
 
 @MainActor
 final class AppState: ObservableObject {
@@ -298,6 +299,8 @@ final class AppState: ObservableObject {
             if !event.isOk, let failure = event.errorText { errorMessage = failure }
             isRunning = false
             pendingPrompt = nil
+            postNotification(title: event.isOk ? "✅ Tugas Selesai: \(activeSessionTitle)" : "⚠️ Tugas Gagal: \(activeSessionTitle)",
+                             body: event.isOk ? "AI telah selesai mengerjakan tugas coding Anda." : (event.errorText ?? "Terjadi kesalahan."))
             Task { await refreshActiveTranscript() }
         case "cli.event", "cli.output":
             if let conversationId = event.conversationId { adopt(conversationId) }
@@ -305,6 +308,40 @@ final class AppState: ObservableObject {
         default:
             break
         }
+    }
+
+    // MARK: - notifications & upload
+
+    func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+
+    func postNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req)
+    }
+
+    struct UploadResult: Codable {
+        let ok: Bool?
+        let filePath: String?
+        let filename: String?
+    }
+
+    func uploadImage(data: Data, filename: String = "photo.jpg") async -> String? {
+        guard isPaired else { return nil }
+        let base64 = data.base64EncodedString()
+        let body: [String: Any] = [
+            "filename": filename,
+            "data": base64
+        ]
+        if let res = try? await client.post("/api/upload", body: body, as: UploadResult.self) {
+            return res.filePath
+        }
+        return nil
     }
 
     // MARK: - status

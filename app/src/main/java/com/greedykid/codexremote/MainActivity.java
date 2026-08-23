@@ -116,6 +116,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
+    private boolean isAppInForeground = true;
+    private static final String CHANNEL_TASK_NOTIFICATIONS = "channel_ai_task_alerts";
+    private HorizontalScrollView quickActionScroll;
+    private LinearLayout quickActionRow;
+    private static final int REQ_CAMERA_CAPTURE = 1004;
+    private Uri cameraCaptureUri;
+
     // Claude Dark Theme Palette (Exact Match to Official Claude App)
 
     private static final int REQ_PICK_FILES = 1001;
@@ -130,6 +137,152 @@ public class MainActivity extends Activity {
 
     // Image Bitmap Memory Cache
     private final ConcurrentHashMap<String, Bitmap> imageCache = new ConcurrentHashMap<>();
+
+
+    private View buildQuickActionToolbar() {
+        quickActionScroll = new HorizontalScrollView(this);
+        quickActionScroll.setHorizontalScrollBarEnabled(false);
+        quickActionScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        quickActionScroll.setPadding(0, 0, 0, dp(6));
+
+        quickActionRow = new LinearLayout(this);
+        quickActionRow.setOrientation(LinearLayout.HORIZONTAL);
+        quickActionRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        // Prompts & Tools
+        addQuickChip(quickActionRow, "⚡ Perbaiki Error", "Tolong perbaiki error berikut: ");
+        addQuickChip(quickActionRow, "🔍 Review Kode", "Tolong review dan periksa kode ini untuk potensi bug atau peningkatan: ");
+        addQuickChip(quickActionRow, "🧪 Jalankan Test", "Jalankan test suite dan laporkan hasilnya.");
+        addQuickChip(quickActionRow, "📖 Jelaskan Alur", "Jelaskan alur kerja kode ini secara ringkas.");
+        addQuickChip(quickActionRow, "📦 Git Status", "Cek git status dan rangkum perubahan.");
+        addQuickChip(quickActionRow, "🚀 Git Diff", "Tampilkan git diff dari perubahan terbaru.");
+        addQuickChip(quickActionRow, "📝 Buat Commit", "Buat commit git dengan pesan yang jelas untuk perubahan saat ini.");
+        
+        // Code Symbols
+        addSymbolChip(quickActionRow, "```", "```\n\n```", 4);
+        addSymbolChip(quickActionRow, "{ }", "{  }", 2);
+        addSymbolChip(quickActionRow, "[ ]", "[  ]", 2);
+        addSymbolChip(quickActionRow, "/* */", "/*  */", 3);
+        addSymbolChip(quickActionRow, "->", "-> ", 3);
+        addSymbolChip(quickActionRow, "$", "$ ", 2);
+        addSymbolChip(quickActionRow, "/", "/", 1);
+
+        quickActionScroll.addView(quickActionRow, new ViewGroup.LayoutParams(-2, -2));
+        return quickActionScroll;
+    }
+
+    private void addQuickChip(LinearLayout parent, String label, final String promptToInsert) {
+        TextView chip = cText(label, 12f, Theme.TEXT_MAIN, true, false);
+        chip.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+        chip.setPadding(dp(11), dp(5), dp(11), dp(5));
+        chip.setClickable(true);
+        chip.setFocusable(true);
+        chip.setOnClickListener(v -> {
+            vibrateTick();
+            String current = promptInput.getText().toString();
+            if (current.isEmpty()) {
+                promptInput.setText(promptToInsert);
+            } else {
+                promptInput.append("\n" + promptToInsert);
+            }
+            promptInput.requestFocus();
+            promptInput.setSelection(promptInput.getText().length());
+        });
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.setMargins(0, 0, dp(6), 0);
+        parent.addView(chip, lp);
+    }
+
+    private void addSymbolChip(LinearLayout parent, String display, final String snippet, final int cursorOffset) {
+        TextView chip = cText(display, 12f, Theme.ACCENT, true, false);
+        chip.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        chip.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
+        chip.setPadding(dp(11), dp(5), dp(11), dp(5));
+        chip.setClickable(true);
+        chip.setFocusable(true);
+        chip.setOnClickListener(v -> {
+            vibrateTick();
+            int start = Math.max(0, promptInput.getSelectionStart());
+            int end = Math.max(0, promptInput.getSelectionEnd());
+            promptInput.getText().replace(Math.min(start, end), Math.max(start, end), snippet, 0, snippet.length());
+            promptInput.requestFocus();
+            int newCursor = start + cursorOffset;
+            if (newCursor <= promptInput.getText().length()) {
+                promptInput.setSelection(newCursor);
+            }
+        });
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.setMargins(0, 0, dp(6), 0);
+        parent.addView(chip, lp);
+    }
+
+    private void vibrateTick() {
+        try {
+            Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(android.os.VibrationEffect.createOneShot(18, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    vibrator.vibrate(18);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                android.app.NotificationChannel ch = new android.app.NotificationChannel(
+                    CHANNEL_TASK_NOTIFICATIONS,
+                    "Task Alerts",
+                    android.app.NotificationManager.IMPORTANCE_HIGH
+                );
+                ch.setDescription("Memberi tahu saat tugas AI selesai di background");
+                ch.enableLights(true);
+                ch.enableVibration(true);
+                ch.setLightColor(Theme.ACCENT);
+                nm.createNotificationChannel(ch);
+            }
+        }
+    }
+
+    private void showTaskCompletionNotification(String sessionTitle, boolean success, String details) {
+        try {
+            android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            if (activeConversationId != null) {
+                intent.putExtra("open_conversation_id", activeConversationId);
+            }
+            int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? 
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE :
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT;
+            android.app.PendingIntent pi = android.app.PendingIntent.getActivity(this, 100, intent, flags);
+
+            String title = (success ? "✅ Tugas Selesai: " : "⚠️ Tugas Gagal: ") + (sessionTitle != null && !sessionTitle.isEmpty() ? sessionTitle : "Antigravity");
+            String message = details != null && !details.isEmpty() ? details : (success ? "AI telah selesai menjalankan tugas coding Anda." : "Terjadi kendala saat menjalankan tugas.");
+
+            androidx.core.app.NotificationCompat.Builder builder = new androidx.core.app.NotificationCompat.Builder(this, CHANNEL_TASK_NOTIFICATIONS)
+                .setSmallIcon(R.drawable.ic_code)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setStyle(new androidx.core.app.NotificationCompat.BigTextStyle().bigText(message))
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(androidx.core.app.NotificationCompat.DEFAULT_ALL)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
+
+            nm.notify(NOTIFY_RESULT_ID, builder.build());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    private static final int NOTIFY_RESULT_ID = 8821;
 
     // Multi-File Attachment Model
     public static class AttachedMedia {
@@ -274,6 +427,7 @@ public class MainActivity extends Activity {
         buildClaudeUiWithSidebar();
         consumePendingEngineNotice();
         requestNotificationPermission();
+        createNotificationChannel();
         LiveEventBus.register(liveEventListener);
         startLiveEvents();
     }
@@ -2886,6 +3040,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpAtt = new LinearLayout.LayoutParams(-1, -2);
         lpAtt.setMargins(0, 0, 0, dp(8));
         floatingWrapper.addView(attachmentScrollContainer, lpAtt);
+        floatingWrapper.addView(buildQuickActionToolbar());
 
         LinearLayout composerCard = new LinearLayout(this);
         composerCard.setOrientation(LinearLayout.VERTICAL);
@@ -4129,15 +4284,103 @@ public class MainActivity extends Activity {
     // MULTI-FILE & MULTI-IMAGE SELECTION & TRAY PREVIEW
     // ============================================================
     private void openMultiFilePicker() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("*/*");
-        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        try {
-            startActivityForResult(Intent.createChooser(intent, "Pilih Gambar atau File (Bisa Banyak)"), REQ_PICK_FILES);
-        } catch (Exception e) {
-            Toast.makeText(this, "No file picker available", Toast.LENGTH_SHORT).show();
-        }
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 24));
+        root.setPadding(dp(20), dp(18), dp(20), dp(20));
+
+        View pill = new View(this);
+        pill.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 3));
+        LinearLayout.LayoutParams lpPill = new LinearLayout.LayoutParams(dp(40), dp(5));
+        lpPill.gravity = Gravity.CENTER_HORIZONTAL;
+        lpPill.setMargins(0, 0, 0, dp(14));
+        root.addView(pill, lpPill);
+
+        TextView title = cText("Lampirkan File & Gambar", 16f, Theme.TEXT_MAIN, true, false);
+        root.addView(title);
+
+        TextView desc = cText("Kirim foto screenshot, error log, atau file kode ke AI", 12.5f, Theme.TEXT_MUTED, false, false);
+        desc.setPadding(0, dp(4), 0, dp(14));
+        root.addView(desc);
+
+        // 1. Galeri Foto
+        LinearLayout optGallery = createAttachmentOptionRow("🖼️  Pilih dari Galeri (Foto / Screenshot)", "Format PNG, JPG, WebP");
+        optGallery.setOnClickListener(v -> {
+            dialog.dismiss();
+            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.setType("image/*");
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            try {
+                startActivityForResult(Intent.createChooser(intent, "Pilih Gambar"), REQ_PICK_FILES);
+            } catch (Exception ex) {
+                Toast.makeText(MainActivity.this, "Gagal membuka galeri", Toast.LENGTH_SHORT).show();
+            }
+        });
+        root.addView(optGallery);
+
+        // 2. Kamera
+        LinearLayout optCamera = createAttachmentOptionRow("📷  Ambil Foto dengan Kamera", "Foto langsung dari layar / objek");
+        optCamera.setOnClickListener(v -> {
+            dialog.dismiss();
+            try {
+                Intent takePictureIntent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+                File photoFile = new File(getCacheDir(), "camera_" + System.currentTimeMillis() + ".jpg");
+                cameraCaptureUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", photoFile);
+                takePictureIntent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, cameraCaptureUri);
+                takePictureIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                startActivityForResult(takePictureIntent, REQ_CAMERA_CAPTURE);
+            } catch (Exception ex) {
+                Toast.makeText(MainActivity.this, "Error kamera: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+        root.addView(optCamera);
+
+        // 3. Semua Dokumen & File
+        LinearLayout optFiles = createAttachmentOptionRow("📄  Pilih Dokumen / File Lainnya", "Format sembarang (txt, json, code, dll)");
+        optFiles.setOnClickListener(v -> {
+            dialog.dismiss();
+            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.setType("*/*");
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            try {
+                startActivityForResult(Intent.createChooser(intent, "Pilih File"), REQ_PICK_FILES);
+            } catch (Exception ex) {
+                Toast.makeText(MainActivity.this, "Gagal membuka file picker", Toast.LENGTH_SHORT).show();
+            }
+        });
+        root.addView(optFiles);
+
+        dialog.setContentView(root);
+        dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dialog.getWindow().setGravity(Gravity.BOTTOM);
+        dialog.show();
+    }
+
+    private LinearLayout createAttachmentOptionRow(String titleStr, String subStr) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
+        row.setPadding(dp(14), dp(10), dp(14), dp(10));
+        row.setClickable(true);
+        row.setFocusable(true);
+
+        TextView t = cText(titleStr, 14f, Theme.TEXT_MAIN, true, false);
+        row.addView(t);
+
+        TextView s = cText(subStr, 11.5f, Theme.TEXT_MUTED, false, false);
+        s.setPadding(0, dp(2), 0, 0);
+        row.addView(s);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(8));
+        row.setLayoutParams(lp);
+        return row;
     }
 
     private void startVoiceRecognition() {
@@ -4169,6 +4412,12 @@ public class MainActivity extends Activity {
                 }
 
                 if (!uris.isEmpty()) {
+                    uploadMultipleSelectedFiles(uris);
+                }
+            } else if (requestCode == REQ_CAMERA_CAPTURE) {
+                if (cameraCaptureUri != null) {
+                    ArrayList<Uri> uris = new ArrayList<>();
+                    uris.add(cameraCaptureUri);
                     uploadMultipleSelectedFiles(uris);
                 }
             } else if (requestCode == REQ_PICK_QR_IMAGE) {
@@ -5513,6 +5762,11 @@ public class MainActivity extends Activity {
             isLiveTaskRunning = false;
             pendingOptimisticUserPrompt = null;
             if (currentScreen == 1) syncLiveExecution();
+            if (!isAppInForeground) {
+                boolean ok = data != null ? data.optBoolean("ok", true) : true;
+                String err = data != null ? data.optString("error", "") : "";
+                showTaskCompletionNotification(activeSessionTitle, ok, ok ? "AI telah selesai mengerjakan tugas." : err);
+            }
             return;
         }
 

@@ -1,10 +1,14 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 struct ChatView: View {
     @EnvironmentObject private var state: AppState
     @State private var draft = ""
     @FocusState private var inputFocused: Bool
+    @State private var photoItem: PhotosPickerItem?
+    @State private var attachedImage: UIImage?
+    @State private var attachedData: Data?
 
     private var palette: Palette { state.palette }
 
@@ -14,6 +18,20 @@ struct ChatView: View {
             composer
         }
         .background(palette.background.ignoresSafeArea())
+        .onChange(of: photoItem) { _ in loadAttachedPhoto() }
+    }
+
+    private func loadAttachedPhoto() {
+        guard let photoItem else { return }
+        Task {
+            if let data = try? await photoItem.loadTransferable(type: Data.self),
+               let uiImage = UIImage(data: data) {
+                await MainActor.run {
+                    attachedData = data
+                    attachedImage = uiImage
+                }
+            }
+        }
     }
 
     private var transcript: some View {
@@ -100,7 +118,7 @@ struct ChatView: View {
     private var runningIndicator: some View {
         HStack(spacing: 10) {
             ProgressView().tint(palette.accent)
-            Text("\(state.engine.label) sedang bekerja...")
+            Text("(state.engine.label) sedang bekerja...")
                 .font(.system(size: 13))
                 .foregroundColor(palette.textMuted)
             Spacer()
@@ -127,31 +145,132 @@ struct ChatView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var quickToolbar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                // Prompts
+                quickChip("⚡ Perbaiki Error", insert: "Tolong perbaiki error berikut: ")
+                quickChip("🔍 Review Kode", insert: "Tolong review dan periksa kode ini untuk potensi bug atau peningkatan: ")
+                quickChip("🧪 Jalankan Test", insert: "Jalankan test suite dan laporkan hasilnya.")
+                quickChip("📖 Jelaskan Alur", insert: "Jelaskan alur kerja kode ini secara ringkas.")
+                quickChip("📦 Git Status", insert: "Cek git status dan rangkum perubahan.")
+                quickChip("🚀 Git Diff", insert: "Tampilkan git diff dari perubahan terbaru.")
+                quickChip("📝 Buat Commit", insert: "Buat commit git dengan pesan yang jelas untuk perubahan saat ini.")
+
+                // Symbols
+                symbolChip("```", snippet: "```\n\n```")
+                symbolChip("{ }", snippet: "{  }")
+                symbolChip("[ ]", snippet: "[  ]")
+                symbolChip("/* */", snippet: "/*  */")
+                symbolChip("->", snippet: "-> ")
+                symbolChip("$", snippet: "$ ")
+                symbolChip("/", snippet: "/")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func quickChip(_ title: String, insert: String) -> some View {
+        Button {
+            if draft.isEmpty {
+                draft = insert
+            } else {
+                draft += "\n" + insert
+            }
+            inputFocused = true
+        } label: {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(palette.textMain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(palette.surface)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(palette.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func symbolChip(_ title: String, snippet: String) -> some View {
+        Button {
+            draft += snippet
+            inputFocused = true
+        } label: {
+            Text(title)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundColor(palette.accent)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(palette.surfaceMuted)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(palette.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var attachmentTray: some View {
+        Group {
+            if let image = attachedImage {
+                HStack(spacing: 8) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Gambar Terlampir")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(palette.textMain)
+                        Text("Siap dikirim ke AI")
+                            .font(.system(size: 11))
+                            .foregroundColor(palette.textMuted)
+                    }
+                    Spacer()
+                    Button {
+                        attachedImage = nil
+                        attachedData = nil
+                        photoItem = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(palette.textMuted)
+                    }
+                }
+                .padding(8)
+                .background(palette.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.border, lineWidth: 1))
+                .padding(.horizontal, 12)
+            }
+        }
+    }
+
     private var composer: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             if let error = state.errorMessage {
                 Text(error)
                     .font(.system(size: 12.5))
                     .foregroundColor(palette.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
             }
 
-            HStack(spacing: 10) {
-                Text(state.engine.short)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(palette.accent)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(palette.accentSoft)
-                    .clipShape(Capsule())
+            attachmentTray
+            quickToolbar
 
-                Text(state.model)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundColor(palette.textMuted)
-                    .lineLimit(1)
-                Spacer()
-            }
+            HStack(alignment: .bottom, spacing: 8) {
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(attachedImage != nil ? palette.accent : palette.textMuted)
+                        .frame(width: 40, height: 40)
+                        .background(palette.surface)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(palette.border, lineWidth: 1))
+                }
 
-            HStack(alignment: .bottom, spacing: 10) {
                 TextField("", text: $draft, prompt: Text("Ketik perintah...").foregroundColor(palette.textLight), axis: .vertical)
                     .lineLimit(1...5)
                     .focused($inputFocused)
@@ -163,9 +282,20 @@ struct ChatView: View {
 
                 Button {
                     let text = draft
+                    let dataToSend = attachedData
                     draft = ""
+                    attachedImage = nil
+                    attachedData = nil
+                    photoItem = nil
                     inputFocused = false
-                    Task { await state.send(prompt: text) }
+                    Task {
+                        var promptToSend = text
+                        if let data = dataToSend,
+                           let uploadedPath = await state.uploadImage(data: data, filename: "ios_upload_\(Int(Date().timeIntervalSince1970)).jpg") {
+                            promptToSend = "[Attached File: \(uploadedPath)]\n" + text
+                        }
+                        await state.send(prompt: promptToSend)
+                    }
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 17, weight: .bold))
@@ -174,11 +304,12 @@ struct ChatView: View {
                         .background(palette.accent)
                         .clipShape(Circle())
                 }
-                .disabled(state.isRunning || draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(state.isRunning || (draft.trimmingCharacters(in: .whitespaces).isEmpty && attachedData == nil))
                 .opacity(state.isRunning ? 0.5 : 1)
             }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
         }
-        .padding(12)
         .background(palette.background)
     }
 }

@@ -34,6 +34,7 @@ struct RootView: View {
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showPairing) { PairingView().environmentObject(state) }
         .task {
+            state.requestNotificationPermission()
             if state.isPaired {
                 await state.refreshStatus()
                 await state.loadSessions()
