@@ -39,7 +39,11 @@ function writeTokenFile(token) {
 // silently mint a token the server does not know about.
 function loadToken(create = true) {
   const fromEnv = process.env.TOKEN || process.env.REMOTE_TOKEN;
-  if (fromEnv && fromEnv.trim()) return fromEnv.trim();
+  // Old installs export the public default from shell wrappers and env files.
+  // Honouring it would put a token the server rejects into the pairing QR.
+  if (fromEnv && fromEnv.trim() && fromEnv.trim() !== LEGACY_TOKEN) {
+    return fromEnv.trim();
+  }
 
   const stored = readTokenFile();
   if (stored) return stored;

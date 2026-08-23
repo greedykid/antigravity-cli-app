@@ -28,22 +28,38 @@ TUNNEL_LOG="$DATA_DIR/tunnel.log"
 ENV_FILE="$DATA_DIR/env"
 
 DEFAULT_PORT="8787"
-DEFAULT_TOKEN="codex-remote-token-2026"
 DEFAULT_ENGINE="antigravity"
+LEGACY_TOKEN="codex-remote-token-2026"
 
 if [ -f "$ENV_FILE" ]; then
     # shellcheck disable=SC1090
     source "$ENV_FILE"
 fi
 
+# A stale REMOTE_TOKEN in the env file used to override the real secret and
+# get baked into the QR code, so the phone paired with a token the server
+# had already replaced. Never trust the legacy default from any source.
+if [ "$REMOTE_TOKEN" = "$LEGACY_TOKEN" ]; then
+    REMOTE_TOKEN=""
+fi
+
 PORT="${BRIDGE_PORT:-$DEFAULT_PORT}"
-TOKEN="${REMOTE_TOKEN:-$DEFAULT_TOKEN}"
 ENGINE="${DEFAULT_ENGINE:-antigravity}"
+
+# ~/.codex-remote/token is the single source of truth, shared with the server.
+read_token() {
+    node -e "process.stdout.write(require('$APP_DIR/bridge/config.js').loadToken())" 2>/dev/null
+}
+
+write_token() {
+    node -e "require('fs');const c=require('$APP_DIR/bridge/config.js');const fs=require('fs');fs.mkdirSync(c.CONFIG_DIR,{recursive:true,mode:0o700});fs.writeFileSync(c.TOKEN_FILE,process.argv[1]+'\n',{mode:0o600});" "$1" 2>/dev/null
+}
+
+TOKEN="${REMOTE_TOKEN:-$(read_token)}"
 
 save_env() {
     cat <<EOENV > "$ENV_FILE"
 BRIDGE_PORT="$PORT"
-REMOTE_TOKEN="$TOKEN"
 DEFAULT_ENGINE="$ENGINE"
 EOENV
 }
@@ -75,7 +91,16 @@ is_tunnel_running() {
     return 1
 }
 
+systemd_manages() {
+    command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$1"
+}
+
 start_bridge() {
+    if systemd_manages codex-bridge; then
+        echo -e "\033[32m✔ Bridge Server dikelola systemd (codex-bridge)\033[0m"
+        return 0
+    fi
+
     if is_bridge_running; then
         echo -e "\033[32m✔ Bridge Server is already running on port $PORT\033[0m"
         return 0
@@ -106,12 +131,28 @@ start_bridge() {
 }
 
 get_tunnel_url() {
-    if [ -f "$TUNNEL_LOG" ]; then
-        grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare\.com" "$TUNNEL_LOG" | tail -n 1
-    fi
+    # The systemd unit logs to ~/tunnel.log; the standalone mode uses DATA_DIR.
+    local f
+    for f in "$HOME/tunnel.log" "$TUNNEL_LOG"; do
+        if [ -f "$f" ]; then
+            local found
+            found=$(grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare\.com" "$f" | tail -n 1)
+            if [ -n "$found" ]; then
+                echo "$found"
+                return 0
+            fi
+        fi
+    done
+    journalctl -u codex-tunnel -n 200 --no-pager 2>/dev/null \
+        | grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare\.com" | tail -n 1
 }
 
 start_tunnel() {
+    if systemd_manages codex-tunnel; then
+        echo -e "\033[32m✔ Cloudflare Tunnel dikelola systemd (codex-tunnel)\033[0m"
+        return 0
+    fi
+
     if ! command -v cloudflared >/dev/null 2>&1; then
         echo -e "\033[33m⚠ cloudflared is not installed. Running local server only.\033[0m"
         return 0
@@ -228,7 +269,7 @@ show_qr_pair() {
     fi
 
     cd "$APP_DIR/bridge"
-    BRIDGE_URL="$endpoint_url" REMOTE_TOKEN="$TOKEN" DEFAULT_ENGINE="$ENGINE" node pair.js
+    BRIDGE_URL="$endpoint_url" DEFAULT_ENGINE="$ENGINE" node pair.js
 }
 
 show_logs() {
@@ -265,6 +306,7 @@ case "$1" in
     token)
         if [ -n "$2" ]; then
             TOKEN="$2"
+            write_token "$TOKEN"
             save_env
             echo -e "\033[32m✔ Token updated to: $TOKEN\033[0m"
             echo -e "Restarting server with new token..."
