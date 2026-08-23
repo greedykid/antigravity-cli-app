@@ -218,9 +218,9 @@ public class MarkdownRenderer {
         codeHeader.setGravity(Gravity.CENTER_VERTICAL);
         codeHeader.setPadding(dp(12), dp(8), dp(8), dp(8));
 
-        TextView langTag = text(lang.isEmpty() ? "CODE" : lang, 10.5f, Theme.TERRACOTTA, true, false);
+        TextView langTag = text(lang.isEmpty() ? "CODE" : lang, 10.5f, Theme.ACCENT, true, false);
         langTag.setLetterSpacing(0.12f);
-        langTag.setBackground(box(Theme.TERRACOTTA_LIGHT, 0, 0, 6));
+        langTag.setBackground(box(Theme.ACCENT_SOFT, 0, 0, 6));
         langTag.setPadding(dp(7), dp(3), dp(7), dp(3));
         LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(-2, -2);
         codeHeader.addView(langTag, tagLp);
@@ -335,7 +335,7 @@ public class MarkdownRenderer {
         row.setBackground(box(Theme.SURFACE, 0, 0, 10));
 
         View bar = new View(activity);
-        bar.setBackgroundColor(Theme.TERRACOTTA);
+        bar.setBackgroundColor(Theme.ACCENT);
         row.addView(bar, new LinearLayout.LayoutParams(dp(3), -1));
 
         TextView body = new TextView(activity);
@@ -385,7 +385,7 @@ public class MarkdownRenderer {
                 markerView.setTextSize(14.5f);
             } else {
                 markerView.setText(depth == 0 ? marker : (marker.equals("\u2022") ? "\u25E6" : marker));
-                markerView.setTextColor(Theme.TERRACOTTA);
+                markerView.setTextColor(Theme.ACCENT);
                 markerView.setTextSize(marker.equals("\u2022") ? 15f : 13.5f);
                 markerView.setTypeface(Typeface.SANS_SERIF, Typeface.BOLD);
             }
@@ -466,7 +466,7 @@ public class MarkdownRenderer {
                 int start = m.start();
                 String inner = m.group(1);
                 ssb.replace(start, m.end(), inner);
-                ssb.setSpan(new CodePillSpan(Theme.SURFACE_MUTED, Theme.TERRACOTTA),
+                ssb.setSpan(new CodePillSpan(Theme.SURFACE_MUTED, Theme.ACCENT),
                         start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 from = start + inner.length();
                 m = MD_INLINE_CODE.matcher(ssb);
@@ -524,7 +524,7 @@ public class MarkdownRenderer {
                 }
             }
         }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        ssb.setSpan(new ForegroundColorSpan(Theme.TERRACOTTA), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        ssb.setSpan(new ForegroundColorSpan(Theme.ACCENT), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         ssb.setSpan(new UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 

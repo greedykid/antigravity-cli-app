@@ -101,23 +101,6 @@ public class WorkspacePanels {
         host.openSession(conversationId, title);
     }
 
-    // ---- palette aliases, matching the call sites this code came from ----
-
-    private static final int CLAUDE_BG = Theme.BG;
-    private static final int CLAUDE_SURFACE = Theme.SURFACE;
-    private static final int CLAUDE_SURFACE_MUTED = Theme.SURFACE_MUTED;
-    private static final int CLAUDE_BORDER = Theme.BORDER;
-    private static final int CLAUDE_BORDER_DARK = Theme.BORDER_DARK;
-    private static final int CLAUDE_CODE_BG = Theme.CODE_BG;
-    private static final int CLAUDE_TEXT_MAIN = Theme.TEXT_MAIN;
-    private static final int CLAUDE_TEXT_MUTED = Theme.TEXT_MUTED;
-    private static final int CLAUDE_TEXT_LIGHT = Theme.TEXT_LIGHT;
-    private static final int CLAUDE_TERRACOTTA = Theme.TERRACOTTA;
-    private static final int CLAUDE_GREEN = Theme.GREEN;
-    private static final int CLAUDE_GREEN_BG = Theme.GREEN_BG;
-    private static final int CLAUDE_AMBER = Theme.AMBER;
-    private static final int CLAUDE_RED = Theme.RED;
-    private static final int CLAUDE_BLUE = Theme.BLUE;
 
     // ============================================================
     // FILE BROWSER
@@ -126,7 +109,7 @@ public class WorkspacePanels {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "File Workspace", true);
 
-        final TextView pathLabel = cText(startPath == null ? "." : startPath, 12f, CLAUDE_TEXT_MUTED, false, false);
+        final TextView pathLabel = cText(startPath == null ? "." : startPath, 12f, Theme.TEXT_MUTED, false, false);
         pathLabel.setSingleLine(true);
         pathLabel.setEllipsize(TextUtils.TruncateAt.START);
         root.addView(pathLabel);
@@ -147,7 +130,7 @@ public class WorkspacePanels {
 
     private void loadFileList(final String path, final LinearLayout list, final TextView pathLabel, final Dialog dialog) {
         list.removeAllViews();
-        list.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
+        list.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
 
         executor.execute(() -> {
             try {
@@ -155,7 +138,7 @@ public class WorkspacePanels {
                 mainHandler.post(() -> {
                     list.removeAllViews();
                     if (!json.optBoolean("ok", false)) {
-                        list.addView(cText(describeApiError(json, "Gagal memuat"), 13f, CLAUDE_RED, false, false));
+                        list.addView(cText(describeApiError(json, "Gagal memuat"), 13f, Theme.RED, false, false));
                         return;
                     }
                     pathLabel.setText("/" + json.optString("path", "."));
@@ -168,7 +151,7 @@ public class WorkspacePanels {
 
                     JSONArray entries = json.optJSONArray("entries");
                     if (entries == null || entries.length() == 0) {
-                        list.addView(cText("Folder kosong", 13f, CLAUDE_TEXT_LIGHT, false, false));
+                        list.addView(cText("Folder kosong", 13f, Theme.TEXT_LIGHT, false, false));
                         return;
                     }
                     for (int i = 0; i < entries.length(); i++) {
@@ -190,7 +173,7 @@ public class WorkspacePanels {
             } catch (Exception ex) {
                 mainHandler.post(() -> {
                     list.removeAllViews();
-                    list.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                    list.addView(cText("Gagal: " + ex.getMessage(), 13f, Theme.RED, false, false));
                 });
             }
         });
@@ -205,16 +188,16 @@ public class WorkspacePanels {
 
         boolean isDir = "dir".equals(type);
         row.addView(cIcon(isDir ? R.drawable.ic_folder : R.drawable.ic_description, 20,
-                isDir ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
+                isDir ? Theme.ACCENT : Theme.TEXT_MUTED));
 
-        TextView label = cText(name, 14.5f, CLAUDE_TEXT_MAIN, isDir, false);
+        TextView label = cText(name, 14.5f, Theme.TEXT_MAIN, isDir, false);
         label.setPadding(dp(12), 0, dp(8), 0);
         label.setSingleLine(true);
         label.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
 
         if (!isDir && size > 0) {
-            row.addView(cText(humanSize(size), 11.5f, CLAUDE_TEXT_LIGHT, false, false));
+            row.addView(cText(humanSize(size), 11.5f, Theme.TEXT_LIGHT, false, false));
         }
 
         row.setOnClickListener(v -> onClick.run());
@@ -231,7 +214,7 @@ public class WorkspacePanels {
         final Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, path.substring(path.lastIndexOf('/') + 1), true);
 
-        TextView pathLabel = cText("/" + path, 11.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView pathLabel = cText("/" + path, 11.5f, Theme.TEXT_MUTED, false, false);
         pathLabel.setSingleLine(true);
         pathLabel.setEllipsize(TextUtils.TruncateAt.START);
         root.addView(pathLabel);
@@ -244,7 +227,7 @@ public class WorkspacePanels {
         lp.setMargins(0, dp(10), 0, 0);
         root.addView(scroll, lp);
 
-        body.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
+        body.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
 
         executor.execute(() -> {
             try {
@@ -252,12 +235,12 @@ public class WorkspacePanels {
                 mainHandler.post(() -> {
                     body.removeAllViews();
                     if (!json.optBoolean("ok", false)) {
-                        body.addView(cText(describeApiError(json, "Gagal membaca"), 13f, CLAUDE_RED, false, false));
+                        body.addView(cText(describeApiError(json, "Gagal membaca"), 13f, Theme.RED, false, false));
                         return;
                     }
                     if (json.optBoolean("binary", false)) {
                         body.addView(cText("File biner (" + humanSize(json.optLong("size")) + ") tidak ditampilkan.",
-                                13f, CLAUDE_TEXT_MUTED, false, false));
+                                13f, Theme.TEXT_MUTED, false, false));
                         return;
                     }
                     String lang = json.optString("language", "");
@@ -266,10 +249,10 @@ public class WorkspacePanels {
 
                     // Editing a truncated file would silently drop the tail.
                     if (!truncated) {
-                        TextView edit = cText("Edit file", 13.5f, CLAUDE_TERRACOTTA, true, false);
+                        TextView edit = cText("Edit file", 13.5f, Theme.ACCENT, true, false);
                         edit.setGravity(Gravity.CENTER);
                         edit.setPadding(dp(14), dp(11), dp(14), dp(11));
-                        edit.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+                        edit.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
                         edit.setOnClickListener(v -> {
                             dialog.dismiss();
                             showFileEditor(path, content);
@@ -283,13 +266,13 @@ public class WorkspacePanels {
                     renderMarkdownIntoContainer(body, "```" + lang + "\n" + content + "\n```", false);
                     if (truncated) {
                         body.addView(cText("… dipotong di 512 KB — edit dimatikan agar sisanya tidak hilang",
-                                12f, CLAUDE_AMBER, false, false));
+                                12f, Theme.AMBER, false, false));
                     }
                 });
             } catch (Exception ex) {
                 mainHandler.post(() -> {
                     body.removeAllViews();
-                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, Theme.RED, false, false));
                 });
             }
         });
@@ -305,7 +288,7 @@ public class WorkspacePanels {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Edit " + path.substring(path.lastIndexOf('/') + 1), true);
 
-        TextView pathLabel = cText("/" + path, 11.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView pathLabel = cText("/" + path, 11.5f, Theme.TEXT_MUTED, false, false);
         pathLabel.setSingleLine(true);
         pathLabel.setEllipsize(TextUtils.TruncateAt.START);
         root.addView(pathLabel);
@@ -315,7 +298,7 @@ public class WorkspacePanels {
         editor.setTextSize(12.5f);
         editor.setTypeface(Typeface.MONOSPACE);
         editor.setTextColor(Color.rgb(240, 240, 245));
-        editor.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
+        editor.setBackground(cBox(Theme.CODE_BG, Theme.BORDER, 1, 12));
         editor.setPadding(dp(12), dp(12), dp(12), dp(12));
         editor.setGravity(Gravity.TOP | Gravity.START);
         editor.setHorizontallyScrolling(false);
@@ -326,10 +309,10 @@ public class WorkspacePanels {
         LinearLayout actions = new LinearLayout(act);
         actions.setOrientation(LinearLayout.HORIZONTAL);
 
-        TextView cancel = cText("Batal", 14f, CLAUDE_TEXT_MAIN, true, false);
+        TextView cancel = cText("Batal", 14f, Theme.TEXT_MAIN, true, false);
         cancel.setGravity(Gravity.CENTER);
         cancel.setPadding(dp(16), dp(13), dp(16), dp(13));
-        cancel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        cancel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         cancel.setOnClickListener(v -> dialog.dismiss());
         LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(0, -2, 1);
         lpC.setMargins(0, 0, dp(8), 0);
@@ -338,7 +321,7 @@ public class WorkspacePanels {
         TextView save = cText("Simpan", 14f, Color.WHITE, true, false);
         save.setGravity(Gravity.CENTER);
         save.setPadding(dp(16), dp(13), dp(16), dp(13));
-        save.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
+        save.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
         save.setOnClickListener(v -> {
             final String content = editor.getText().toString();
             save.setEnabled(false);
@@ -383,7 +366,7 @@ public class WorkspacePanels {
         scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, dp(440)));
 
-        body.addView(cText("Memuat status...", 13f, CLAUDE_TEXT_MUTED, false, false));
+        body.addView(cText("Memuat status...", 13f, Theme.TEXT_MUTED, false, false));
         loadGitStatus(body, dialog);
 
         dialog.setContentView(root);
@@ -401,7 +384,7 @@ public class WorkspacePanels {
             } catch (Exception ex) {
                 mainHandler.post(() -> {
                     body.removeAllViews();
-                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, Theme.RED, false, false));
                 });
             }
         });
@@ -411,8 +394,8 @@ public class WorkspacePanels {
         body.removeAllViews();
 
         if (!json.optBoolean("ok", false)) {
-            body.addView(cText(describeApiError(json, "Bukan repository git"), 13.5f, CLAUDE_TEXT_MUTED, false, false));
-            TextView hint = cText("Set folder repo di Pengaturan → Git repo path.", 12.5f, CLAUDE_TEXT_LIGHT, false, false);
+            body.addView(cText(describeApiError(json, "Bukan repository git"), 13.5f, Theme.TEXT_MUTED, false, false));
+            TextView hint = cText("Set folder repo di Pengaturan → Git repo path.", 12.5f, Theme.TEXT_LIGHT, false, false);
             hint.setPadding(0, dp(8), 0, 0);
             body.addView(hint);
             return;
@@ -422,23 +405,23 @@ public class WorkspacePanels {
         LinearLayout head = new LinearLayout(act);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        head.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        head.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         head.setPadding(dp(12), dp(10), dp(12), dp(10));
-        head.addView(cIcon(R.drawable.ic_code, 16, CLAUDE_TERRACOTTA));
-        head.addView(cText("  " + json.optString("branch", "?"), 14f, CLAUDE_TEXT_MAIN, true, false),
+        head.addView(cIcon(R.drawable.ic_code, 16, Theme.ACCENT));
+        head.addView(cText("  " + json.optString("branch", "?"), 14f, Theme.TEXT_MAIN, true, false),
                 new LinearLayout.LayoutParams(0, -2, 1));
 
         int ahead = json.optInt("ahead", 0);
         int behind = json.optInt("behind", 0);
         head.addView(cText((ahead > 0 ? "↑" + ahead + "  " : "") + (behind > 0 ? "↓" + behind : ""),
-                12.5f, CLAUDE_AMBER, true, false));
+                12.5f, Theme.AMBER, true, false));
         body.addView(head);
 
         // Changed files
         JSONArray files = json.optJSONArray("files");
         final boolean clean = json.optBoolean("clean", true);
         TextView sectionFiles = cText(clean ? "Tidak ada perubahan" : "Perubahan (" + (files == null ? 0 : files.length()) + ")",
-                12.5f, CLAUDE_TEXT_MUTED, false, false);
+                12.5f, Theme.TEXT_MUTED, false, false);
         sectionFiles.setPadding(0, dp(16), 0, dp(6));
         body.addView(sectionFiles);
 
@@ -458,7 +441,7 @@ public class WorkspacePanels {
                 badge.setMinWidth(dp(26));
                 row.addView(badge);
 
-                TextView name = cText(filePath, 13.5f, CLAUDE_TEXT_MAIN, false, false);
+                TextView name = cText(filePath, 13.5f, Theme.TEXT_MAIN, false, false);
                 name.setSingleLine(true);
                 name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
                 name.setPadding(dp(8), 0, 0, 0);
@@ -474,9 +457,9 @@ public class WorkspacePanels {
             final EditText message = new EditText(act);
             message.setHint("Pesan commit");
             message.setTextSize(14f);
-            message.setTextColor(CLAUDE_TEXT_MAIN);
-            message.setHintTextColor(CLAUDE_TEXT_LIGHT);
-            message.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 12));
+            message.setTextColor(Theme.TEXT_MAIN);
+            message.setHintTextColor(Theme.TEXT_LIGHT);
+            message.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 12));
             message.setPadding(dp(12), dp(12), dp(12), dp(12));
             LinearLayout.LayoutParams lpMsg = new LinearLayout.LayoutParams(-1, -2);
             lpMsg.setMargins(0, dp(14), 0, dp(10));
@@ -484,7 +467,7 @@ public class WorkspacePanels {
 
             LinearLayout actions = new LinearLayout(act);
             actions.setOrientation(LinearLayout.HORIZONTAL);
-            actions.addView(buildGitButton("Commit", CLAUDE_TERRACOTTA, () -> {
+            actions.addView(buildGitButton("Commit", Theme.ACCENT, () -> {
                 String text = message.getText().toString().trim();
                 if (text.isEmpty()) {
                     Toast.makeText(act, "Pesan commit kosong", Toast.LENGTH_SHORT).show();
@@ -498,14 +481,14 @@ public class WorkspacePanels {
         LinearLayout pushRow = new LinearLayout(act);
         pushRow.setOrientation(LinearLayout.HORIZONTAL);
         pushRow.setPadding(0, dp(10), 0, 0);
-        pushRow.addView(buildGitButton("Push", CLAUDE_SURFACE_MUTED, () ->
+        pushRow.addView(buildGitButton("Push", Theme.SURFACE_MUTED, () ->
                 runGitAction("/api/git/push", null, body, dialog)), new LinearLayout.LayoutParams(0, -2, 1));
         body.addView(pushRow);
 
         // Recent commits
         JSONArray commits = json.optJSONArray("commits");
         if (commits != null && commits.length() > 0) {
-            TextView sectionLog = cText("Commit terakhir", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+            TextView sectionLog = cText("Commit terakhir", 12.5f, Theme.TEXT_MUTED, false, false);
             sectionLog.setPadding(0, dp(18), 0, dp(6));
             body.addView(sectionLog);
 
@@ -516,29 +499,29 @@ public class WorkspacePanels {
                 row.setOrientation(LinearLayout.VERTICAL);
                 row.setPadding(0, dp(6), 0, dp(6));
 
-                TextView subject = cText(c.optString("subject", ""), 13.5f, CLAUDE_TEXT_MAIN, false, false);
+                TextView subject = cText(c.optString("subject", ""), 13.5f, Theme.TEXT_MAIN, false, false);
                 subject.setSingleLine(true);
                 subject.setEllipsize(TextUtils.TruncateAt.END);
                 row.addView(subject);
                 row.addView(cText(c.optString("hash", "") + " · " + c.optString("when", ""),
-                        11.5f, CLAUDE_TEXT_LIGHT, false, false));
+                        11.5f, Theme.TEXT_LIGHT, false, false));
                 body.addView(row);
             }
         }
     }
 
     private int gitStatusColor(String code) {
-        if (code.startsWith("?")) return CLAUDE_BLUE;
-        if (code.contains("D")) return CLAUDE_RED;
-        if (code.contains("A")) return CLAUDE_GREEN;
-        return CLAUDE_AMBER;
+        if (code.startsWith("?")) return Theme.BLUE;
+        if (code.contains("D")) return Theme.RED;
+        if (code.contains("A")) return Theme.GREEN;
+        return Theme.AMBER;
     }
 
     private TextView buildGitButton(String label, int color, final Runnable action) {
-        TextView btn = cText(label, 14f, color == CLAUDE_TERRACOTTA ? Color.WHITE : CLAUDE_TEXT_MAIN, true, false);
+        TextView btn = cText(label, 14f, color == Theme.ACCENT ? Color.WHITE : Theme.TEXT_MAIN, true, false);
         btn.setGravity(Gravity.CENTER);
         btn.setPadding(dp(16), dp(12), dp(16), dp(12));
-        btn.setBackground(cBox(color, CLAUDE_BORDER, color == CLAUDE_TERRACOTTA ? 0 : 1, 12));
+        btn.setBackground(cBox(color, Theme.BORDER, color == Theme.ACCENT ? 0 : 1, 12));
         btn.setOnClickListener(v -> action.run());
         return btn;
     }
@@ -568,7 +551,7 @@ public class WorkspacePanels {
     private void showGitDiff(final String filePath) {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Diff", true);
-        root.addView(cText(filePath, 11.5f, CLAUDE_TEXT_MUTED, false, false));
+        root.addView(cText(filePath, 11.5f, Theme.TEXT_MUTED, false, false));
 
         final LinearLayout body = new LinearLayout(act);
         body.setOrientation(LinearLayout.VERTICAL);
@@ -577,7 +560,7 @@ public class WorkspacePanels {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(430));
         lp.setMargins(0, dp(10), 0, 0);
         root.addView(scroll, lp);
-        body.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
+        body.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
 
         String repoPath = prefs.getString("git_repo_path", "");
         final String query = "?file=" + BridgeClient.encode(filePath)
@@ -590,7 +573,7 @@ public class WorkspacePanels {
                 mainHandler.post(() -> {
                     body.removeAllViews();
                     if (diff.trim().isEmpty()) {
-                        body.addView(cText("Tidak ada perubahan pada file ini.", 13f, CLAUDE_TEXT_MUTED, false, false));
+                        body.addView(cText("Tidak ada perubahan pada file ini.", 13f, Theme.TEXT_MUTED, false, false));
                     } else {
                         renderDiffLines(body, diff);
                     }
@@ -598,7 +581,7 @@ public class WorkspacePanels {
             } catch (Exception ex) {
                 mainHandler.post(() -> {
                     body.removeAllViews();
-                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, Theme.RED, false, false));
                 });
             }
         });
@@ -613,24 +596,24 @@ public class WorkspacePanels {
         hScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout column = new LinearLayout(act);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
+        column.setBackground(cBox(Theme.CODE_BG, Theme.BORDER, 1, 12));
         column.setPadding(dp(12), dp(10), dp(12), dp(10));
 
         for (String line : diff.split("\n")) {
-            int color = CLAUDE_TEXT_MUTED;
+            int color = Theme.TEXT_MUTED;
             int background = Color.TRANSPARENT;
             if (line.startsWith("+++") || line.startsWith("---")) {
-                color = CLAUDE_TEXT_LIGHT;
+                color = Theme.TEXT_LIGHT;
             } else if (line.startsWith("@@")) {
-                color = CLAUDE_BLUE;
+                color = Theme.BLUE;
             } else if (line.startsWith("+")) {
-                color = CLAUDE_GREEN;
-                background = CLAUDE_GREEN_BG;
+                color = Theme.GREEN;
+                background = Theme.GREEN_BG;
             } else if (line.startsWith("-")) {
-                color = CLAUDE_RED;
+                color = Theme.RED;
                 background = Color.rgb(48, 24, 24);
             } else {
-                color = CLAUDE_TEXT_MUTED;
+                color = Theme.TEXT_MUTED;
             }
 
             TextView tv = new TextView(act);
@@ -658,11 +641,11 @@ public class WorkspacePanels {
         final EditText input = new EditText(act);
         input.setHint("Kata kunci di judul atau transkrip");
         input.setTextSize(14.5f);
-        input.setTextColor(CLAUDE_TEXT_MAIN);
-        input.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        input.setTextColor(Theme.TEXT_MAIN);
+        input.setHintTextColor(Theme.TEXT_LIGHT);
         input.setSingleLine(true);
         input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        input.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
+        input.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 14));
         input.setPadding(dp(14), dp(12), dp(14), dp(12));
         root.addView(input, new LinearLayout.LayoutParams(-1, -2));
 
@@ -686,7 +669,7 @@ public class WorkspacePanels {
     private void runTranscriptSearch(final String query, final LinearLayout results, final Dialog dialog) {
         if (query.isEmpty()) return;
         results.removeAllViews();
-        results.addView(cText("Mencari...", 13f, CLAUDE_TEXT_MUTED, false, false));
+        results.addView(cText("Mencari...", 13f, Theme.TEXT_MUTED, false, false));
 
         executor.execute(() -> {
             try {
@@ -695,7 +678,7 @@ public class WorkspacePanels {
                     results.removeAllViews();
                     JSONArray items = json.optJSONArray("results");
                     if (items == null || items.length() == 0) {
-                        results.addView(cText("Tidak ada hasil untuk \"" + query + "\"", 13.5f, CLAUDE_TEXT_MUTED, false, false));
+                        results.addView(cText("Tidak ada hasil untuk \"" + query + "\"", 13.5f, Theme.TEXT_MUTED, false, false));
                         return;
                     }
                     for (int i = 0; i < items.length(); i++) {
@@ -706,22 +689,22 @@ public class WorkspacePanels {
 
                         LinearLayout card = new LinearLayout(act);
                         card.setOrientation(LinearLayout.VERTICAL);
-                        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+                        card.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
                         card.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-                        TextView t = cText(title, 14f, CLAUDE_TEXT_MAIN, true, false);
+                        TextView t = cText(title, 14f, Theme.TEXT_MAIN, true, false);
                         t.setSingleLine(true);
                         t.setEllipsize(TextUtils.TruncateAt.END);
                         card.addView(t);
 
-                        TextView snippet = cText(r.optString("snippet", ""), 12.5f, CLAUDE_TEXT_MUTED, false, false);
+                        TextView snippet = cText(r.optString("snippet", ""), 12.5f, Theme.TEXT_MUTED, false, false);
                         snippet.setMaxLines(2);
                         snippet.setEllipsize(TextUtils.TruncateAt.END);
                         snippet.setPadding(0, dp(4), 0, 0);
                         card.addView(snippet);
 
                         card.addView(cText(r.optString("engine", "") + " · " + r.optString("matchIn", ""),
-                                11f, CLAUDE_TEXT_LIGHT, false, false));
+                                11f, Theme.TEXT_LIGHT, false, false));
 
                         card.setOnClickListener(v -> {
                             dialog.dismiss();
@@ -737,7 +720,7 @@ public class WorkspacePanels {
             } catch (Exception ex) {
                 mainHandler.post(() -> {
                     results.removeAllViews();
-                    results.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                    results.addView(cText("Gagal: " + ex.getMessage(), 13f, Theme.RED, false, false));
                 });
             }
         });
@@ -754,14 +737,14 @@ public class WorkspacePanels {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Proyek", true);
         root.addView(cText("Folder proyek di dalam workdir server. Dipakai oleh panel Git dan File.",
-                12.5f, CLAUDE_TEXT_MUTED, false, false));
+                12.5f, Theme.TEXT_MUTED, false, false));
 
         final LinearLayout list = new LinearLayout(act);
         list.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams lpList = new LinearLayout.LayoutParams(-1, -2);
         lpList.setMargins(0, dp(12), 0, dp(8));
         root.addView(list, lpList);
-        list.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
+        list.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
 
         executor.execute(() -> {
             try {
@@ -770,15 +753,15 @@ public class WorkspacePanels {
             } catch (Exception ex) {
                 mainHandler.post(() -> {
                     list.removeAllViews();
-                    list.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                    list.addView(cText("Gagal: " + ex.getMessage(), 13f, Theme.RED, false, false));
                 });
             }
         });
 
-        TextView add = cText("+  Tambah proyek", 14f, CLAUDE_TERRACOTTA, true, false);
+        TextView add = cText("+  Tambah proyek", 14f, Theme.ACCENT, true, false);
         add.setGravity(Gravity.CENTER);
         add.setPadding(dp(16), dp(13), dp(16), dp(13));
-        add.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        add.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         add.setOnClickListener(v -> {
             dialog.dismiss();
             showAddProjectSheet();
@@ -817,23 +800,23 @@ public class WorkspacePanels {
         LinearLayout card = new LinearLayout(act);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, isActive ? CLAUDE_TERRACOTTA : CLAUDE_BORDER, 1, 14));
+        card.setBackground(cBox(Theme.SURFACE_MUTED, isActive ? Theme.ACCENT : Theme.BORDER, 1, 14));
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
         card.setAlpha(enabled ? 1f : 0.5f);
 
-        card.addView(cIcon(R.drawable.ic_folder, 18, isActive ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
+        card.addView(cIcon(R.drawable.ic_folder, 18, isActive ? Theme.ACCENT : Theme.TEXT_MUTED));
 
         LinearLayout col = new LinearLayout(act);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(12), 0, dp(8), 0);
-        col.addView(cText(name, 14f, CLAUDE_TEXT_MAIN, true, false));
-        TextView sub = cText(detail.isEmpty() ? "-" : detail, 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        col.addView(cText(name, 14f, Theme.TEXT_MAIN, true, false));
+        TextView sub = cText(detail.isEmpty() ? "-" : detail, 11.5f, Theme.TEXT_LIGHT, false, false);
         sub.setSingleLine(true);
         sub.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         col.addView(sub);
         card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
 
-        if (isActive) card.addView(cIcon(R.drawable.ic_check, 18, CLAUDE_TERRACOTTA));
+        if (isActive) card.addView(cIcon(R.drawable.ic_check, 18, Theme.ACCENT));
 
         if (enabled) {
             card.setOnClickListener(v -> {
@@ -862,15 +845,15 @@ public class WorkspacePanels {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Tambah Proyek", true);
         root.addView(cText("Path relatif terhadap workdir server, mis. codexcli-remote-app",
-                12.5f, CLAUDE_TEXT_MUTED, false, false));
+                12.5f, Theme.TEXT_MUTED, false, false));
 
         final EditText nameInput = new EditText(act);
         nameInput.setHint("Nama tampilan (opsional)");
         nameInput.setTextSize(14.5f);
         nameInput.setSingleLine(true);
-        nameInput.setTextColor(CLAUDE_TEXT_MAIN);
-        nameInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
-        nameInput.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
+        nameInput.setTextColor(Theme.TEXT_MAIN);
+        nameInput.setHintTextColor(Theme.TEXT_LIGHT);
+        nameInput.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 14));
         nameInput.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams lpN = new LinearLayout.LayoutParams(-1, -2);
         lpN.setMargins(0, dp(14), 0, dp(10));
@@ -880,9 +863,9 @@ public class WorkspacePanels {
         pathInput.setHint("path/relatif");
         pathInput.setTextSize(14.5f);
         pathInput.setSingleLine(true);
-        pathInput.setTextColor(CLAUDE_TEXT_MAIN);
-        pathInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
-        pathInput.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
+        pathInput.setTextColor(Theme.TEXT_MAIN);
+        pathInput.setHintTextColor(Theme.TEXT_LIGHT);
+        pathInput.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 14));
         pathInput.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams lpP = new LinearLayout.LayoutParams(-1, -2);
         lpP.setMargins(0, 0, 0, dp(14));
@@ -891,7 +874,7 @@ public class WorkspacePanels {
         TextView save = cText("Simpan", 14.5f, Color.WHITE, true, false);
         save.setGravity(Gravity.CENTER);
         save.setPadding(dp(16), dp(14), dp(16), dp(14));
-        save.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        save.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         save.setOnClickListener(v -> {
             String path = pathInput.getText().toString().trim();
             if (path.isEmpty()) {
@@ -967,7 +950,7 @@ public class WorkspacePanels {
         ScrollView scroll = new ScrollView(act);
         scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, dp(420)));
-        body.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
+        body.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
 
         loadMaintenance(body);
         dialog.setContentView(root);
@@ -983,7 +966,7 @@ public class WorkspacePanels {
             } catch (Exception ex) {
                 mainHandler.post(() -> {
                     body.removeAllViews();
-                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, Theme.RED, false, false));
                 });
             }
         });
@@ -992,7 +975,7 @@ public class WorkspacePanels {
     private void renderMaintenance(final LinearLayout body, JSONObject uploads, JSONObject audit) {
         body.removeAllViews();
 
-        TextView headUploads = cText("Uploads", 13f, CLAUDE_TEXT_MUTED, false, false);
+        TextView headUploads = cText("Uploads", 13f, Theme.TEXT_MUTED, false, false);
         headUploads.setPadding(0, 0, 0, dp(8));
         body.addView(headUploads);
 
@@ -1003,30 +986,30 @@ public class WorkspacePanels {
 
         LinearLayout card = new LinearLayout(act);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        card.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.addView(cText(count + " file · " + humanSize(totalBytes), 14.5f, CLAUDE_TEXT_MAIN, true, false));
+        card.addView(cText(count + " file · " + humanSize(totalBytes), 14.5f, Theme.TEXT_MAIN, true, false));
         card.addView(cText(retention > 0
                 ? "Dihapus otomatis setelah " + retention + " hari"
-                : "Penghapusan otomatis dimatikan", 12.5f, CLAUDE_TEXT_MUTED, false, false));
+                : "Penghapusan otomatis dimatikan", 12.5f, Theme.TEXT_MUTED, false, false));
 
-        TextView clean = cText("Bersihkan sekarang", 13.5f, CLAUDE_TERRACOTTA, true, false);
+        TextView clean = cText("Bersihkan sekarang", 13.5f, Theme.ACCENT, true, false);
         clean.setGravity(Gravity.CENTER);
         clean.setPadding(dp(14), dp(11), dp(14), dp(11));
-        clean.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 12));
+        clean.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 12));
         clean.setOnClickListener(v -> runUploadsCleanup(body));
         LinearLayout.LayoutParams lpClean = new LinearLayout.LayoutParams(-1, -2);
         lpClean.setMargins(0, dp(12), 0, 0);
         card.addView(clean, lpClean);
         body.addView(card, new LinearLayout.LayoutParams(-1, -2));
 
-        TextView headAudit = cText("Aktivitas terakhir", 13f, CLAUDE_TEXT_MUTED, false, false);
+        TextView headAudit = cText("Aktivitas terakhir", 13f, Theme.TEXT_MUTED, false, false);
         headAudit.setPadding(0, dp(20), 0, dp(8));
         body.addView(headAudit);
 
         JSONArray log = audit.optJSONArray("entries");
         if (log == null || log.length() == 0) {
-            body.addView(cText("Belum ada catatan.", 13f, CLAUDE_TEXT_LIGHT, false, false));
+            body.addView(cText("Belum ada catatan.", 13f, Theme.TEXT_LIGHT, false, false));
             return;
         }
         for (int i = 0; i < log.length(); i++) {
@@ -1045,7 +1028,7 @@ public class WorkspacePanels {
             else if (e.has("path")) detail.append(" · ").append(e.optString("path"));
             else if (e.has("error")) detail.append(" · ").append(e.optString("error"));
 
-            TextView sub = cText(detail.toString(), 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+            TextView sub = cText(detail.toString(), 11.5f, Theme.TEXT_LIGHT, false, false);
             sub.setMaxLines(2);
             sub.setEllipsize(TextUtils.TruncateAt.END);
             row.addView(sub);
@@ -1054,9 +1037,9 @@ public class WorkspacePanels {
     }
 
     private int auditColor(String event) {
-        if (event.contains("failed") || event.contains("rate_limited")) return CLAUDE_RED;
-        if (event.startsWith("git.") || event.startsWith("file.")) return CLAUDE_AMBER;
-        return CLAUDE_TEXT_MAIN;
+        if (event.contains("failed") || event.contains("rate_limited")) return Theme.RED;
+        if (event.startsWith("git.") || event.startsWith("file.")) return Theme.AMBER;
+        return Theme.TEXT_MAIN;
     }
 
     private void runUploadsCleanup(final LinearLayout body) {

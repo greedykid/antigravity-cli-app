@@ -111,24 +111,6 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     // Claude Dark Theme Palette (Exact Match to Official Claude App)
-    // Palette lives in Theme.java; these aliases keep call sites unchanged.
-    private static final int CLAUDE_BG = Theme.BG;
-    private static final int CLAUDE_SURFACE = Theme.SURFACE;
-    private static final int CLAUDE_SURFACE_MUTED = Theme.SURFACE_MUTED;
-    private static final int CLAUDE_BORDER = Theme.BORDER;
-    private static final int CLAUDE_BORDER_DARK = Theme.BORDER_DARK;
-    private static final int CLAUDE_CODE_BG = Theme.CODE_BG;
-    private static final int CLAUDE_TEXT_MAIN = Theme.TEXT_MAIN;
-    private static final int CLAUDE_TEXT_MUTED = Theme.TEXT_MUTED;
-    private static final int CLAUDE_TEXT_LIGHT = Theme.TEXT_LIGHT;
-    private static final int CLAUDE_TERRACOTTA = Theme.TERRACOTTA;
-    private static final int CLAUDE_TERRACOTTA_LIGHT = Theme.TERRACOTTA_LIGHT;
-    private static final int CLAUDE_GREEN = Theme.GREEN;
-    private static final int CLAUDE_GREEN_BG = Theme.GREEN_BG;
-    private static final int CLAUDE_AMBER = Theme.AMBER;
-    private static final int CLAUDE_AMBER_BG = Theme.AMBER_BG;
-    private static final int CLAUDE_RED = Theme.RED;
-    private static final int CLAUDE_BLUE = Theme.BLUE;
 
     private static final int REQ_PICK_FILES = 1001;
     private static final int REQ_VOICE_SPEECH = 1002;
@@ -262,16 +244,27 @@ public class MainActivity extends Activity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(CLAUDE_BG);
-        getWindow().setNavigationBarColor(CLAUDE_BG);
+        // The window background comes from the XML theme, which is chosen before
+        // the window is drawn — otherwise an engine switch flashes the previous
+        // engine's ground colour during the rebuild.
         prefs = getSharedPreferences("connection", MODE_PRIVATE);
+        setTheme("codex".equalsIgnoreCase(prefs.getString("engine", "antigravity"))
+                ? R.style.AppTheme_Codex : R.style.AppTheme);
+
+        super.onCreate(savedInstanceState);
         bridge = new BridgeClient(prefs);
         panels = new WorkspacePanels(this, workspaceHost, bridge, prefs, executor, mainHandler);
         currentEngine = prefs.getString("engine", "antigravity");
+
+        // The whole UI is built in code, so the engine's palette has to be in
+        // place before the first view exists.
+        Theme.applyEngine(currentEngine);
+        getWindow().setStatusBarColor(Theme.BG);
+        getWindow().setNavigationBarColor(Theme.BG);
         currentModel = prefs.getString(modelPrefKey(currentEngine), defaultModelForEngine(currentEngine));
         currentServerHostname = prefs.getString("device_name", "Server Remote");
         buildClaudeUiWithSidebar();
+        consumePendingEngineNotice();
         requestNotificationPermission();
         LiveEventBus.register(liveEventListener);
         startLiveEvents();
@@ -394,7 +387,7 @@ public class MainActivity extends Activity {
 
     private void buildClaudeUiWithSidebar() {
         rootFrame = new FrameLayout(this);
-        rootFrame.setBackgroundColor(CLAUDE_BG);
+        rootFrame.setBackgroundColor(Theme.BG);
 
         mainContentContainer = new LinearLayout(this);
         mainContentContainer.setOrientation(LinearLayout.VERTICAL);
@@ -429,7 +422,7 @@ public class MainActivity extends Activity {
         // Sidebar Panel
         sidebarPanel = new LinearLayout(this);
         sidebarPanel.setOrientation(LinearLayout.VERTICAL);
-        sidebarPanel.setBackgroundColor(CLAUDE_SURFACE);
+        sidebarPanel.setBackgroundColor(Theme.SURFACE);
         sidebarPanel.setVisibility(View.GONE);
         buildSidebarContent(sidebarPanel);
 
@@ -457,10 +450,10 @@ public class MainActivity extends Activity {
         brandRow.setGravity(Gravity.CENTER_VERTICAL);
         brandRow.setPadding(sidePad + dp(6), dp(6), sidePad, dp(18));
 
-        TextView wordmark = cText("Antigravity", 30, CLAUDE_TEXT_MAIN, false, true);
+        TextView wordmark = cText(Theme.wordmark(), 30, Theme.TEXT_MAIN, false, true);
         brandRow.addView(wordmark, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView brandGear = cIconButton(R.drawable.ic_settings, 20, 38, CLAUDE_TEXT_MUTED);
+        ImageView brandGear = cIconButton(R.drawable.ic_settings, 20, 38, Theme.TEXT_MUTED);
         brandGear.setOnClickListener(v -> { closeSidebar(); showScreen(2); });
         brandRow.addView(brandGear);
         sidebar.addView(brandRow);
@@ -539,16 +532,16 @@ public class MainActivity extends Activity {
         statusRow.setPadding(dp(14), dp(8), dp(12), dp(8));
 
         sidebarStatusDot = new View(this);
-        sidebarStatusDot.setBackground(cBox(CLAUDE_GREEN, 0, 0, 4));
+        sidebarStatusDot.setBackground(cBox(Theme.GREEN, 0, 0, 4));
         LinearLayout.LayoutParams lpDot = new LinearLayout.LayoutParams(dp(8), dp(8));
         lpDot.setMargins(dp(6), 0, dp(14), 0);
         statusRow.addView(sidebarStatusDot, lpDot);
 
         LinearLayout statusCol = new LinearLayout(this);
         statusCol.setOrientation(LinearLayout.VERTICAL);
-        sidebarStatusText = cText("Gateway Online", 14, CLAUDE_TEXT_MAIN, false, false);
+        sidebarStatusText = cText("Gateway Online", 14, Theme.TEXT_MAIN, false, false);
         statusCol.addView(sidebarStatusText);
-        sidebarDeviceHost = cText(currentServerHostname, 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        sidebarDeviceHost = cText(currentServerHostname, 11.5f, Theme.TEXT_LIGHT, false, false);
         sidebarDeviceHost.setSingleLine(true);
         sidebarDeviceHost.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         statusCol.addView(sidebarDeviceHost);
@@ -589,7 +582,7 @@ public class MainActivity extends Activity {
 
         // 5. Account footer
         View footRule = new View(this);
-        footRule.setBackgroundColor(CLAUDE_BORDER);
+        footRule.setBackgroundColor(Theme.BORDER);
         LinearLayout.LayoutParams lpFr = new LinearLayout.LayoutParams(-1, dp(1));
         lpFr.setMargins(sidePad, 0, sidePad, dp(8));
         sidebar.addView(footRule, lpFr);
@@ -602,14 +595,14 @@ public class MainActivity extends Activity {
         String userEmail = prefs.getString("user_email", "developer@antigravity.ai");
         footer.addView(buildAvatarBadge(userEmail), new LinearLayout.LayoutParams(dp(40), dp(40)));
 
-        sidebarUserEmail = cText(shortUserName(userEmail), 15, CLAUDE_TEXT_MAIN, false, false);
+        sidebarUserEmail = cText(shortUserName(userEmail), 15, Theme.TEXT_MAIN, false, false);
         sidebarUserEmail.setSingleLine(true);
         sidebarUserEmail.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams lpEmail = new LinearLayout.LayoutParams(0, -2, 1);
         lpEmail.setMargins(dp(12), 0, dp(8), 0);
         footer.addView(sidebarUserEmail, lpEmail);
 
-        ImageView footGear = cIconButton(R.drawable.ic_settings, 20, 40, CLAUDE_TEXT_MUTED);
+        ImageView footGear = cIconButton(R.drawable.ic_settings, 20, 40, Theme.TEXT_MUTED);
         footGear.setOnClickListener(v -> { closeSidebar(); showScreen(2); });
         footer.addView(footGear);
 
@@ -624,7 +617,7 @@ public class MainActivity extends Activity {
         FrameLayout frame = new FrameLayout(this);
         GradientDrawable circle = new GradientDrawable();
         circle.setShape(GradientDrawable.OVAL);
-        circle.setColor(CLAUDE_TERRACOTTA);
+        circle.setColor(Theme.ACCENT);
         frame.setBackground(circle);
 
         String name = shortUserName(email);
@@ -643,14 +636,14 @@ public class MainActivity extends Activity {
 
     private void addSidebarDivider(LinearLayout container) {
         View v = new View(this);
-        v.setBackgroundColor(CLAUDE_BORDER);
+        v.setBackgroundColor(Theme.BORDER);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(1));
         lp.setMargins(dp(8), dp(14), dp(8), dp(12));
         container.addView(v, lp);
     }
 
     private void addSidebarSectionHeader(LinearLayout container, String title) {
-        TextView tv = cText(title, 13f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView tv = cText(title, 13f, Theme.TEXT_LIGHT, false, false);
         tv.setPadding(dp(14), 0, 0, dp(6));
         container.addView(tv, new LinearLayout.LayoutParams(-1, -2));
     }
@@ -664,7 +657,7 @@ public class MainActivity extends Activity {
         row.setPadding(dp(14), dp(12), dp(14), dp(12));
         row.setBackground(cBox(Color.TRANSPARENT, 0, 0, 26));
 
-        int tint = accent ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MAIN;
+        int tint = accent ? Theme.ACCENT : Theme.TEXT_MAIN;
         ImageView ic = cIcon(iconRes, 22, tint);
         row.addView(ic);
 
@@ -675,8 +668,8 @@ public class MainActivity extends Activity {
         row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
 
         if (badge != null && !badge.isEmpty()) {
-            TextView chip = cText(badge, 11.5f, CLAUDE_TERRACOTTA, true, false);
-            chip.setBackground(cBox(CLAUDE_SURFACE_MUTED, 0, 0, 12));
+            TextView chip = cText(badge, 11.5f, Theme.ACCENT, true, false);
+            chip.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 12));
             chip.setPadding(dp(10), dp(4), dp(10), dp(4));
             row.addView(chip, new LinearLayout.LayoutParams(-2, -2));
         }
@@ -693,7 +686,7 @@ public class MainActivity extends Activity {
     private void updateSidebarActiveState() {
         for (Map.Entry<Integer, LinearLayout> e : sidebarNavRows.entrySet()) {
             boolean active = e.getKey() == currentScreen;
-            e.getValue().setBackground(cBox(active ? CLAUDE_BG : Color.TRANSPARENT, 0, 0, 26));
+            e.getValue().setBackground(cBox(active ? Theme.BG : Color.TRANSPARENT, 0, 0, 26));
         }
     }
 
@@ -702,7 +695,7 @@ public class MainActivity extends Activity {
         sidebarRecentContainer.removeAllViews();
 
         if (sessions == null || sessions.length() == 0) {
-            TextView empty = cText("Belum ada sesi", 14, CLAUDE_TEXT_LIGHT, false, false);
+            TextView empty = cText("Belum ada sesi", 14, Theme.TEXT_LIGHT, false, false);
             empty.setPadding(dp(14), dp(8), dp(14), dp(8));
             sidebarRecentContainer.addView(empty);
             return;
@@ -715,7 +708,7 @@ public class MainActivity extends Activity {
             final String convId = s.optString("conversationId", "");
             final String title = s.optString("title", "Sesi");
 
-            TextView tv = cText(title, 15, CLAUDE_TEXT_MAIN, false, false);
+            TextView tv = cText(title, 15, Theme.TEXT_MAIN, false, false);
             tv.setSingleLine(true);
             tv.setEllipsize(TextUtils.TruncateAt.END);
             tv.setPadding(dp(14), dp(11), dp(14), dp(11));
@@ -829,7 +822,7 @@ public class MainActivity extends Activity {
             } else {
                 chatNavIcon.setImageResource(R.drawable.ic_menu);
             }
-            chatNavIcon.setColorFilter(CLAUDE_TEXT_MAIN);
+            chatNavIcon.setColorFilter(Theme.TEXT_MAIN);
         }
     }
 
@@ -847,15 +840,15 @@ public class MainActivity extends Activity {
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setPadding(0, dp(4), 0, dp(14));
 
-        ImageView menuIcon = cIconButton(R.drawable.ic_menu, 24, 40, CLAUDE_TEXT_MAIN);
+        ImageView menuIcon = cIconButton(R.drawable.ic_menu, 24, 40, Theme.TEXT_MAIN);
         menuIcon.setOnClickListener(v -> openSidebar());
         topBar.addView(menuIcon);
 
-        TextView headerTitle = cText("Kode", 22, CLAUDE_TEXT_MAIN, true, false);
+        TextView headerTitle = cText("Kode", 22, Theme.TEXT_MAIN, true, false);
         headerTitle.setPadding(dp(12), 0, 0, 0);
         topBar.addView(headerTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView tuneBtn = cIconButton(R.drawable.ic_tune, 22, 40, CLAUDE_TEXT_MUTED);
+        ImageView tuneBtn = cIconButton(R.drawable.ic_tune, 22, 40, Theme.TEXT_MUTED);
         tuneBtn.setOnClickListener(v -> showMoreDropdownMenu(tuneBtn));
         topBar.addView(tuneBtn);
         content.addView(topBar);
@@ -871,26 +864,26 @@ public class MainActivity extends Activity {
         scrollBody.setOrientation(LinearLayout.VERTICAL);
 
         // Perangkat (Devices) Section
-        TextView devTitle = cText("Perangkat", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView devTitle = cText("Perangkat", 13.5f, Theme.TEXT_MUTED, false, false);
         LinearLayout.LayoutParams lpDevT = new LinearLayout.LayoutParams(-1, -2);
         lpDevT.setMargins(0, dp(6), 0, dp(10));
         scrollBody.addView(devTitle, lpDevT);
 
         LinearLayout deviceCard = new LinearLayout(this);
         deviceCard.setOrientation(LinearLayout.VERTICAL);
-        deviceCard.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 16));
+        deviceCard.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 16));
         deviceCard.setPadding(dp(16), dp(16), dp(16), dp(16));
 
-        ImageView laptopIcon = cIcon(R.drawable.ic_laptop, 22, CLAUDE_TEXT_MAIN);
+        ImageView laptopIcon = cIcon(R.drawable.ic_laptop, 22, Theme.TEXT_MAIN);
         deviceCard.addView(laptopIcon);
 
-        hubDeviceHostText = cText(currentServerHostname, 15, CLAUDE_TEXT_MAIN, true, false);
+        hubDeviceHostText = cText(currentServerHostname, 15, Theme.TEXT_MAIN, true, false);
         hubDeviceHostText.setSingleLine(true);
         LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-2, -2);
         lpH.setMargins(0, dp(12), 0, dp(0));
         deviceCard.addView(hubDeviceHostText, lpH);
 
-        hubDeviceStatusText = cText("Terhubung", 12.5f, CLAUDE_GREEN, false, false);
+        hubDeviceStatusText = cText("Terhubung", 12.5f, Theme.GREEN, false, false);
         LinearLayout.LayoutParams lpS = new LinearLayout.LayoutParams(-2, -2);
         lpS.setMargins(0, dp(4), 0, 0);
         deviceCard.addView(hubDeviceStatusText, lpS);
@@ -918,7 +911,7 @@ public class MainActivity extends Activity {
         LinearLayout fabNew = new LinearLayout(this);
         fabNew.setOrientation(LinearLayout.HORIZONTAL);
         fabNew.setGravity(Gravity.CENTER_VERTICAL);
-        fabNew.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 26));
+        fabNew.setBackground(cBox(Theme.ACCENT, 0, 0, 26));
         fabNew.setPadding(dp(18), dp(12), dp(20), dp(12));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             fabNew.setElevation(dp(8));
@@ -1013,22 +1006,22 @@ public class MainActivity extends Activity {
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+        card.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 18));
         card.setPadding(dp(18), dp(18), dp(18), dp(18));
 
         card.addView(cIcon(offerPairing ? R.drawable.ic_security : R.drawable.ic_link_off, 26,
-                offerPairing ? CLAUDE_AMBER : CLAUDE_TEXT_MUTED));
+                offerPairing ? Theme.AMBER : Theme.TEXT_MUTED));
 
-        TextView t = cText(title, 15.5f, CLAUDE_TEXT_MAIN, true, false);
+        TextView t = cText(title, 15.5f, Theme.TEXT_MAIN, true, false);
         t.setPadding(0, dp(12), 0, dp(4));
         card.addView(t);
-        card.addView(cText(detail, 13f, CLAUDE_TEXT_MUTED, false, false));
+        card.addView(cText(detail, 13f, Theme.TEXT_MUTED, false, false));
 
         if (offerPairing) {
             TextView action = cText("Scan QR Pairing", 14f, Color.WHITE, true, false);
             action.setGravity(Gravity.CENTER);
             action.setPadding(dp(16), dp(12), dp(16), dp(12));
-            action.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
+            action.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
             action.setOnClickListener(v -> startQrScanner());
             LinearLayout.LayoutParams lpA = new LinearLayout.LayoutParams(-1, -2);
             lpA.setMargins(0, dp(14), 0, 0);
@@ -1126,7 +1119,7 @@ public class MainActivity extends Activity {
     }
 
     private void addTimeSectionHeader(String title) {
-        TextView v = cText(title, 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView v = cText(title, 13.5f, Theme.TEXT_MUTED, false, false);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(18), 0, dp(10));
         hubSessionGroupsContainer.addView(v, lp);
@@ -1136,7 +1129,7 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+        card.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 18));
         card.setPadding(dp(14), dp(12), dp(16), dp(12));
 
         // Left Code Icon Badge with optional blue indicator dot
@@ -1145,17 +1138,17 @@ public class MainActivity extends Activity {
         badgeFrame.setLayoutParams(lpBadge);
 
         View badgeBg = new View(this);
-        badgeBg.setBackground(cBox(CLAUDE_SURFACE_MUTED, 0, 0, 12));
+        badgeBg.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 12));
         badgeFrame.addView(badgeBg, new FrameLayout.LayoutParams(-1, -1));
 
-        ImageView codeIcon = cIcon(R.drawable.ic_code, 20, CLAUDE_TEXT_MUTED);
+        ImageView codeIcon = cIcon(R.drawable.ic_code, 20, Theme.TEXT_MUTED);
         FrameLayout.LayoutParams lpCode = new FrameLayout.LayoutParams(dp(20), dp(20));
         lpCode.gravity = Gravity.CENTER;
         badgeFrame.addView(codeIcon, lpCode);
 
         if (isConnected) {
             View blueDot = new View(this);
-            blueDot.setBackground(cBox(CLAUDE_BLUE, 0, 0, 4));
+            blueDot.setBackground(cBox(Theme.BLUE, 0, 0, 4));
             FrameLayout.LayoutParams lpDot = new FrameLayout.LayoutParams(dp(8), dp(8));
             lpDot.gravity = Gravity.TOP | Gravity.END;
             lpDot.setMargins(0, dp(2), dp(2), 0);
@@ -1169,7 +1162,7 @@ public class MainActivity extends Activity {
         textCol.setOrientation(LinearLayout.VERTICAL);
         textCol.setPadding(dp(12), 0, dp(8), 0);
 
-        TextView titleView = cText(title, 14.5f, CLAUDE_TEXT_MAIN, true, false);
+        TextView titleView = cText(title, 14.5f, Theme.TEXT_MAIN, true, false);
         titleView.setSingleLine(true);
         textCol.addView(titleView);
 
@@ -1178,10 +1171,10 @@ public class MainActivity extends Activity {
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
         statusRow.setPadding(0, dp(3), 0, 0);
 
-        ImageView statIcon = cIcon(isConnected ? R.drawable.ic_laptop : R.drawable.ic_link_off, 13, isConnected ? CLAUDE_GREEN : CLAUDE_TEXT_MUTED);
+        ImageView statIcon = cIcon(isConnected ? R.drawable.ic_laptop : R.drawable.ic_link_off, 13, isConnected ? Theme.GREEN : Theme.TEXT_MUTED);
         statusRow.addView(statIcon);
 
-        TextView subView = cText(" " + subText, 12.5f, isConnected ? CLAUDE_GREEN : CLAUDE_TEXT_MUTED, false, false);
+        TextView subView = cText(" " + subText, 12.5f, isConnected ? Theme.GREEN : Theme.TEXT_MUTED, false, false);
         subView.setSingleLine(true);
         statusRow.addView(subView);
 
@@ -1189,7 +1182,7 @@ public class MainActivity extends Activity {
         card.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1));
 
         // Right date text
-        TextView dateView = cText(dateStr, 12f, CLAUDE_TEXT_MUTED, false, false);
+        TextView dateView = cText(dateStr, 12f, Theme.TEXT_MUTED, false, false);
         card.addView(dateView);
 
         card.setOnClickListener(v -> {
@@ -1321,15 +1314,15 @@ public class MainActivity extends Activity {
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setPadding(0, dp(4), 0, dp(14));
 
-        ImageView menuIcon = cIconButton(R.drawable.ic_menu, 24, 40, CLAUDE_TEXT_MAIN);
+        ImageView menuIcon = cIconButton(R.drawable.ic_menu, 24, 40, Theme.TEXT_MAIN);
         menuIcon.setOnClickListener(v -> openSidebar());
         topBar.addView(menuIcon);
 
-        TextView headerTitle = cText("Pengaturan", 20, CLAUDE_TEXT_MAIN, true, true);
+        TextView headerTitle = cText("Pengaturan", 20, Theme.TEXT_MAIN, true, true);
         headerTitle.setGravity(Gravity.CENTER);
         topBar.addView(headerTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView infoBtn = cIconButton(R.drawable.ic_info, 22, 40, CLAUDE_TEXT_MUTED);
+        ImageView infoBtn = cIconButton(R.drawable.ic_info, 22, 40, Theme.TEXT_MUTED);
         infoBtn.setOnClickListener(v -> showAboutAppBottomSheet());
         topBar.addView(infoBtn);
         content.addView(topBar);
@@ -1345,15 +1338,15 @@ public class MainActivity extends Activity {
         LinearLayout topProfileCard = new LinearLayout(this);
         topProfileCard.setOrientation(LinearLayout.HORIZONTAL);
         topProfileCard.setGravity(Gravity.CENTER_VERTICAL);
-        topProfileCard.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+        topProfileCard.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 18));
         topProfileCard.setPadding(dp(16), dp(16), dp(16), dp(16));
 
         String email = prefs.getString("user_email", "developer@antigravity.ai");
-        settingsUserEmailText = cText(email, 14.5f, CLAUDE_TEXT_MAIN, true, false);
+        settingsUserEmailText = cText(email, 14.5f, Theme.TEXT_MAIN, true, false);
         settingsUserEmailText.setSingleLine(true);
         topProfileCard.addView(settingsUserEmailText, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView editIcon = cIcon(R.drawable.ic_person, 18, CLAUDE_TEXT_MUTED);
+        ImageView editIcon = cIcon(R.drawable.ic_person, 18, Theme.TEXT_MUTED);
         topProfileCard.addView(editIcon);
 
         topProfileCard.setOnClickListener(v -> showEditEmailBottomSheet());
@@ -1398,10 +1391,10 @@ public class MainActivity extends Activity {
         hapticRow.setGravity(Gravity.CENTER_VERTICAL);
         hapticRow.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        ImageView vibIc = cIcon(R.drawable.ic_vibration, 22, CLAUDE_TEXT_MAIN);
+        ImageView vibIc = cIcon(R.drawable.ic_vibration, 22, Theme.TEXT_MAIN);
         hapticRow.addView(vibIc);
 
-        TextView vibLabel = cText("  Umpan balik haptik", 14.5f, CLAUDE_TEXT_MAIN, false, false);
+        TextView vibLabel = cText("  Umpan balik haptik", 14.5f, Theme.TEXT_MAIN, false, false);
         hapticRow.addView(vibLabel, new LinearLayout.LayoutParams(0, -2, 1));
 
         Switch hapticSwitch = new Switch(this);
@@ -1431,7 +1424,7 @@ public class MainActivity extends Activity {
     private LinearLayout createSettingsGroupContainer() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+        box.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 18));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, 0, 0, dp(14));
         box.setLayoutParams(lp);
@@ -1444,10 +1437,10 @@ public class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        ImageView ic = cIcon(iconRes, 22, CLAUDE_TEXT_MAIN);
+        ImageView ic = cIcon(iconRes, 22, Theme.TEXT_MAIN);
         row.addView(ic);
 
-        TextView label = cText("  " + title, 14.5f, CLAUDE_TEXT_MAIN, false, false);
+        TextView label = cText("  " + title, 14.5f, Theme.TEXT_MAIN, false, false);
         row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
 
         row.setOnClickListener(v -> action.run());
@@ -1464,17 +1457,17 @@ public class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), dp(12), dp(16), dp(12));
 
-        ImageView ic = cIcon(iconRes, 22, CLAUDE_TEXT_MAIN);
+        ImageView ic = cIcon(iconRes, 22, Theme.TEXT_MAIN);
         row.addView(ic);
 
         LinearLayout textCol = new LinearLayout(this);
         textCol.setOrientation(LinearLayout.VERTICAL);
         textCol.setPadding(dp(14), 0, 0, 0);
 
-        TextView label = cText(title, 14.5f, CLAUDE_TEXT_MAIN, false, false);
+        TextView label = cText(title, 14.5f, Theme.TEXT_MAIN, false, false);
         textCol.addView(label);
 
-        TextView sub = cText(subtitle != null ? subtitle : "", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView sub = cText(subtitle != null ? subtitle : "", 12.5f, Theme.TEXT_MUTED, false, false);
         textCol.addView(sub);
 
         row.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1));
@@ -1489,7 +1482,7 @@ public class MainActivity extends Activity {
 
     private void addDividerLine(LinearLayout container) {
         View div = new View(this);
-        div.setBackgroundColor(CLAUDE_BORDER);
+        div.setBackgroundColor(Theme.BORDER);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(1));
         lp.setMargins(dp(16), 0, dp(16), 0);
         container.addView(div, lp);
@@ -1529,16 +1522,16 @@ public class MainActivity extends Activity {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Git repo path", true);
         root.addView(cText("Relatif terhadap workdir server. Kosongkan untuk memakai workdir itu sendiri.",
-                12.5f, CLAUDE_TEXT_MUTED, false, false));
+                12.5f, Theme.TEXT_MUTED, false, false));
 
         final EditText input = new EditText(this);
         input.setText(prefs.getString("git_repo_path", ""));
         input.setHint("mis. codexcli-remote-app");
         input.setTextSize(14.5f);
         input.setSingleLine(true);
-        input.setTextColor(CLAUDE_TEXT_MAIN);
-        input.setHintTextColor(CLAUDE_TEXT_LIGHT);
-        input.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
+        input.setTextColor(Theme.TEXT_MAIN);
+        input.setHintTextColor(Theme.TEXT_LIGHT);
+        input.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 14));
         input.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams lpIn = new LinearLayout.LayoutParams(-1, -2);
         lpIn.setMargins(0, dp(14), 0, dp(14));
@@ -1547,7 +1540,7 @@ public class MainActivity extends Activity {
         TextView save = cText("Simpan", 14.5f, Color.WHITE, true, false);
         save.setGravity(Gravity.CENTER);
         save.setPadding(dp(16), dp(14), dp(16), dp(14));
-        save.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        save.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         save.setOnClickListener(v -> {
             prefs.edit().putString("git_repo_path", input.getText().toString().trim()).apply();
             refreshSettingsValues();
@@ -1584,7 +1577,7 @@ public class MainActivity extends Activity {
     private LinearLayout createBottomSheetRoot(Dialog dialog, String title, boolean showClose) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 24));
+        root.setBackground(cBox(Theme.SURFACE, 0, 0, 24));
         root.setPadding(dp(20), dp(10), dp(20), dp(20));
 
         // Drag Handle Pill
@@ -1594,7 +1587,7 @@ public class MainActivity extends Activity {
         dragArea.setPadding(0, dp(4), 0, dp(12));
 
         View dragHandle = new View(this);
-        dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
+        dragHandle.setBackground(cBox(Theme.BORDER_DARK, 0, 0, 3));
         dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
         root.addView(dragArea);
 
@@ -1604,11 +1597,11 @@ public class MainActivity extends Activity {
             head.setOrientation(LinearLayout.HORIZONTAL);
             head.setGravity(Gravity.CENTER_VERTICAL);
 
-            TextView t = cText(title, 18f, CLAUDE_TEXT_MAIN, true, true);
+            TextView t = cText(title, 18f, Theme.TEXT_MAIN, true, true);
             head.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
 
             if (showClose) {
-                ImageView close = cIconButton(R.drawable.ic_close, 20, 36, CLAUDE_TEXT_MUTED);
+                ImageView close = cIconButton(R.drawable.ic_close, 20, 36, Theme.TEXT_MUTED);
                 close.setOnClickListener(v -> dialog.dismiss());
                 head.addView(close);
             }
@@ -1624,14 +1617,14 @@ public class MainActivity extends Activity {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Profil Pengguna", true);
 
-        TextView sub = cText("Alamat email atau ID pengembang", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView sub = cText("Alamat email atau ID pengembang", 12.5f, Theme.TEXT_MUTED, false, false);
         root.addView(sub);
 
         final EditText input = new EditText(this);
         input.setText(prefs.getString("user_email", "developer@antigravity.ai"));
-        input.setTextColor(CLAUDE_TEXT_MAIN);
-        input.setHintTextColor(CLAUDE_TEXT_LIGHT);
-        input.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        input.setTextColor(Theme.TEXT_MAIN);
+        input.setHintTextColor(Theme.TEXT_LIGHT);
+        input.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         input.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams lpIn = new LinearLayout.LayoutParams(-1, dp(48));
         lpIn.setMargins(0, dp(8), 0, dp(16));
@@ -1640,7 +1633,7 @@ public class MainActivity extends Activity {
         LinearLayout btnSave = new LinearLayout(this);
         btnSave.setOrientation(LinearLayout.HORIZONTAL);
         btnSave.setGravity(Gravity.CENTER);
-        btnSave.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        btnSave.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
         btnSave.addView(cText("Simpan Perubahan", 14f, Color.WHITE, true, false));
         btnSave.setOnClickListener(v -> {
@@ -1662,13 +1655,13 @@ public class MainActivity extends Activity {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Nama Perangkat / Server", true);
 
-        TextView sub = cText("Beri nama kustom untuk server remote yang terhubung", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView sub = cText("Beri nama kustom untuk server remote yang terhubung", 12.5f, Theme.TEXT_MUTED, false, false);
         root.addView(sub);
 
         final EditText input = new EditText(this);
         input.setText(currentServerHostname);
-        input.setTextColor(CLAUDE_TEXT_MAIN);
-        input.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        input.setTextColor(Theme.TEXT_MAIN);
+        input.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         input.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams lpIn = new LinearLayout.LayoutParams(-1, dp(48));
         lpIn.setMargins(0, dp(8), 0, dp(16));
@@ -1677,7 +1670,7 @@ public class MainActivity extends Activity {
         LinearLayout btnSave = new LinearLayout(this);
         btnSave.setOrientation(LinearLayout.HORIZONTAL);
         btnSave.setGravity(Gravity.CENTER);
-        btnSave.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        btnSave.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
         btnSave.addView(cText("Simpan Nama Perangkat", 14f, Color.WHITE, true, false));
         btnSave.setOnClickListener(v -> {
@@ -1703,7 +1696,7 @@ public class MainActivity extends Activity {
         // Custom Root with Title + Refresh Icon + Close Icon in Header
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(cBottomSheetBox(CLAUDE_SURFACE));
+        root.setBackground(cBottomSheetBox(Theme.SURFACE));
         root.setPadding(dp(20), dp(10), dp(20), dp(24));
         root.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -1714,7 +1707,7 @@ public class MainActivity extends Activity {
         dragArea.setPadding(0, dp(4), 0, dp(14));
 
         View dragHandle = new View(this);
-        dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
+        dragHandle.setBackground(cBox(Theme.BORDER_DARK, 0, 0, 3));
         dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
         root.addView(dragArea);
 
@@ -1724,19 +1717,19 @@ public class MainActivity extends Activity {
         headRow.setGravity(Gravity.CENTER_VERTICAL);
         headRow.setPadding(0, 0, 0, dp(10));
 
-        TextView titleView = cText("Models & Quota", 18f, CLAUDE_TEXT_MAIN, true, false);
+        TextView titleView = cText("Models & Quota", 18f, Theme.TEXT_MAIN, true, false);
         headRow.addView(titleView, new LinearLayout.LayoutParams(0, -2, 1));
 
-        final ImageView btnRefresh = cIconButton(R.drawable.ic_refresh, 18, 36, CLAUDE_TEXT_MUTED);
+        final ImageView btnRefresh = cIconButton(R.drawable.ic_refresh, 18, 36, Theme.TEXT_MUTED);
         headRow.addView(btnRefresh);
 
-        ImageView closeBtn = cIconButton(R.drawable.ic_close, 18, 36, CLAUDE_TEXT_MUTED);
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 18, 36, Theme.TEXT_MUTED);
         closeBtn.setOnClickListener(v -> dialog.dismiss());
         headRow.addView(closeBtn);
         root.addView(headRow);
 
         final String userEmail = "rizkiarbi65@gmail.com";
-        final TextView sub = cText("Account: " + userEmail, 13.5f, CLAUDE_TEXT_MAIN, true, false);
+        final TextView sub = cText("Account: " + userEmail, 13.5f, Theme.TEXT_MAIN, true, false);
         LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
         lpSub.setMargins(0, 0, 0, dp(14));
         root.addView(sub, lpSub);
@@ -1779,9 +1772,9 @@ public class MainActivity extends Activity {
         LinearLayout btnClose = new LinearLayout(this);
         btnClose.setOrientation(LinearLayout.HORIZONTAL);
         btnClose.setGravity(Gravity.CENTER);
-        btnClose.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        btnClose.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
         btnClose.setPadding(dp(16), dp(12), dp(16), dp(12));
-        btnClose.addView(cText("Tutup", 14f, CLAUDE_TEXT_MAIN, true, false));
+        btnClose.addView(cText("Tutup", 14f, Theme.TEXT_MAIN, true, false));
         btnClose.setOnClickListener(v -> dialog.dismiss());
         LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, dp(44));
         lpBtn.setMargins(0, dp(14), 0, 0);
@@ -1795,7 +1788,7 @@ public class MainActivity extends Activity {
             String endpoint = prefs.getString("url", "").trim();
             if (endpoint.isEmpty()) return;
 
-            btnRefresh.setColorFilter(CLAUDE_TERRACOTTA);
+            btnRefresh.setColorFilter(Theme.ACCENT);
             executor.execute(() -> {
                 try {
                     String usageUrl = endpoint.replace("/api/chat", "/api/usage") + "?engine=" + currentEngine;
@@ -1816,8 +1809,8 @@ public class MainActivity extends Activity {
                         final JSONObject json = new JSONObject(b.toString());
 
                         mainHandler.post(() -> {
-                            btnRefresh.setColorFilter(CLAUDE_GREEN);
-                            mainHandler.postDelayed(() -> btnRefresh.setColorFilter(CLAUDE_TEXT_MUTED), 1500);
+                            btnRefresh.setColorFilter(Theme.GREEN);
+                            mainHandler.postDelayed(() -> btnRefresh.setColorFilter(Theme.TEXT_MUTED), 1500);
 
                             String acc = json.optString("account", userEmail);
                             sub.setText("Account: " + acc);
@@ -1838,7 +1831,7 @@ public class MainActivity extends Activity {
                                 renderModelGroupHeader(claudeGroup, "KUOTA PROVIDER", "Tidak tersedia dari CLI lokal");
                                 TextView note = cText(json.optString("quotaStatus",
                                                 "CLI tidak mengekspos sisa kuota provider, jadi angkanya tidak ditampilkan."),
-                                        12.5f, CLAUDE_TEXT_MUTED, false, false);
+                                        12.5f, Theme.TEXT_MUTED, false, false);
                                 note.setPadding(0, dp(6), 0, 0);
                                 claudeGroup.addView(note);
                             }
@@ -1866,10 +1859,10 @@ public class MainActivity extends Activity {
                             addStatRow(detailCard, "Uptime", json.optString("uptime", "-"));
                         });
                     } else {
-                        mainHandler.post(() -> btnRefresh.setColorFilter(CLAUDE_TEXT_MUTED));
+                        mainHandler.post(() -> btnRefresh.setColorFilter(Theme.TEXT_MUTED));
                     }
                 } catch (Exception ignored) {
-                    mainHandler.post(() -> btnRefresh.setColorFilter(CLAUDE_TEXT_MUTED));
+                    mainHandler.post(() -> btnRefresh.setColorFilter(Theme.TEXT_MUTED));
                 }
             });
         };
@@ -1884,10 +1877,10 @@ public class MainActivity extends Activity {
     }
 
     private void renderModelGroupHeader(LinearLayout container, String groupTitle, String modelsSub) {
-        TextView gTitle = cText(groupTitle, 13f, CLAUDE_TEXT_MAIN, true, false);
+        TextView gTitle = cText(groupTitle, 13f, Theme.TEXT_MAIN, true, false);
         container.addView(gTitle);
 
-        TextView mSub = cText("Models within this group: " + modelsSub, 11.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView mSub = cText("Models within this group: " + modelsSub, 11.5f, Theme.TEXT_MUTED, false, false);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(2), 0, dp(12));
         container.addView(mSub, lp);
@@ -1899,10 +1892,10 @@ public class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(4), 0, dp(4));
 
-        TextView lbl = cText(label, 13f, CLAUDE_TEXT_MUTED, false, false);
+        TextView lbl = cText(label, 13f, Theme.TEXT_MUTED, false, false);
         row.addView(lbl, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView val = cText(value, 13f, CLAUDE_TEXT_MAIN, true, false);
+        TextView val = cText(value, 13f, Theme.TEXT_MAIN, true, false);
         row.addView(val);
 
         container.addView(row);
@@ -1919,7 +1912,7 @@ public class MainActivity extends Activity {
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        card.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
 
         addStatRow(card, "Kamera (QR Scanner)", camOk ? "Diizinkan ✓" : "Belum diizinkan");
@@ -1937,14 +1930,14 @@ public class MainActivity extends Activity {
 
         String token = prefs.getString("token", "");
 
-        TextView desc = cText("Token bearer digunakan untuk mengamankan komunikasi antara HP Android dan Bridge Server Anda.", 13f, CLAUDE_TEXT_MUTED, false, false);
+        TextView desc = cText("Token bearer digunakan untuk mengamankan komunikasi antara HP Android dan Bridge Server Anda.", 13f, Theme.TEXT_MUTED, false, false);
         LinearLayout.LayoutParams lpD = new LinearLayout.LayoutParams(-1, -2);
         lpD.setMargins(0, 0, 0, dp(14));
         root.addView(desc, lpD);
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        card.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         addStatRow(card, "Status Bearer Token", token.isEmpty() ? "Tidak Ada (Publik)" : "•••••••••••• (Aman)");
         root.addView(card);
@@ -1952,7 +1945,7 @@ public class MainActivity extends Activity {
         LinearLayout btnEdit = new LinearLayout(this);
         btnEdit.setOrientation(LinearLayout.HORIZONTAL);
         btnEdit.setGravity(Gravity.CENTER);
-        btnEdit.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        btnEdit.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         btnEdit.setPadding(dp(16), dp(12), dp(16), dp(12));
         btnEdit.addView(cText("Ganti Token di Konektor", 14f, Color.WHITE, true, false));
         btnEdit.setOnClickListener(v -> {
@@ -1976,18 +1969,18 @@ public class MainActivity extends Activity {
         logoRow.setGravity(Gravity.CENTER_VERTICAL);
         logoRow.setPadding(0, dp(6), 0, dp(14));
 
-        ImageView sp = cIcon(R.drawable.ic_spark, 32, CLAUDE_TERRACOTTA);
+        ImageView sp = cIcon(R.drawable.ic_spark, 32, Theme.ACCENT);
         logoRow.addView(sp);
 
         LinearLayout lt = new LinearLayout(this);
         lt.setOrientation(LinearLayout.VERTICAL);
         lt.setPadding(dp(12), 0, 0, 0);
-        lt.addView(cText("Antigravity Code Remote", 16f, CLAUDE_TEXT_MAIN, true, true));
-        lt.addView(cText("Versi 2.9.9 • Claude Dark Edition", 12.5f, CLAUDE_TEXT_MUTED, false, false));
+        lt.addView(cText("Antigravity Code Remote", 16f, Theme.TEXT_MAIN, true, true));
+        lt.addView(cText("Versi 2.9.9 • Claude Dark Edition", 12.5f, Theme.TEXT_MUTED, false, false));
         logoRow.addView(lt);
         root.addView(logoRow);
 
-        TextView info = cText("Klien remote cerdas untuk Antigravity CLI dan Codex CLI di Android dengan live synchronization dan format markdown interaktif.", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView info = cText("Klien remote cerdas untuk Antigravity CLI dan Codex CLI di Android dengan live synchronization dan format markdown interaktif.", 13.5f, Theme.TEXT_MUTED, false, false);
         info.setLineSpacing(0, 1.25f);
         root.addView(info);
 
@@ -2009,7 +2002,7 @@ public class MainActivity extends Activity {
         LinearLayout scanBtn = new LinearLayout(this);
         scanBtn.setOrientation(LinearLayout.HORIZONTAL);
         scanBtn.setGravity(Gravity.CENTER);
-        scanBtn.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        scanBtn.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         scanBtn.setPadding(dp(12), dp(11), dp(12), dp(11));
         scanBtn.addView(cIcon(R.drawable.ic_qr_code, 20, Color.WHITE));
         TextView scanLbl = cText("  Scan QR Code Pairing", 14f, Color.WHITE, true, false);
@@ -2023,10 +2016,10 @@ public class MainActivity extends Activity {
         LinearLayout pasteBtn = new LinearLayout(this);
         pasteBtn.setOrientation(LinearLayout.HORIZONTAL);
         pasteBtn.setGravity(Gravity.CENTER);
-        pasteBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+        pasteBtn.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
         pasteBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
-        pasteBtn.addView(cIcon(R.drawable.ic_content_paste, 18, CLAUDE_TEXT_MAIN));
-        TextView pasteLbl = cText("  Tempel dari Clipboard", 13.5f, CLAUDE_TEXT_MAIN, true, false);
+        pasteBtn.addView(cIcon(R.drawable.ic_content_paste, 18, Theme.TEXT_MAIN));
+        TextView pasteLbl = cText("  Tempel dari Clipboard", 13.5f, Theme.TEXT_MAIN, true, false);
         pasteBtn.addView(pasteLbl);
         pasteBtn.setOnClickListener(v -> {
             dialog.dismiss();
@@ -2036,38 +2029,38 @@ public class MainActivity extends Activity {
         lpPBtn.setMargins(0, dp(8), 0, dp(14));
         form.addView(pasteBtn, lpPBtn);
 
-        TextView orLbl = cText("— atau isi manual —", 12f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView orLbl = cText("— atau isi manual —", 12f, Theme.TEXT_LIGHT, false, false);
         orLbl.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpOr = new LinearLayout.LayoutParams(-1, -2);
         lpOr.setMargins(0, 0, 0, dp(12));
         form.addView(orLbl, lpOr);
 
-        TextView urlLbl = cText("Bridge Endpoint URL:", 12.5f, CLAUDE_TEXT_MUTED, true, false);
+        TextView urlLbl = cText("Bridge Endpoint URL:", 12.5f, Theme.TEXT_MUTED, true, false);
         form.addView(urlLbl);
 
         EditText urlInput = new EditText(this);
         urlInput.setHint("https://your-bridge.trycloudflare.com/api/chat");
         urlInput.setText(prefs.getString("url", ""));
-        urlInput.setTextColor(CLAUDE_TEXT_MAIN);
-        urlInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        urlInput.setTextColor(Theme.TEXT_MAIN);
+        urlInput.setHintTextColor(Theme.TEXT_LIGHT);
         urlInput.setTextSize(14);
-        urlInput.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        urlInput.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         urlInput.setPadding(dp(14), dp(11), dp(14), dp(11));
         LinearLayout.LayoutParams lpUrl = new LinearLayout.LayoutParams(-1, dp(48));
         lpUrl.setMargins(0, dp(4), 0, dp(14));
         form.addView(urlInput, lpUrl);
 
-        TextView tokLbl = cText("Bearer Token (Secret):", 12.5f, CLAUDE_TEXT_MUTED, true, false);
+        TextView tokLbl = cText("Bearer Token (Secret):", 12.5f, Theme.TEXT_MUTED, true, false);
         form.addView(tokLbl);
 
         EditText tokenInput = new EditText(this);
         tokenInput.setHint("codex-remote-token-2026");
         tokenInput.setText(prefs.getString("token", ""));
-        tokenInput.setTextColor(CLAUDE_TEXT_MAIN);
-        tokenInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        tokenInput.setTextColor(Theme.TEXT_MAIN);
+        tokenInput.setHintTextColor(Theme.TEXT_LIGHT);
         tokenInput.setTextSize(14);
         tokenInput.setInputType(0x00000081);
-        tokenInput.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        tokenInput.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         tokenInput.setPadding(dp(14), dp(11), dp(14), dp(11));
         LinearLayout.LayoutParams lpTok = new LinearLayout.LayoutParams(-1, dp(48));
         lpTok.setMargins(0, dp(4), 0, dp(16));
@@ -2076,7 +2069,7 @@ public class MainActivity extends Activity {
         LinearLayout btnSave = new LinearLayout(this);
         btnSave.setOrientation(LinearLayout.HORIZONTAL);
         btnSave.setGravity(Gravity.CENTER);
-        btnSave.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 14));
+        btnSave.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
         btnSave.addView(cText("Simpan & Hubungkan", 14f, Color.WHITE, true, false));
         btnSave.setOnClickListener(v -> {
@@ -2126,13 +2119,13 @@ public class MainActivity extends Activity {
         LinearLayout pill = new LinearLayout(this);
         pill.setOrientation(LinearLayout.HORIZONTAL);
         pill.setGravity(Gravity.CENTER_VERTICAL);
-        pill.setBackground(cBox(isActuallyRunning ? CLAUDE_AMBER_BG : CLAUDE_SURFACE_MUTED, isActuallyRunning ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 14));
+        pill.setBackground(cBox(isActuallyRunning ? Theme.AMBER_BG : Theme.SURFACE_MUTED, isActuallyRunning ? Theme.AMBER : Theme.BORDER, 1, 14));
         pill.setPadding(dp(12), dp(9), dp(12), dp(9));
 
-        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isActuallyRunning ? CLAUDE_AMBER : CLAUDE_TERRACOTTA);
+        ImageView actionIcon = cIcon(toolCount > 0 ? R.drawable.ic_build : R.drawable.ic_psychology, 18, isActuallyRunning ? Theme.AMBER : Theme.ACCENT);
         pill.addView(actionIcon);
 
-        TextView tv = cText("  " + labelText, 13f, CLAUDE_TEXT_MAIN, true, false);
+        TextView tv = cText("  " + labelText, 13f, Theme.TEXT_MAIN, true, false);
         pill.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
 
         LinearLayout stateBadge = new LinearLayout(this);
@@ -2140,23 +2133,23 @@ public class MainActivity extends Activity {
         stateBadge.setGravity(Gravity.CENTER_VERTICAL);
 
         if (isActuallyRunning) {
-            stateBadge.setBackground(cBox(CLAUDE_AMBER_BG, CLAUDE_AMBER, 1, 6));
+            stateBadge.setBackground(cBox(Theme.AMBER_BG, Theme.AMBER, 1, 6));
             stateBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
             ProgressBar pb = new ProgressBar(this);
             LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(12), dp(12));
             stateBadge.addView(pb, lpPb);
-            TextView runText = cText(" Running", 11f, CLAUDE_AMBER, true, false);
+            TextView runText = cText(" Running", 11f, Theme.AMBER, true, false);
             stateBadge.addView(runText);
         } else {
-            stateBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
+            stateBadge.setBackground(cBox(Theme.GREEN_BG, Theme.GREEN, 1, 6));
             stateBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
-            stateBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
-            TextView doneText = cText(" Done", 11f, CLAUDE_GREEN, true, false);
+            stateBadge.addView(cIcon(R.drawable.ic_check, 12, Theme.GREEN));
+            TextView doneText = cText(" Done", 11f, Theme.GREEN, true, false);
             stateBadge.addView(doneText);
         }
         pill.addView(stateBadge);
 
-        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
+        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, Theme.TEXT_MUTED);
         chevron.setPadding(dp(4), 0, 0, 0);
         pill.addView(chevron);
 
@@ -2178,7 +2171,7 @@ public class MainActivity extends Activity {
 
         final LinearLayout modalRoot = new LinearLayout(this);
         modalRoot.setOrientation(LinearLayout.VERTICAL);
-        modalRoot.setBackground(cBox(CLAUDE_BG, 0, 0, 24));
+        modalRoot.setBackground(cBox(Theme.BG, 0, 0, 24));
         modalRoot.setPadding(dp(20), dp(10), dp(20), dp(16));
 
         // Drag Area
@@ -2188,7 +2181,7 @@ public class MainActivity extends Activity {
         dragArea.setPadding(0, dp(4), 0, dp(10));
 
         View dragHandle = new View(this);
-        dragHandle.setBackground(cBox(CLAUDE_BORDER_DARK, 0, 0, 3));
+        dragHandle.setBackground(cBox(Theme.BORDER_DARK, 0, 0, 3));
         dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
         modalRoot.addView(dragArea);
 
@@ -2204,18 +2197,18 @@ public class MainActivity extends Activity {
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView title = cText("Execution & Thoughts", 18.5f, CLAUDE_TEXT_MAIN, true, true);
+        TextView title = cText("Execution & Thoughts", 18.5f, Theme.TEXT_MAIN, true, true);
         headerRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
-        final ImageView fullscreenBtn = cIconButton(R.drawable.ic_fullscreen, 24, 40, CLAUDE_TEXT_MAIN);
+        final ImageView fullscreenBtn = cIconButton(R.drawable.ic_fullscreen, 24, 40, Theme.TEXT_MAIN);
         headerRow.addView(fullscreenBtn);
 
-        ImageView closeBtn = cIconButton(R.drawable.ic_close, 22, 40, CLAUDE_TEXT_MAIN);
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 22, 40, Theme.TEXT_MAIN);
         closeBtn.setOnClickListener(v -> dialog.dismiss());
         headerRow.addView(closeBtn);
         activeBottomSheetMasterView.addView(headerRow);
 
-        activeBottomSheetSubtitle = cText(items.size() + " actions • ketuk item untuk melihat detail", 13f, CLAUDE_TEXT_MUTED, false, false);
+        activeBottomSheetSubtitle = cText(items.size() + " actions • ketuk item untuk melihat detail", 13f, Theme.TEXT_MUTED, false, false);
         LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
         lpSub.setMargins(0, dp(2), 0, dp(8));
         activeBottomSheetMasterView.addView(activeBottomSheetSubtitle, lpSub);
@@ -2305,20 +2298,20 @@ public class MainActivity extends Activity {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.HORIZONTAL);
             card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setBackground(cBox(isThisItemRunning ? CLAUDE_AMBER_BG : CLAUDE_SURFACE, isThisItemRunning ? CLAUDE_AMBER : CLAUDE_BORDER, 1, 16));
+            card.setBackground(cBox(isThisItemRunning ? Theme.AMBER_BG : Theme.SURFACE, isThisItemRunning ? Theme.AMBER : Theme.BORDER, 1, 16));
             card.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 20, isThisItemRunning ? CLAUDE_AMBER : CLAUDE_TERRACOTTA);
+            ImageView ic = cIcon(isTool ? R.drawable.ic_build : R.drawable.ic_psychology, 20, isThisItemRunning ? Theme.AMBER : Theme.ACCENT);
             card.addView(ic);
 
             LinearLayout textCol = new LinearLayout(this);
             textCol.setOrientation(LinearLayout.VERTICAL);
             textCol.setPadding(dp(12), 0, dp(8), 0);
 
-            TextView tView = cText(toolTitle, 14.5f, CLAUDE_TEXT_MAIN, true, false);
+            TextView tView = cText(toolTitle, 14.5f, Theme.TEXT_MAIN, true, false);
             textCol.addView(tView);
 
-            TextView subV = cText(displayTitle, 12f, CLAUDE_TEXT_MUTED, false, false);
+            TextView subV = cText(displayTitle, 12f, Theme.TEXT_MUTED, false, false);
             subV.setSingleLine(true);
             textCol.addView(subV);
 
@@ -2329,23 +2322,23 @@ public class MainActivity extends Activity {
             bBadge.setGravity(Gravity.CENTER_VERTICAL);
 
             if (isThisItemRunning) {
-                bBadge.setBackground(cBox(CLAUDE_AMBER_BG, CLAUDE_AMBER, 1, 6));
+                bBadge.setBackground(cBox(Theme.AMBER_BG, Theme.AMBER, 1, 6));
                 bBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
                 ProgressBar pb = new ProgressBar(this);
                 LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(12), dp(12));
                 bBadge.addView(pb, lpPb);
-                TextView bText = cText(" Running", 11f, CLAUDE_AMBER, true, false);
+                TextView bText = cText(" Running", 11f, Theme.AMBER, true, false);
                 bBadge.addView(bText);
             } else {
-                bBadge.setBackground(cBox(CLAUDE_GREEN_BG, CLAUDE_GREEN, 1, 6));
+                bBadge.setBackground(cBox(Theme.GREEN_BG, Theme.GREEN, 1, 6));
                 bBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
-                bBadge.addView(cIcon(R.drawable.ic_check, 12, CLAUDE_GREEN));
-                TextView bText = cText(" Selesai", 11f, CLAUDE_GREEN, true, false);
+                bBadge.addView(cIcon(R.drawable.ic_check, 12, Theme.GREEN));
+                TextView bText = cText(" Selesai", 11f, Theme.GREEN, true, false);
                 bBadge.addView(bText);
             }
             card.addView(bBadge);
 
-            ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, CLAUDE_TEXT_MUTED);
+            ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, Theme.TEXT_MUTED);
             chevron.setPadding(dp(4), 0, 0, 0);
             card.addView(chevron);
 
@@ -2384,7 +2377,7 @@ public class MainActivity extends Activity {
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setPadding(0, 0, 0, dp(14));
 
-        ImageView backBtn = cIconButton(R.drawable.ic_arrow_back, 24, 40, CLAUDE_TEXT_MAIN);
+        ImageView backBtn = cIconButton(R.drawable.ic_arrow_back, 24, 40, Theme.TEXT_MAIN);
         backBtn.setOnClickListener(v -> {
             activeBottomSheetDetailView.setVisibility(View.GONE);
             activeBottomSheetMasterView.setVisibility(View.VISIBLE);
@@ -2395,11 +2388,11 @@ public class MainActivity extends Activity {
         titleCol.setOrientation(LinearLayout.VERTICAL);
         titleCol.setGravity(Gravity.CENTER_HORIZONTAL);
 
-        TextView titleView = cText(isEditDiff ? "Edit" : toolTitle, 19f, CLAUDE_TEXT_MAIN, true, false);
+        TextView titleView = cText(isEditDiff ? "Edit" : toolTitle, 19f, Theme.TEXT_MAIN, true, false);
         titleView.setGravity(Gravity.CENTER);
         titleCol.addView(titleView);
 
-        TextView statusView = cText(statusText, 13f, isRunning ? CLAUDE_AMBER : CLAUDE_TEXT_MUTED, false, false);
+        TextView statusView = cText(statusText, 13f, isRunning ? Theme.AMBER : Theme.TEXT_MUTED, false, false);
         statusView.setGravity(Gravity.CENTER);
         titleCol.addView(statusView);
 
@@ -2430,11 +2423,11 @@ public class MainActivity extends Activity {
             metaBar.setGravity(Gravity.CENTER_VERTICAL);
             metaBar.setPadding(0, 0, 0, dp(10));
 
-            TextView fnView = cText(fileName, 14.5f, CLAUDE_TEXT_MAIN, true, false);
+            TextView fnView = cText(fileName, 14.5f, Theme.TEXT_MAIN, true, false);
             fnView.setTypeface(Typeface.MONOSPACE);
             metaBar.addView(fnView);
 
-            TextView pathView = cText("  " + dirPath, 13f, CLAUDE_TEXT_MUTED, false, false);
+            TextView pathView = cText("  " + dirPath, 13f, Theme.TEXT_MUTED, false, false);
             pathView.setSingleLine(true);
             pathView.setEllipsize(TextUtils.TruncateAt.END);
             metaBar.addView(pathView, new LinearLayout.LayoutParams(0, -2, 1));
@@ -2445,10 +2438,10 @@ public class MainActivity extends Activity {
                 diffBadge.setGravity(Gravity.CENTER_VERTICAL);
 
                 if (addedLines > 0) {
-                    diffBadge.addView(cText("+" + addedLines + " ", 13.5f, CLAUDE_GREEN, true, false));
+                    diffBadge.addView(cText("+" + addedLines + " ", 13.5f, Theme.GREEN, true, false));
                 }
                 if (deletedLines > 0) {
-                    diffBadge.addView(cText("-" + deletedLines, 13.5f, CLAUDE_RED, true, false));
+                    diffBadge.addView(cText("-" + deletedLines, 13.5f, Theme.RED, true, false));
                 }
                 metaBar.addView(diffBadge);
             }
@@ -2547,7 +2540,7 @@ public class MainActivity extends Activity {
                 }
             } else if (targetContent.isEmpty()) {
                 // Fallback if no target/replacement parsed
-                TextView fallback = cText(outputText, 13f, CLAUDE_TEXT_MAIN, false, false);
+                TextView fallback = cText(outputText, 13f, Theme.TEXT_MAIN, false, false);
                 fallback.setTypeface(Typeface.MONOSPACE);
                 linesContainer.addView(fallback);
             }
@@ -2573,14 +2566,14 @@ public class MainActivity extends Activity {
             body.addView(diffBox);
         } else {
             // Standard Command & Output Sections
-            TextView cmdLabel = cText("Perintah", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+            TextView cmdLabel = cText("Perintah", 13.5f, Theme.TEXT_MUTED, false, false);
             LinearLayout.LayoutParams lpCmdL = new LinearLayout.LayoutParams(-1, -2);
             lpCmdL.setMargins(0, 0, 0, dp(8));
             body.addView(cmdLabel, lpCmdL);
 
             LinearLayout cmdBox = new LinearLayout(this);
             cmdBox.setOrientation(LinearLayout.VERTICAL);
-            cmdBox.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
+            cmdBox.setBackground(cBox(Theme.CODE_BG, Theme.BORDER, 1, 12));
             cmdBox.setPadding(dp(14), dp(12), dp(14), dp(12));
 
             TextView cmdView = new TextView(this);
@@ -2593,20 +2586,20 @@ public class MainActivity extends Activity {
 
             body.addView(cmdBox);
 
-            TextView outLabel = cText("Keluaran / Respons", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+            TextView outLabel = cText("Keluaran / Respons", 13.5f, Theme.TEXT_MUTED, false, false);
             LinearLayout.LayoutParams lpOutL = new LinearLayout.LayoutParams(-1, -2);
             lpOutL.setMargins(0, dp(16), 0, dp(8));
             body.addView(outLabel, lpOutL);
 
             LinearLayout outBox = new LinearLayout(this);
             outBox.setOrientation(LinearLayout.VERTICAL);
-            outBox.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 12));
+            outBox.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 12));
             outBox.setPadding(dp(14), dp(12), dp(14), dp(12));
 
             TextView outView = new TextView(this);
             outView.setText(outputText.isEmpty() ? "(Tidak ada output teks)" : outputText);
             outView.setTextSize(13.5f);
-            outView.setTextColor(CLAUDE_TEXT_MAIN);
+            outView.setTextColor(Theme.TEXT_MAIN);
             outView.setTypeface(Typeface.MONOSPACE);
             outView.setTextIsSelectable(true);
             outBox.addView(outView);
@@ -2634,7 +2627,7 @@ public class MainActivity extends Activity {
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setPadding(0, dp(2), 0, dp(8));
 
-        chatNavIcon = cIconButton(R.drawable.ic_arrow_back, 24, 40, CLAUDE_TEXT_MAIN);
+        chatNavIcon = cIconButton(R.drawable.ic_arrow_back, 24, 40, Theme.TEXT_MAIN);
         chatNavIcon.setOnClickListener(v -> {
             if (navigatedFromHub || currentScreen == 1) {
                 navigatedFromHub = false;
@@ -2645,16 +2638,16 @@ public class MainActivity extends Activity {
         });
         topBar.addView(chatNavIcon);
 
-        chatTopTitle = cText("New session", 16f, CLAUDE_TEXT_MAIN, true, false);
+        chatTopTitle = cText("New session", 16f, Theme.TEXT_MAIN, true, false);
         chatTopTitle.setGravity(Gravity.CENTER);
         chatTopTitle.setSingleLine(true);
         topBar.addView(chatTopTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageView qrTopBtn = cIconButton(R.drawable.ic_qr_code, 22, 40, CLAUDE_TEXT_MAIN);
+        ImageView qrTopBtn = cIconButton(R.drawable.ic_qr_code, 22, 40, Theme.TEXT_MAIN);
         qrTopBtn.setOnClickListener(v -> startQrScanner());
         topBar.addView(qrTopBtn);
 
-        final ImageView moreBtn = cIconButton(R.drawable.ic_more_vert, 24, 40, CLAUDE_TEXT_MAIN);
+        final ImageView moreBtn = cIconButton(R.drawable.ic_more_vert, 24, 40, Theme.TEXT_MAIN);
         moreBtn.setOnClickListener(v -> showMoreDropdownMenu(moreBtn));
         topBar.addView(moreBtn);
         contentLayout.addView(topBar);
@@ -2698,7 +2691,7 @@ public class MainActivity extends Activity {
 
         LinearLayout composerCard = new LinearLayout(this);
         composerCard.setOrientation(LinearLayout.VERTICAL);
-        composerCard.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 24));
+        composerCard.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 24));
         composerCard.setPadding(dp(16), dp(12), dp(12), dp(10));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             composerCard.setElevation(dp(8));
@@ -2706,8 +2699,8 @@ public class MainActivity extends Activity {
 
         promptInput = new EditText(this);
         promptInput.setHint("Code anything...");
-        promptInput.setHintTextColor(CLAUDE_TEXT_LIGHT);
-        promptInput.setTextColor(CLAUDE_TEXT_MAIN);
+        promptInput.setHintTextColor(Theme.TEXT_LIGHT);
+        promptInput.setTextColor(Theme.TEXT_MAIN);
         promptInput.setTextSize(15.5f);
         promptInput.setTypeface(Typeface.SERIF);
         promptInput.setBackgroundColor(Color.TRANSPARENT);
@@ -2720,24 +2713,24 @@ public class MainActivity extends Activity {
         actionRow.setOrientation(LinearLayout.HORIZONTAL);
         actionRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        btnAttach = cIconButton(R.drawable.ic_add, 24, 38, CLAUDE_TEXT_MUTED);
+        btnAttach = cIconButton(R.drawable.ic_add, 24, 38, Theme.TEXT_MUTED);
         btnAttach.setOnClickListener(v -> openMultiFilePicker());
         actionRow.addView(btnAttach);
 
-        btnVoice = cIconButton(R.drawable.ic_mic, 22, 38, CLAUDE_TEXT_MUTED);
+        btnVoice = cIconButton(R.drawable.ic_mic, 22, 38, Theme.TEXT_MUTED);
         btnVoice.setOnClickListener(v -> startVoiceRecognition());
         actionRow.addView(btnVoice);
 
-        repoTagLabel = cText(engineShortLabel(currentEngine), 12f, CLAUDE_TERRACOTTA, true, false);
-        repoTagLabel.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, CLAUDE_BORDER, 1, 12));
+        repoTagLabel = cText(engineShortLabel(currentEngine), 12f, Theme.ACCENT, true, false);
+        repoTagLabel.setBackground(cBox(Theme.ACCENT_SOFT, Theme.BORDER, 1, 12));
         repoTagLabel.setPadding(dp(10), dp(4), dp(10), dp(4));
         repoTagLabel.setOnClickListener(v -> showEngineSwitcher());
         LinearLayout.LayoutParams lpTag = new LinearLayout.LayoutParams(-2, -2);
         lpTag.setMargins(dp(6), 0, 0, 0);
         actionRow.addView(repoTagLabel, lpTag);
 
-        modelTagLabel = cText(displayModel(currentModel), 11.5f, CLAUDE_TEXT_MUTED, true, false);
-        modelTagLabel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        modelTagLabel = cText(displayModel(currentModel), 11.5f, Theme.TEXT_MUTED, true, false);
+        modelTagLabel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         modelTagLabel.setPadding(dp(9), dp(4), dp(9), dp(4));
         modelTagLabel.setOnClickListener(v -> showModelPicker());
         LinearLayout.LayoutParams lpModelTag = new LinearLayout.LayoutParams(-2, -2);
@@ -2748,7 +2741,7 @@ public class MainActivity extends Activity {
         actionRow.addView(spring, new LinearLayout.LayoutParams(0, 1, 1));
 
         btnSend = new FrameLayout(this);
-        btnSend.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 18));
+        btnSend.setBackground(cBox(Theme.ACCENT, 0, 0, 18));
         ImageView sendIcon = cIcon(R.drawable.ic_send, 18, Color.WHITE);
         FrameLayout.LayoutParams lpSendIc = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         btnSend.addView(sendIcon, lpSendIc);
@@ -2764,11 +2757,11 @@ public class MainActivity extends Activity {
 
         // Floating Scroll-to-Bottom Button (FAB)
         btnScrollToBottom = new FrameLayout(this);
-        btnScrollToBottom.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 22));
+        btnScrollToBottom.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 22));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             btnScrollToBottom.setElevation(dp(6));
         }
-        ImageView downArrow = cIcon(R.drawable.ic_expand_more, 22, CLAUDE_TEXT_MAIN);
+        ImageView downArrow = cIcon(R.drawable.ic_expand_more, 22, Theme.TEXT_MAIN);
         btnScrollToBottom.addView(downArrow, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         btnScrollToBottom.setVisibility(View.GONE);
         btnScrollToBottom.setOnClickListener(v -> {
@@ -2812,7 +2805,7 @@ public class MainActivity extends Activity {
         chatSessionLoadingView = new LinearLayout(this);
         chatSessionLoadingView.setOrientation(LinearLayout.VERTICAL);
         chatSessionLoadingView.setGravity(Gravity.CENTER);
-        chatSessionLoadingView.setBackgroundColor(CLAUDE_BG);
+        chatSessionLoadingView.setBackgroundColor(Theme.BG);
         chatSessionLoadingView.setVisibility(View.GONE);
 
         ProgressBar loadPb = new ProgressBar(this);
@@ -2820,7 +2813,7 @@ public class MainActivity extends Activity {
         lpPb.gravity = Gravity.CENTER_HORIZONTAL;
         chatSessionLoadingView.addView(loadPb, lpPb);
 
-        TextView loadText = cText("Memuat percakapan...", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView loadText = cText("Memuat percakapan...", 13.5f, Theme.TEXT_MUTED, false, false);
         loadText.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpText = new LinearLayout.LayoutParams(-2, -2);
         lpText.gravity = Gravity.CENTER_HORIZONTAL;
@@ -2839,7 +2832,7 @@ public class MainActivity extends Activity {
         emptyMascotView.setPadding(dp(24), dp(56), dp(24), dp(56));
 
         ImageView mascot = new ImageView(this);
-        mascot.setImageResource(R.drawable.ic_mascot_character);
+        mascot.setImageResource(Theme.mascotRes());
         mascot.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams lpMascot = new LinearLayout.LayoutParams(dp(148), dp(148));
         emptyMascotView.addView(mascot, lpMascot);
@@ -2851,13 +2844,13 @@ public class MainActivity extends Activity {
         mascotFloatAnimator.setRepeatMode(ValueAnimator.REVERSE);
         mascotFloatAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
 
-        TextView brandName = cText("Antigravity Code", 19, CLAUDE_TEXT_MAIN, true, true);
+        TextView brandName = cText(Theme.wordmark() + " Code", 19, Theme.TEXT_MAIN, true, true);
         brandName.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpBn = new LinearLayout.LayoutParams(-1, -2);
         lpBn.setMargins(0, dp(18), 0, 0);
         emptyMascotView.addView(brandName, lpBn);
 
-        TextView tagline = cText("Siap membantu. Ketik perintah untuk memulai sesi.", 13.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView tagline = cText(Theme.engineTagline(), 13.5f, Theme.TEXT_MUTED, false, false);
         tagline.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpTag = new LinearLayout.LayoutParams(-1, -2);
         lpTag.setMargins(dp(20), dp(8), dp(20), 0);
@@ -2894,14 +2887,14 @@ public class MainActivity extends Activity {
                 : new String[]{"auto", "gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.1-pro-high", "claude-sonnet-4-6", "gpt-oss-120b-medium"};
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Pilih Model", true);
-        TextView subtitle = cText(isCodex ? "Model Codex yang dipakai untuk prompt baru" : "Model Antigravity yang dipakai untuk prompt baru", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView subtitle = cText(isCodex ? "Model Codex yang dipakai untuk prompt baru" : "Model Antigravity yang dipakai untuk prompt baru", 12.5f, Theme.TEXT_MUTED, false, false);
         root.addView(subtitle);
         for (String model : models) {
             TextView option = cText((model.equalsIgnoreCase(currentModel) ? "✓  " : "    ") + displayModel(model), 14f,
-                    model.equalsIgnoreCase(currentModel) ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MAIN, true, false);
+                    model.equalsIgnoreCase(currentModel) ? Theme.ACCENT : Theme.TEXT_MAIN, true, false);
             option.setGravity(Gravity.CENTER_VERTICAL);
             option.setPadding(dp(14), 0, dp(14), 0);
-            option.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+            option.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(46));
             lp.setMargins(0, dp(8), 0, 0);
             root.addView(option, lp);
@@ -2947,23 +2940,23 @@ public class MainActivity extends Activity {
         LinearLayout root = createBottomSheetRoot(dialog, "Engine", true);
 
         root.addView(cText("Sesi tidak dibagi antar engine. Berpindah akan memulai sesi baru.",
-                12.5f, CLAUDE_TEXT_MUTED, false, false));
+                12.5f, Theme.TEXT_MUTED, false, false));
 
         // --- toggle row ---
         LinearLayout toggleRow = new LinearLayout(this);
         toggleRow.setOrientation(LinearLayout.HORIZONTAL);
         toggleRow.setGravity(Gravity.CENTER_VERTICAL);
-        toggleRow.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 16));
+        toggleRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 16));
         toggleRow.setPadding(dp(16), dp(14), dp(16), dp(14));
         LinearLayout.LayoutParams lpToggle = new LinearLayout.LayoutParams(-1, -2);
         lpToggle.setMargins(0, dp(16), 0, dp(6));
 
         LinearLayout toggleCol = new LinearLayout(this);
         toggleCol.setOrientation(LinearLayout.VERTICAL);
-        final TextView toggleTitle = cText(engineLabel(currentEngine), 15.5f, CLAUDE_TEXT_MAIN, true, false);
+        final TextView toggleTitle = cText(engineLabel(currentEngine), 15.5f, Theme.TEXT_MAIN, true, false);
         toggleCol.addView(toggleTitle);
         final TextView toggleSub = cText(engineRepo(currentEngine) + " · " + displayModel(currentModel),
-                12f, CLAUDE_TEXT_MUTED, false, false);
+                12f, Theme.TEXT_MUTED, false, false);
         toggleSub.setSingleLine(true);
         toggleSub.setEllipsize(TextUtils.TruncateAt.END);
         toggleCol.addView(toggleSub);
@@ -2971,12 +2964,12 @@ public class MainActivity extends Activity {
 
         final Switch engineSwitch = new Switch(this);
         engineSwitch.setChecked(isCodexEngine());
-        engineSwitch.setThumbTintList(android.content.res.ColorStateList.valueOf(CLAUDE_TERRACOTTA));
-        engineSwitch.setTrackTintList(android.content.res.ColorStateList.valueOf(CLAUDE_BORDER_DARK));
+        engineSwitch.setThumbTintList(android.content.res.ColorStateList.valueOf(Theme.ACCENT));
+        engineSwitch.setTrackTintList(android.content.res.ColorStateList.valueOf(Theme.BORDER_DARK));
         toggleRow.addView(engineSwitch);
         root.addView(toggleRow, lpToggle);
 
-        TextView toggleHint = cText("Mati = Antigravity · Nyala = Codex", 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        TextView toggleHint = cText("Mati = Antigravity · Nyala = Codex", 11.5f, Theme.TEXT_LIGHT, false, false);
         toggleHint.setPadding(dp(4), 0, 0, dp(14));
         root.addView(toggleHint);
 
@@ -3005,21 +2998,21 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setBackground(cBox(selected ? CLAUDE_TERRACOTTA_LIGHT : CLAUDE_SURFACE_MUTED,
-                selected ? CLAUDE_TERRACOTTA : CLAUDE_BORDER, 1, 14));
+        card.setBackground(cBox(selected ? Theme.ACCENT_SOFT : Theme.SURFACE_MUTED,
+                selected ? Theme.ACCENT : Theme.BORDER, 1, 14));
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-        card.addView(cIcon(R.drawable.ic_tune, 18, selected ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
+        card.addView(cIcon(R.drawable.ic_tune, 18, selected ? Theme.ACCENT : Theme.TEXT_MUTED));
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(12), 0, dp(8), 0);
         col.addView(cText(engineLabel(engine), 14.5f,
-                selected ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MAIN, true, false));
-        col.addView(cText(engineRepo(engine) + " · " + displayModel(model), 11.5f, CLAUDE_TEXT_MUTED, false, false));
+                selected ? Theme.ACCENT : Theme.TEXT_MAIN, true, false));
+        col.addView(cText(engineRepo(engine) + " · " + displayModel(model), 11.5f, Theme.TEXT_MUTED, false, false));
         card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
 
-        if (selected) card.addView(cIcon(R.drawable.ic_check, 18, CLAUDE_TERRACOTTA));
+        if (selected) card.addView(cIcon(R.drawable.ic_check, 18, Theme.ACCENT));
 
         card.setOnClickListener(v -> {
             if (selected) {
@@ -3052,22 +3045,22 @@ public class MainActivity extends Activity {
 
         root.addView(cText("Beralih ke " + engineLabel(target) + " akan menutup sesi "
                         + engineLabel(currentEngine) + " yang sedang terbuka.",
-                13.5f, CLAUDE_TEXT_MAIN, false, false));
+                13.5f, Theme.TEXT_MAIN, false, false));
 
         TextView note = cText(isLiveTaskRunning
                         ? "Ada task yang sedang berjalan. Task tetap jalan di server, tapi layar akan pindah ke sesi baru."
                         : "Sesi lama tetap tersimpan dan bisa dibuka lagi dari daftar Kode.",
-                12.5f, isLiveTaskRunning ? CLAUDE_AMBER : CLAUDE_TEXT_MUTED, false, false);
+                12.5f, isLiveTaskRunning ? Theme.AMBER : Theme.TEXT_MUTED, false, false);
         note.setPadding(0, dp(8), 0, dp(16));
         root.addView(note);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
 
-        TextView cancel = cText("Batal", 14f, CLAUDE_TEXT_MAIN, true, false);
+        TextView cancel = cText("Batal", 14f, Theme.TEXT_MAIN, true, false);
         cancel.setGravity(Gravity.CENTER);
         cancel.setPadding(dp(16), dp(13), dp(16), dp(13));
-        cancel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        cancel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         cancel.setOnClickListener(v -> dialog.dismiss());
         LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(0, -2, 1);
         lpC.setMargins(0, 0, dp(8), 0);
@@ -3076,7 +3069,7 @@ public class MainActivity extends Activity {
         TextView confirm = cText("Ganti", 14f, Color.WHITE, true, false);
         confirm.setGravity(Gravity.CENTER);
         confirm.setPadding(dp(16), dp(13), dp(16), dp(13));
-        confirm.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
+        confirm.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
         confirm.setOnClickListener(v -> {
             dialog.dismiss();
             applyEngineSwitch(target);
@@ -3090,18 +3083,32 @@ public class MainActivity extends Activity {
 
     private void applyEngineSwitch(String target) {
         final String previous = currentEngine;
-        currentEngine = "codex".equalsIgnoreCase(target) ? "codex" : "antigravity";
-        currentModel = prefs.getString(modelPrefKey(currentEngine), defaultModelForEngine(currentEngine));
-        prefs.edit().putString("engine", currentEngine).apply();
+        final String next = "codex".equalsIgnoreCase(target) ? "codex" : "antigravity";
+        if (next.equals(previous)) return;
 
-        updateRepoTag();
-        refreshSettingsValues();
-        rebuildSidebarContent();
+        prefs.edit()
+                .putString("engine", next)
+                // Survives the rebuild so the new screen can explain itself.
+                .putString("pending_engine_notice_from", previous)
+                .remove("last_conversation_id")
+                .remove("last_conversation_title")
+                .apply();
+
+        // Every colour, the wordmark, the mascot and the heading face change
+        // with the engine, and this UI is built entirely in code — recreating
+        // the activity is what actually repaints all of it.
+        Theme.applyEngine(next);
+        recreate();
+    }
+
+    /** Shown once after the rebuild that follows an engine switch. */
+    private void consumePendingEngineNotice() {
+        String from = prefs.getString("pending_engine_notice_from", "");
+        if (from.isEmpty()) return;
+        prefs.edit().remove("pending_engine_notice_from").apply();
+
         startNewSession();
-
-        // Say what happened inside the chat, not just in a toast that vanishes.
-        renderEngineSwitchNotice(previous, currentEngine);
-
+        renderEngineSwitchNotice(from, currentEngine);
         Toast.makeText(this, "Engine: " + engineLabel(currentEngine)
                 + " · " + displayModel(currentModel), Toast.LENGTH_SHORT).show();
     }
@@ -3113,17 +3120,17 @@ public class MainActivity extends Activity {
         LinearLayout notice = new LinearLayout(this);
         notice.setOrientation(LinearLayout.HORIZONTAL);
         notice.setGravity(Gravity.CENTER_VERTICAL);
-        notice.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 14));
+        notice.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
         notice.setPadding(dp(14), dp(11), dp(14), dp(11));
 
-        notice.addView(cIcon(R.drawable.ic_swap, 16, CLAUDE_TERRACOTTA));
+        notice.addView(cIcon(R.drawable.ic_swap, 16, Theme.ACCENT));
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(10), 0, 0, 0);
-        col.addView(cText(engineLabel(from) + "  →  " + engineLabel(to), 13f, CLAUDE_TEXT_MAIN, true, false));
+        col.addView(cText(engineLabel(from) + "  →  " + engineLabel(to), 13f, Theme.TEXT_MAIN, true, false));
         col.addView(cText("Sesi baru dimulai · model " + displayModel(currentModel),
-                11.5f, CLAUDE_TEXT_MUTED, false, false));
+                11.5f, Theme.TEXT_MUTED, false, false));
         notice.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
@@ -3131,26 +3138,18 @@ public class MainActivity extends Activity {
         chatMessagesList.addView(notice, lp);
     }
 
-    // The sidebar shows the active engine as a chip, so it has to be rebuilt
-    // when the engine changes.
-    private void rebuildSidebarContent() {
-        if (sidebarPanel == null) return;
-        sidebarPanel.removeAllViews();
-        buildSidebarContent(sidebarPanel);
-    }
-
     private void showMoreDropdownMenu(View anchorView) {
         PopupMenu popup = new PopupMenu(this, anchorView);
-        addDropdownItem(popup, 1, "Scan QR Code Pairing", R.drawable.ic_qr_code, CLAUDE_TEXT_MAIN);
-        addDropdownItem(popup, 2, "Paste from Clipboard", R.drawable.ic_content_paste, CLAUDE_TEXT_MAIN);
-        addDropdownItem(popup, 3, "Pengaturan (Settings)", R.drawable.ic_settings, CLAUDE_TEXT_MAIN);
-        addDropdownItem(popup, 4, "Interrupt / Stop Task", R.drawable.ic_stop, CLAUDE_RED);
-        addDropdownItem(popup, 5, "Refresh Transcript", R.drawable.ic_refresh, CLAUDE_TEXT_MAIN);
-        addDropdownItem(popup, 6, "Clear to New Session", R.drawable.ic_add, CLAUDE_TERRACOTTA);
-        addDropdownItem(popup, 7, "Cari Sesi", R.drawable.ic_search, CLAUDE_TEXT_MAIN);
-        addDropdownItem(popup, 8, "File Workspace", R.drawable.ic_folder, CLAUDE_TEXT_MAIN);
-        addDropdownItem(popup, 9, "Git", R.drawable.ic_source_branch, CLAUDE_TEXT_MAIN);
-        addDropdownItem(popup, 10, "Ekspor Transkrip", R.drawable.ic_content_copy, CLAUDE_TEXT_MAIN);
+        addDropdownItem(popup, 1, "Scan QR Code Pairing", R.drawable.ic_qr_code, Theme.TEXT_MAIN);
+        addDropdownItem(popup, 2, "Paste from Clipboard", R.drawable.ic_content_paste, Theme.TEXT_MAIN);
+        addDropdownItem(popup, 3, "Pengaturan (Settings)", R.drawable.ic_settings, Theme.TEXT_MAIN);
+        addDropdownItem(popup, 4, "Interrupt / Stop Task", R.drawable.ic_stop, Theme.RED);
+        addDropdownItem(popup, 5, "Refresh Transcript", R.drawable.ic_refresh, Theme.TEXT_MAIN);
+        addDropdownItem(popup, 6, "Clear to New Session", R.drawable.ic_add, Theme.ACCENT);
+        addDropdownItem(popup, 7, "Cari Sesi", R.drawable.ic_search, Theme.TEXT_MAIN);
+        addDropdownItem(popup, 8, "File Workspace", R.drawable.ic_folder, Theme.TEXT_MAIN);
+        addDropdownItem(popup, 9, "Git", R.drawable.ic_source_branch, Theme.TEXT_MAIN);
+        addDropdownItem(popup, 10, "Ekspor Transkrip", R.drawable.ic_content_copy, Theme.TEXT_MAIN);
         forceShowPopupIcons(popup);
 
         popup.setOnMenuItemClickListener(item -> {
@@ -3224,13 +3223,13 @@ public class MainActivity extends Activity {
             final Dialog dialog = createBaseBottomSheet(true);
             LinearLayout root = createBottomSheetRoot(dialog, "Scan QR Code Pairing", true);
 
-            TextView sub = cText("Arahkan kamera ke QR Code di terminal (agy-pair)", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+            TextView sub = cText("Arahkan kamera ke QR Code di terminal (agy-pair)", 12.5f, Theme.TEXT_MUTED, false, false);
             LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
             lpSub.setMargins(0, 0, 0, dp(14));
             root.addView(sub, lpSub);
 
             FrameLayout frame = new FrameLayout(this);
-            frame.setBackground(cBox(Color.BLACK, CLAUDE_TERRACOTTA, 2, 16));
+            frame.setBackground(cBox(Color.BLACK, Theme.ACCENT, 2, 16));
             frame.setClipChildren(true);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 frame.setClipToOutline(true);
@@ -3256,10 +3255,10 @@ public class MainActivity extends Activity {
             LinearLayout galleryBtn = new LinearLayout(this);
             galleryBtn.setOrientation(LinearLayout.HORIZONTAL);
             galleryBtn.setGravity(Gravity.CENTER);
-            galleryBtn.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, CLAUDE_TERRACOTTA, 1, 12));
+            galleryBtn.setBackground(cBox(Theme.ACCENT_SOFT, Theme.ACCENT, 1, 12));
             galleryBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
-            galleryBtn.addView(cIcon(R.drawable.ic_image, 18, CLAUDE_TERRACOTTA));
-            galleryBtn.addView(cText("  Ambil QR dari Galeri", 13, CLAUDE_TERRACOTTA, true, false));
+            galleryBtn.addView(cIcon(R.drawable.ic_image, 18, Theme.ACCENT));
+            galleryBtn.addView(cText("  Ambil QR dari Galeri", 13, Theme.ACCENT, true, false));
             galleryBtn.setOnClickListener(v -> {
                 // Release the camera before handing off to the picker.
                 dialog.dismiss();
@@ -3272,10 +3271,10 @@ public class MainActivity extends Activity {
             LinearLayout clipBtn = new LinearLayout(this);
             clipBtn.setOrientation(LinearLayout.HORIZONTAL);
             clipBtn.setGravity(Gravity.CENTER);
-            clipBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+            clipBtn.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
             clipBtn.setPadding(dp(12), dp(10), dp(12), dp(10));
-            clipBtn.addView(cIcon(R.drawable.ic_content_paste, 18, CLAUDE_TEXT_MAIN));
-            TextView clipLbl = cText("  Tempel dari Clipboard", 13, CLAUDE_TEXT_MAIN, true, false);
+            clipBtn.addView(cIcon(R.drawable.ic_content_paste, 18, Theme.TEXT_MAIN));
+            TextView clipLbl = cText("  Tempel dari Clipboard", 13, Theme.TEXT_MAIN, true, false);
             clipBtn.addView(clipLbl);
             clipBtn.setOnClickListener(v -> {
                 dialog.dismiss();
@@ -3331,20 +3330,20 @@ public class MainActivity extends Activity {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "QR Tidak Terbaca", true);
 
-        root.addView(cText("Tidak menemukan QR code pada gambar itu.", 14f, CLAUDE_TEXT_MAIN, true, false));
+        root.addView(cText("Tidak menemukan QR code pada gambar itu.", 14f, Theme.TEXT_MAIN, true, false));
         TextView tips = cText("Coba: potong gambar sampai QR memenuhi bingkai, pakai screenshot asli "
                         + "(bukan foto layar), atau perbesar terminal sebelum mengambil gambar.",
-                12.5f, CLAUDE_TEXT_MUTED, false, false);
+                12.5f, Theme.TEXT_MUTED, false, false);
         tips.setPadding(0, dp(8), 0, dp(16));
         root.addView(tips);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
 
-        TextView retry = cText("Pilih lagi", 14f, CLAUDE_TEXT_MAIN, true, false);
+        TextView retry = cText("Pilih lagi", 14f, Theme.TEXT_MAIN, true, false);
         retry.setGravity(Gravity.CENTER);
         retry.setPadding(dp(16), dp(13), dp(16), dp(13));
-        retry.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        retry.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         retry.setOnClickListener(v -> {
             dialog.dismiss();
             pickQrImageFromGallery();
@@ -3356,7 +3355,7 @@ public class MainActivity extends Activity {
         TextView paste = cText("Tempel token", 14f, Color.WHITE, true, false);
         paste.setGravity(Gravity.CENTER);
         paste.setPadding(dp(16), dp(13), dp(16), dp(13));
-        paste.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
+        paste.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
         paste.setOnClickListener(v -> {
             dialog.dismiss();
             pasteFromClipboard();
@@ -3813,28 +3812,28 @@ public class MainActivity extends Activity {
             LinearLayout chip = new LinearLayout(this);
             chip.setOrientation(LinearLayout.HORIZONTAL);
             chip.setGravity(Gravity.CENTER_VERTICAL);
-            chip.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_TERRACOTTA, 1, 14));
+            chip.setBackground(cBox(Theme.SURFACE, Theme.ACCENT, 1, 14));
             chip.setPadding(dp(6), dp(4), dp(8), dp(4));
 
             if (m.isImage && m.bitmap != null) {
                 ImageView thumb = new ImageView(this);
                 thumb.setImageBitmap(m.bitmap);
                 thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                thumb.setBackground(cBox(CLAUDE_SURFACE_MUTED, 0, 0, 8));
+                thumb.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 8));
                 LinearLayout.LayoutParams lpTh = new LinearLayout.LayoutParams(dp(30), dp(30));
                 thumb.setLayoutParams(lpTh);
                 chip.addView(thumb);
             } else {
-                ImageView docIcon = cIcon(R.drawable.ic_attach_file, 20, CLAUDE_TERRACOTTA);
+                ImageView docIcon = cIcon(R.drawable.ic_attach_file, 20, Theme.ACCENT);
                 chip.addView(docIcon);
             }
 
-            TextView nameView = cText(" " + (m.fileName.length() > 18 ? m.fileName.substring(0, 15) + "..." : m.fileName), 12f, CLAUDE_TERRACOTTA, true, false);
+            TextView nameView = cText(" " + (m.fileName.length() > 18 ? m.fileName.substring(0, 15) + "..." : m.fileName), 12f, Theme.ACCENT, true, false);
             nameView.setPadding(dp(4), 0, dp(4), 0);
             nameView.setSingleLine(true);
             chip.addView(nameView);
 
-            ImageView closeBtn = cIconButton(R.drawable.ic_close, 14, 24, CLAUDE_TEXT_MUTED);
+            ImageView closeBtn = cIconButton(R.drawable.ic_close, 14, 24, Theme.TEXT_MUTED);
             closeBtn.setOnClickListener(v -> {
                 attachedMediaList.remove(m);
                 refreshAttachmentTray();
@@ -4291,7 +4290,7 @@ public class MainActivity extends Activity {
             ImageView iv = new ImageView(this);
             iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
             iv.setAdjustViewBounds(true);
-            iv.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 14));
+            iv.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
             iv.setPadding(dp(2), dp(2), dp(2), dp(2));
 
             LinearLayout.LayoutParams lpImg = new LinearLayout.LayoutParams(dp(180), dp(130));
@@ -4308,13 +4307,13 @@ public class MainActivity extends Activity {
         if (!userPromptText.isEmpty()) {
             LinearLayout bubble = new LinearLayout(this);
             bubble.setOrientation(LinearLayout.VERTICAL);
-            bubble.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+            bubble.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 18));
             bubble.setPadding(dp(16), dp(12), dp(16), dp(12));
 
             TextView tv = new TextView(this);
             tv.setText(userPromptText);
             tv.setTextSize(15.5f);
-            tv.setTextColor(CLAUDE_TEXT_MAIN);
+            tv.setTextColor(Theme.TEXT_MAIN);
             tv.setTypeface(Typeface.SERIF);
             tv.setLineSpacing(0, 1.25f);
             tv.setTextIsSelectable(true);
@@ -4389,12 +4388,12 @@ public class MainActivity extends Activity {
                 label.append("Dibaca ");
                 int start = label.length();
                 label.append(singleFilename);
-                label.setSpan(new ForegroundColorSpan(CLAUDE_TEXT_MAIN), start, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                label.setSpan(new ForegroundColorSpan(Theme.TEXT_MAIN), start, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             } else if (editCount == 1 && !singleFilename.isEmpty()) {
                 label.append("Mengedit ");
                 int start = label.length();
                 label.append(singleFilename);
-                label.setSpan(new ForegroundColorSpan(CLAUDE_TEXT_MAIN), start, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                label.setSpan(new ForegroundColorSpan(Theme.TEXT_MAIN), start, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             } else if (cmdCount == 1) {
                 label.append("Menjalankan 1 perintah");
             } else {
@@ -4422,7 +4421,7 @@ public class MainActivity extends Activity {
         TextView pillText = new TextView(this);
         pillText.setText(label);
         pillText.setTextSize(14f);
-        pillText.setTextColor(CLAUDE_TEXT_MUTED);
+        pillText.setTextColor(Theme.TEXT_MUTED);
         pillText.setSingleLine(true);
         pillText.setEllipsize(TextUtils.TruncateAt.END);
         actionHeader.addView(pillText, new LinearLayout.LayoutParams(0, -2, 1.0f));
@@ -4435,11 +4434,11 @@ public class MainActivity extends Activity {
             diffBadge.setPadding(dp(6), 0, dp(2), 0);
 
             if (totalAdded > 0) {
-                TextView addView = cText("+" + totalAdded + " ", 13f, CLAUDE_GREEN, true, false);
+                TextView addView = cText("+" + totalAdded + " ", 13f, Theme.GREEN, true, false);
                 diffBadge.addView(addView);
             }
             if (totalDeleted > 0) {
-                TextView delView = cText("-" + totalDeleted + " ", 13f, CLAUDE_RED, true, false);
+                TextView delView = cText("-" + totalDeleted + " ", 13f, Theme.RED, true, false);
                 diffBadge.addView(delView);
             }
             actionHeader.addView(diffBadge, new LinearLayout.LayoutParams(-2, -2));
@@ -4452,7 +4451,7 @@ public class MainActivity extends Activity {
             actionHeader.addView(pb, lpPb);
         }
 
-        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 14, CLAUDE_TEXT_LIGHT);
+        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 14, Theme.TEXT_LIGHT);
         LinearLayout.LayoutParams lpChev = new LinearLayout.LayoutParams(dp(14), dp(14));
         lpChev.setMargins(dp(4), 0, 0, 0);
         actionHeader.addView(chevron, lpChev);
@@ -4465,7 +4464,7 @@ public class MainActivity extends Activity {
             ImageView imgThumb = new ImageView(this);
             imgThumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
             imgThumb.setAdjustViewBounds(true);
-            imgThumb.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 14));
+            imgThumb.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
             imgThumb.setPadding(dp(2), dp(2), dp(2), dp(2));
 
             LinearLayout.LayoutParams lpImg = new LinearLayout.LayoutParams(dp(130), dp(95));
@@ -4504,13 +4503,13 @@ public class MainActivity extends Activity {
             final LinearLayout copyBtn = new LinearLayout(this);
             copyBtn.setOrientation(LinearLayout.HORIZONTAL);
             copyBtn.setGravity(Gravity.CENTER_VERTICAL);
-            copyBtn.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 14));
+            copyBtn.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
             copyBtn.setPadding(dp(10), dp(5), dp(12), dp(5));
 
-            ImageView copyIcon = cIcon(R.drawable.ic_content_copy, 14, CLAUDE_TEXT_MUTED);
+            ImageView copyIcon = cIcon(R.drawable.ic_content_copy, 14, Theme.TEXT_MUTED);
             copyBtn.addView(copyIcon);
 
-            final TextView copyLabel = cText(" Salin", 12f, CLAUDE_TEXT_MUTED, true, false);
+            final TextView copyLabel = cText(" Salin", 12f, Theme.TEXT_MUTED, true, false);
             copyBtn.addView(copyLabel);
 
             final String fullTextToCopy = cleanMarkdownForCopy(content.trim());
@@ -4519,10 +4518,10 @@ public class MainActivity extends Activity {
                 cm.setPrimaryClip(ClipData.newPlainText("Assistant Response", fullTextToCopy));
                 Toast.makeText(MainActivity.this, "Jawaban disalin ke clipboard", Toast.LENGTH_SHORT).show();
                 copyLabel.setText(" Tersalin ✓");
-                copyLabel.setTextColor(CLAUDE_GREEN);
+                copyLabel.setTextColor(Theme.GREEN);
                 mainHandler.postDelayed(() -> {
                     copyLabel.setText(" Salin");
-                    copyLabel.setTextColor(CLAUDE_TEXT_MUTED);
+                    copyLabel.setTextColor(Theme.TEXT_MUTED);
                 }, 2000);
             });
 
@@ -4568,7 +4567,7 @@ public class MainActivity extends Activity {
                 ImageView imgPreview = new ImageView(this);
                 imgPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
                 imgPreview.setAdjustViewBounds(true);
-                imgPreview.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+                imgPreview.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
                 imgPreview.setPadding(dp(2), dp(2), dp(2), dp(2));
 
                 LinearLayout.LayoutParams lpImg = new LinearLayout.LayoutParams(-1, -2);
@@ -4693,7 +4692,7 @@ public class MainActivity extends Activity {
         renderServerList(list, dialog);
 
         TextView hint = cText("Ketuk untuk beralih · ketuk ikon hapus untuk membuang server.",
-                12f, CLAUDE_TEXT_LIGHT, false, false);
+                12f, Theme.TEXT_LIGHT, false, false);
         hint.setPadding(0, dp(14), 0, 0);
         root.addView(hint);
 
@@ -4709,7 +4708,7 @@ public class MainActivity extends Activity {
 
         if (servers.length() == 0) {
             list.addView(cText("Belum ada server tersimpan. Pairing lewat QR akan menyimpannya otomatis.",
-                    13.5f, CLAUDE_TEXT_MUTED, false, false));
+                    13.5f, Theme.TEXT_MUTED, false, false));
             return;
         }
 
@@ -4724,10 +4723,10 @@ public class MainActivity extends Activity {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.HORIZONTAL);
             card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setBackground(cBox(CLAUDE_SURFACE_MUTED, isActive ? CLAUDE_TERRACOTTA : CLAUDE_BORDER, 1, 14));
+            card.setBackground(cBox(Theme.SURFACE_MUTED, isActive ? Theme.ACCENT : Theme.BORDER, 1, 14));
             card.setPadding(dp(14), dp(10), dp(8), dp(10));
 
-            card.addView(cIcon(R.drawable.ic_laptop, 18, isActive ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
+            card.addView(cIcon(R.drawable.ic_laptop, 18, isActive ? Theme.ACCENT : Theme.TEXT_MUTED));
 
             LinearLayout col = new LinearLayout(this);
             col.setOrientation(LinearLayout.VERTICAL);
@@ -4736,10 +4735,10 @@ public class MainActivity extends Activity {
             LinearLayout titleRow = new LinearLayout(this);
             titleRow.setOrientation(LinearLayout.HORIZONTAL);
             titleRow.setGravity(Gravity.CENTER_VERTICAL);
-            titleRow.addView(cText(name, 14f, CLAUDE_TEXT_MAIN, true, false));
+            titleRow.addView(cText(name, 14f, Theme.TEXT_MAIN, true, false));
             if (isActive) {
-                TextView chip = cText("Aktif", 10.5f, CLAUDE_TERRACOTTA, true, false);
-                chip.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, 0, 0, 8));
+                TextView chip = cText("Aktif", 10.5f, Theme.ACCENT, true, false);
+                chip.setBackground(cBox(Theme.ACCENT_SOFT, 0, 0, 8));
                 chip.setPadding(dp(8), dp(2), dp(8), dp(2));
                 LinearLayout.LayoutParams lpChip = new LinearLayout.LayoutParams(-2, -2);
                 lpChip.setMargins(dp(8), 0, 0, 0);
@@ -4747,13 +4746,13 @@ public class MainActivity extends Activity {
             }
             col.addView(titleRow);
 
-            TextView urlView = cText(url, 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+            TextView urlView = cText(url, 11.5f, Theme.TEXT_LIGHT, false, false);
             urlView.setSingleLine(true);
             urlView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
             col.addView(urlView);
             card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
 
-            ImageView remove = cIconButton(R.drawable.ic_close, 16, 38, CLAUDE_TEXT_LIGHT);
+            ImageView remove = cIconButton(R.drawable.ic_close, 16, 38, Theme.TEXT_LIGHT);
             remove.setOnClickListener(v -> confirmRemoveServer(name, url, isActive, list, dialog));
             card.addView(remove);
 
@@ -4790,21 +4789,21 @@ public class MainActivity extends Activity {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Hapus Server", true);
 
-        root.addView(cText("Hapus \"" + name + "\" dari daftar?", 14.5f, CLAUDE_TEXT_MAIN, true, false));
+        root.addView(cText("Hapus \"" + name + "\" dari daftar?", 14.5f, Theme.TEXT_MAIN, true, false));
         TextView detail = cText(isActive
                         ? "Ini server yang sedang aktif. Setelah dihapus aplikasi tidak terhubung ke mana pun sampai Anda pairing lagi."
                         : url,
-                12.5f, isActive ? CLAUDE_AMBER : CLAUDE_TEXT_MUTED, false, false);
+                12.5f, isActive ? Theme.AMBER : Theme.TEXT_MUTED, false, false);
         detail.setPadding(0, dp(6), 0, dp(16));
         root.addView(detail);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
 
-        TextView cancel = cText("Batal", 14f, CLAUDE_TEXT_MAIN, true, false);
+        TextView cancel = cText("Batal", 14f, Theme.TEXT_MAIN, true, false);
         cancel.setGravity(Gravity.CENTER);
         cancel.setPadding(dp(16), dp(13), dp(16), dp(13));
-        cancel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        cancel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         cancel.setOnClickListener(v -> dialog.dismiss());
         LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(0, -2, 1);
         lpC.setMargins(0, 0, dp(8), 0);
@@ -4813,7 +4812,7 @@ public class MainActivity extends Activity {
         TextView confirm = cText("Hapus", 14f, Color.WHITE, true, false);
         confirm.setGravity(Gravity.CENTER);
         confirm.setPadding(dp(16), dp(13), dp(16), dp(13));
-        confirm.setBackground(cBox(CLAUDE_RED, 0, 0, 12));
+        confirm.setBackground(cBox(Theme.RED, 0, 0, 12));
         confirm.setOnClickListener(v -> {
             removeServerProfile(url);
             dialog.dismiss();
@@ -4856,7 +4855,7 @@ public class MainActivity extends Activity {
         Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, "Mode Eksekusi", true);
         root.addView(cText("Menentukan seberapa bebas CLI boleh mengubah sistem di server.",
-                12.5f, CLAUDE_TEXT_MUTED, false, false));
+                12.5f, Theme.TEXT_MUTED, false, false));
 
         final String[] keys = {"full", "workspace", "readonly"};
         final String[] labels = {"Akses penuh", "Tulis di workspace", "Hanya baca"};
@@ -4874,11 +4873,11 @@ public class MainActivity extends Activity {
 
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setBackground(cBox(CLAUDE_SURFACE_MUTED, selected ? CLAUDE_TERRACOTTA : CLAUDE_BORDER, 1, 14));
+            card.setBackground(cBox(Theme.SURFACE_MUTED, selected ? Theme.ACCENT : Theme.BORDER, 1, 14));
             card.setPadding(dp(14), dp(12), dp(14), dp(12));
             card.addView(cText((selected ? "✓  " : "") + labels[i], 14.5f,
-                    selected ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MAIN, true, false));
-            card.addView(cText(notes[i], 12.5f, CLAUDE_TEXT_MUTED, false, false));
+                    selected ? Theme.ACCENT : Theme.TEXT_MAIN, true, false));
+            card.addView(cText(notes[i], 12.5f, Theme.TEXT_MUTED, false, false));
 
             card.setOnClickListener(v -> {
                 dialog.dismiss();
@@ -5176,26 +5175,26 @@ public class MainActivity extends Activity {
 
                 mainHandler.post(() -> {
                     if (code == 200 && (authStatus == 401 || authStatus == 403)) {
-                        if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_AMBER, 0, 0, 4));
+                        if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(Theme.AMBER, 0, 0, 4));
                         if (sidebarStatusText != null) sidebarStatusText.setText("Token ditolak");
                         Toast.makeText(this, "Server hidup, tapi token pairing ditolak. Scan ulang QR.", Toast.LENGTH_LONG).show();
                         showHubMessage("Pairing kedaluwarsa",
                                 "Server menolak token ini (HTTP " + authStatus + "). Scan ulang QR pairing dari terminal server.", true);
                     } else if (code == 200) {
-                        if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_GREEN, 0, 0, 4));
+                        if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(Theme.GREEN, 0, 0, 4));
                         if (sidebarStatusText != null) sidebarStatusText.setText("Gateway Online");
                         Toast.makeText(this, "Gateway Online! Terhubung sukses.", Toast.LENGTH_SHORT).show();
                         syncServerSettings();
                         startLiveEvents();
                     } else {
-                        if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_RED, 0, 0, 4));
+                        if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(Theme.RED, 0, 0, 4));
                         if (sidebarStatusText != null) sidebarStatusText.setText("HTTP " + code);
                         Toast.makeText(this, "Gateway HTTP " + code, Toast.LENGTH_LONG).show();
                     }
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
-                    if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_RED, 0, 0, 4));
+                    if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(Theme.RED, 0, 0, 4));
                     if (sidebarStatusText != null) sidebarStatusText.setText("Gateway Offline");
                     String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                     Toast.makeText(this, "Gagal koneksi: " + msg, Toast.LENGTH_LONG).show();

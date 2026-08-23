@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Codex mascot: same droid, rendered in the Codex palette. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="140dp"
+    android:height="140dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+    <!-- soft halo -->
+    <path
+        android:fillColor="#0E2A24"
+        android:fillAlpha="0.55"
+        android:pathData="M60,62 m-48,0 a48,48 0 1,0 96,0 a48,48 0 1,0 -96,0 z" />
+
+    <!-- antenna stem + bulb -->
+    <path
+        android:strokeColor="#10A37F"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M60,15 L60,25" />
+    <path
+        android:fillColor="#10A37F"
+        android:pathData="M60,10 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 z" />
+
+    <!-- side pods -->
+    <path
+        android:fillColor="#24272C"
+        android:strokeColor="#10A37F"
+        android:strokeWidth="2"
+        android:pathData="M27,41 L23,41 A5,5 0 0 0 18,46 L18,52 A5,5 0 0 0 23,57 L27,57 Z" />
+    <path
+        android:fillColor="#24272C"
+        android:strokeColor="#10A37F"
+        android:strokeWidth="2"
+        android:pathData="M93,41 L97,41 A5,5 0 0 1 102,46 L102,52 A5,5 0 0 1 97,57 L93,57 Z" />
+
+    <!-- head shell -->
+    <path
+        android:fillColor="#0E2A24"
+        android:strokeColor="#10A37F"
+        android:strokeWidth="2.5"
+        android:pathData="M44,25 L76,25 A18,18 0 0 1 94,43 L94,52 A18,18 0 0 1 76,70 L44,70 A18,18 0 0 1 26,52 L26,43 A18,18 0 0 1 44,25 Z" />
+
+    <!-- visor -->
+    <path
+        android:fillColor="#0E1013"
+        android:pathData="M48,35 L72,35 A12,12 0 0 1 84,47 L84,48 A12,12 0 0 1 72,60 L48,60 A12,12 0 0 1 36,48 L36,47 A12,12 0 0 1 48,35 Z" />
+
+    <!-- eyes -->
+    <path
+        android:fillColor="#7DE3C3"
+        android:pathData="M52,46 m-4.5,0 a4.5,4.5 0 1,0 9,0 a4.5,4.5 0 1,0 -9,0 z" />
+    <path
+        android:fillColor="#7DE3C3"
+        android:pathData="M68,46 m-4.5,0 a4.5,4.5 0 1,0 9,0 a4.5,4.5 0 1,0 -9,0 z" />
+
+    <!-- smile -->
+    <path
+        android:strokeColor="#10A37F"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M52,54 Q60,60 68,54" />
+
+    <!-- body -->
+    <path
+        android:fillColor="#24272C"
+        android:strokeColor="#10A37F"
+        android:strokeWidth="2.5"
+        android:pathData="M48,77 L72,77 A14,14 0 0 1 86,91 L86,94 A14,14 0 0 1 72,108 L48,108 A14,14 0 0 1 34,94 L34,91 A14,14 0 0 1 48,77 Z" />
+
+    <!-- chest core -->
+    <path
+        android:fillColor="#10A37F"
+        android:pathData="M60,92 m-6.5,0 a6.5,6.5 0 1,0 13,0 a6.5,6.5 0 1,0 -13,0 z" />
+    <path
+        android:strokeColor="#10A37F"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.5"
+        android:pathData="M60,92 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0 z" />
+
+    <!-- hover shadow -->
+    <path
+        android:fillColor="#10A37F"
+        android:fillAlpha="0.18"
+        android:pathData="M60,114 m-22,0 a22,4 0 1,0 44,0 a22,4 0 1,0 -44,0 z" />
+</vector>

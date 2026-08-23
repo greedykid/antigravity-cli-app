@@ -1,11 +1,21 @@
 <resources>
-    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
-        <item name="android:colorAccent">@color/claude_terracotta</item>
-        <item name="android:navigationBarColor">@color/claude_bg</item>
-        <item name="android:statusBarColor">@color/claude_bg</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:colorAccent">@color/agy_accent</item>
+        <item name="android:windowBackground">@color/agy_window_bg</item>
+        <item name="android:navigationBarColor">@color/agy_window_bg</item>
+        <item name="android:statusBarColor">@color/agy_window_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
+    <!-- Applied in onCreate before the window is drawn, so switching engines
+         never flashes the other engine's ground colour. -->
+    <style name="AppTheme.Codex" parent="AppTheme">
+        <item name="android:colorAccent">@color/codex_accent</item>
+        <item name="android:windowBackground">@color/codex_window_bg</item>
+        <item name="android:navigationBarColor">@color/codex_window_bg</item>
+        <item name="android:statusBarColor">@color/codex_window_bg</item>
     </style>
 </resources>

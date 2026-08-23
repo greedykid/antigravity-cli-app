@@ -9,33 +9,161 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * Single source of truth for the Claude Code palette and the small view
- * builders every screen uses. MainActivity aliases these constants so the
- * palette can be retuned in one place.
+ * The app's palette and small view builders.
+ *
+ * Each CLI gets its own visual identity, so these are live values rather than
+ * constants: {@link #applyEngine} swaps the whole set and the UI is rebuilt
+ * around it. Antigravity keeps the warm ivory-and-terracotta look; Codex gets a
+ * cooler slate ground with a teal-green accent, so a glance at the screen is
+ * enough to know which engine will run the next prompt.
  */
 public final class Theme {
 
+    public static final String ENGINE_ANTIGRAVITY = "antigravity";
+    public static final String ENGINE_CODEX = "codex";
+
+    private static String engine = ENGINE_ANTIGRAVITY;
+
+    // ---- live palette ----
+    public static int BG;
+    public static int SURFACE;
+    public static int SURFACE_MUTED;
+    public static int BORDER;
+    public static int BORDER_DARK;
+    public static int CODE_BG;
+
+    public static int TEXT_MAIN;
+    public static int TEXT_MUTED;
+    public static int TEXT_LIGHT;
+
+    /** Primary brand colour of the active engine. */
+    public static int ACCENT;
+    /** Tinted background that pairs with {@link #ACCENT}. */
+    public static int ACCENT_SOFT;
+
+    public static int GREEN;
+    public static int GREEN_BG;
+    public static int AMBER;
+    public static int AMBER_BG;
+    public static int RED;
+    public static int BLUE;
+
+    static {
+        applyEngine(ENGINE_ANTIGRAVITY);
+    }
+
     private Theme() {}
 
-    public static final int BG = Color.rgb(24, 24, 23);               // #181817
-    public static final int SURFACE = Color.rgb(33, 32, 30);          // #21201E
-    public static final int SURFACE_MUTED = Color.rgb(42, 41, 38);    // #2A2926
-    public static final int BORDER = Color.rgb(48, 46, 43);           // #302E2B
-    public static final int BORDER_DARK = Color.rgb(62, 60, 56);      // #3E3C38
-    public static final int CODE_BG = Color.rgb(18, 18, 18);          // #121212
+    public static boolean isCodex() {
+        return ENGINE_CODEX.equalsIgnoreCase(engine);
+    }
 
-    public static final int TEXT_MAIN = Color.rgb(237, 236, 232);     // #EDECE8
-    public static final int TEXT_MUTED = Color.rgb(158, 157, 153);    // #9E9D99
-    public static final int TEXT_LIGHT = Color.rgb(112, 111, 108);    // #706F6C
+    public static String engine() {
+        return engine;
+    }
 
-    public static final int TERRACOTTA = Color.rgb(217, 107, 67);     // #D96B43
-    public static final int TERRACOTTA_LIGHT = Color.rgb(56, 36, 29); // #38241D
-    public static final int GREEN = Color.rgb(76, 175, 80);
-    public static final int GREEN_BG = Color.rgb(27, 48, 30);
-    public static final int AMBER = Color.rgb(245, 158, 11);
-    public static final int AMBER_BG = Color.rgb(51, 38, 15);
-    public static final int RED = Color.rgb(239, 68, 68);
-    public static final int BLUE = Color.rgb(59, 130, 246);
+    public static void applyEngine(String value) {
+        engine = ENGINE_CODEX.equalsIgnoreCase(value) ? ENGINE_CODEX : ENGINE_ANTIGRAVITY;
+        if (isCodex()) {
+            applyCodexPalette();
+        } else {
+            applyAntigravityPalette();
+        }
+    }
+
+    /** Warm neutral ground, terracotta accent. */
+    private static void applyAntigravityPalette() {
+        BG = Color.rgb(24, 24, 23);               // #181817
+        SURFACE = Color.rgb(33, 32, 30);          // #21201E
+        SURFACE_MUTED = Color.rgb(42, 41, 38);    // #2A2926
+        BORDER = Color.rgb(48, 46, 43);           // #302E2B
+        BORDER_DARK = Color.rgb(62, 60, 56);      // #3E3C38
+        CODE_BG = Color.rgb(18, 18, 18);          // #121212
+
+        TEXT_MAIN = Color.rgb(237, 236, 232);     // #EDECE8
+        TEXT_MUTED = Color.rgb(158, 157, 153);    // #9E9D99
+        TEXT_LIGHT = Color.rgb(112, 111, 108);    // #706F6C
+
+        ACCENT = Color.rgb(217, 107, 67);         // #D96B43
+        ACCENT_SOFT = Color.rgb(56, 36, 29);      // #38241D
+
+        GREEN = Color.rgb(76, 175, 80);
+        GREEN_BG = Color.rgb(27, 48, 30);
+        AMBER = Color.rgb(245, 158, 11);
+        AMBER_BG = Color.rgb(51, 38, 15);
+        RED = Color.rgb(239, 68, 68);
+        BLUE = Color.rgb(59, 130, 246);
+    }
+
+    /** Cool slate ground, teal-green accent. */
+    private static void applyCodexPalette() {
+        BG = Color.rgb(19, 20, 23);               // #131417
+        SURFACE = Color.rgb(27, 29, 33);          // #1B1D21
+        SURFACE_MUTED = Color.rgb(36, 39, 44);    // #24272C
+        BORDER = Color.rgb(46, 50, 58);           // #2E323A
+        BORDER_DARK = Color.rgb(59, 64, 73);      // #3B4049
+        CODE_BG = Color.rgb(14, 16, 19);          // #0E1013
+
+        TEXT_MAIN = Color.rgb(231, 234, 238);     // #E7EAEE
+        TEXT_MUTED = Color.rgb(152, 160, 172);    // #98A0AC
+        TEXT_LIGHT = Color.rgb(107, 114, 128);    // #6B7280
+
+        ACCENT = Color.rgb(16, 163, 127);         // #10A37F
+        ACCENT_SOFT = Color.rgb(14, 42, 36);      // #0E2A24
+
+        GREEN = Color.rgb(52, 199, 137);
+        GREEN_BG = Color.rgb(13, 43, 33);
+        AMBER = Color.rgb(233, 165, 61);
+        AMBER_BG = Color.rgb(45, 36, 17);
+        RED = Color.rgb(238, 92, 92);
+        BLUE = Color.rgb(90, 156, 248);
+    }
+
+    // ---- engine identity ----
+
+    public static String wordmark() {
+        return isCodex() ? "Codex" : "Antigravity";
+    }
+
+    public static String engineLabel() {
+        return isCodex() ? "Codex CLI" : "Antigravity CLI";
+    }
+
+    public static String engineShortLabel() {
+        return isCodex() ? "Codex" : "Agy";
+    }
+
+    public static String engineRepo() {
+        return isCodex() ? "openai/codex-cli" : "google/antigravity-cli";
+    }
+
+    public static String engineTagline() {
+        return isCodex()
+                ? "Siap membantu. Ketik perintah untuk memulai sesi Codex."
+                : "Siap membantu. Ketik perintah untuk memulai sesi Antigravity.";
+    }
+
+    public static int mascotRes() {
+        return isCodex() ? R.drawable.ic_mascot_codex : R.drawable.ic_mascot_character;
+    }
+
+    public static int engineIconRes() {
+        return isCodex() ? R.drawable.ic_code : R.drawable.ic_spark;
+    }
+
+    /**
+     * Antigravity leans on a serif voice; Codex reads as a developer tool, so
+     * its headings stay sans-serif.
+     */
+    public static boolean headingsUseSerif() {
+        return !isCodex();
+    }
+
+    public static Typeface headingTypeface() {
+        return headingsUseSerif() ? Typeface.SERIF : Typeface.SANS_SERIF;
+    }
+
+    // ---- view builders ----
 
     public static int dp(Context ctx, float value) {
         return (int) (value * ctx.getResources().getDisplayMetrics().density + 0.5f);
@@ -56,7 +184,9 @@ public final class Theme {
         v.setText(value);
         v.setTextSize(sp);
         v.setTextColor(color);
-        v.setTypeface(serif ? Typeface.SERIF : Typeface.SANS_SERIF, bold ? Typeface.BOLD : Typeface.NORMAL);
+        // "serif" at the call site means "this is a heading"; which face that
+        // maps to is an engine decision.
+        v.setTypeface(serif ? headingTypeface() : Typeface.SANS_SERIF, bold ? Typeface.BOLD : Typeface.NORMAL);
         return v;
     }
 
