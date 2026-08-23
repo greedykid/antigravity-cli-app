@@ -23,6 +23,11 @@ Antigravity Remote adalah aplikasi Android native yang memungkinkan Anda mengont
 * **🔎 Pencarian Sesi:** Cari kata kunci di judul maupun isi transkrip semua sesi.
 * **🖥️ Multi-Server:** Simpan beberapa VPS dan beralih dengan satu ketukan.
 * **🛡️ Mode Eksekusi:** Pilih sandbox CLI di server — akses penuh, tulis-di-workspace, atau hanya-baca.
+* **⏱️ Task Berjalan di Latar:** Prompt panjang dijalankan sebagai job di server, jadi koneksi putus atau HP terkunci tidak membatalkannya. Timeout bisa diatur sampai 4 jam.
+* **✏️ Edit File dari HP:** Perbaiki hasil AI langsung dari file browser tanpa buka laptop.
+* **📂 Multi-Proyek:** Simpan beberapa folder proyek dan alihkan target panel Git & File.
+* **📤 Ekspor Transkrip:** Simpan atau bagikan sesi sebagai Markdown.
+* **🧾 Audit Log & Rate Limit:** Semua eksekusi perintah tercatat; endpoint dibatasi 20 permintaan per menit.
 
 ---
 
@@ -171,7 +176,47 @@ Semua endpoint (kecuali `/health`) butuh header `Authorization: Bearer <token>`.
 | GET/POST | `/api/settings` | Mode sandbox dan preferensi notifikasi |
 | POST | `/api/session/control` | Interrupt task yang sedang jalan |
 | POST | `/api/upload` | Upload file / gambar |
+| POST | `/api/files/write` | Tulis file (dikunci di workdir, maks 2 MB) |
+| GET | `/api/jobs`, `/api/jobs/:id` | Status task yang berjalan di latar |
+| GET | `/api/session/export?id=` | Transkrip sesi dalam Markdown |
+| GET/POST | `/api/projects` | Daftar folder proyek |
+| GET | `/api/uploads` | Isi & ukuran folder upload |
+| POST | `/api/uploads/cleanup` | Hapus upload lama |
+| GET | `/api/audit` | Catatan aktivitas |
+
+`POST /api/chat` dengan `"async": true` membalas `202 {jobId}` seketika; progres lewat `/api/events`, hasil lewat `/api/jobs/:id`.
 
 ### Tunnel dengan URL tetap
 
 URL `trycloudflare.com` berubah tiap restart. Untuk URL permanen, simpan token Cloudflare Named Tunnel di `~/.codex-remote/tunnel-token` — `bin/tunnel-run.sh` otomatis memakainya dan pairing tidak perlu diulang lagi.
+
+
+---
+
+## 🧪 Pengembangan
+
+```bash
+npm test --prefix bridge     # 76 tes, tanpa dependensi tambahan
+```
+
+CI menjalankan tes ini sebelum membangun APK, jadi build gagal kalau ada regresi.
+
+Struktur kode:
+
+| File | Isi |
+|---|---|
+| `bridge/server.js` | Routing HTTP dan eksekusi CLI |
+| `bridge/config.js` | Token, workdir, host bind |
+| `bridge/jobs.js` | Registry task latar belakang |
+| `bridge/events.js` | Hub Server-Sent Events |
+| `bridge/search.js` | Indeks pencarian transkrip |
+| `bridge/files.js` | File browser & penulisan (path-jailed) |
+| `bridge/git.js` | Operasi git (argv, bukan shell) |
+| `bridge/audit.js` | Log aktivitas & rate limit |
+| `bridge/settings.js` | Sandbox, timeout, retensi, proyek |
+| `app/.../MainActivity.java` | Chat, hub, pengaturan, sidebar |
+| `app/.../WorkspacePanels.java` | File, Git, Search, Proyek, Pemeliharaan |
+| `app/.../MarkdownRenderer.java` | Renderer markdown |
+| `app/.../BridgeClient.java` | Klien HTTP |
+| `app/.../LiveEventService.java` | SSE latar belakang + notifikasi |
+| `app/.../Theme.java` | Palet & pembuat view |
