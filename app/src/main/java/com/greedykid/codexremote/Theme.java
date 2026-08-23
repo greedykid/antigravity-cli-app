@@ -52,6 +52,7 @@ public final class Theme {
     public static int AMBER;
     public static int AMBER_BG;
     public static int RED;
+    public static int RED_BG;
     public static int BLUE;
 
     static {
@@ -99,6 +100,7 @@ public final class Theme {
         AMBER = Color.rgb(245, 158, 11);
         AMBER_BG = Color.rgb(51, 38, 15);
         RED = Color.rgb(239, 68, 68);
+        RED_BG = Color.rgb(54, 23, 24);
         BLUE = Color.rgb(59, 130, 246);
     }
 
@@ -124,6 +126,7 @@ public final class Theme {
         AMBER = Color.rgb(233, 165, 61);
         AMBER_BG = Color.rgb(45, 36, 17);
         RED = Color.rgb(238, 92, 92);
+        RED_BG = Color.rgb(54, 23, 24);
         BLUE = Color.rgb(90, 156, 248);
     }
 
