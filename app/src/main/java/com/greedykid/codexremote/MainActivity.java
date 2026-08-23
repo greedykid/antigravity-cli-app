@@ -178,6 +178,7 @@ public class MainActivity extends Activity {
     private ImageView btnEnginePill;
     private ImageView btnVoice;
     private TextView repoTagLabel;
+    private TextView modelTagLabel;
     private HorizontalScrollView attachmentScrollContainer;
     private LinearLayout attachmentChipsList;
 
@@ -190,6 +191,7 @@ public class MainActivity extends Activity {
     private String activeConversationId = null;
     private String activeSessionTitle = "New session";
     private String currentEngine = "antigravity";
+    private String currentModel = "";
     private String currentServerHostname = "Server Remote";
     private int currentScreen = 0; // 0: Hub, 1: Chat, 2: Settings
     private boolean navigatedFromHub = false;
@@ -230,6 +232,7 @@ public class MainActivity extends Activity {
         getWindow().setNavigationBarColor(CLAUDE_BG);
         prefs = getSharedPreferences("connection", MODE_PRIVATE);
         currentEngine = prefs.getString("engine", "antigravity");
+        currentModel = prefs.getString(modelPrefKey(currentEngine), defaultModelForEngine(currentEngine));
         currentServerHostname = prefs.getString("device_name", "Server Remote");
         buildClaudeUiWithSidebar();
     }
@@ -268,6 +271,22 @@ public class MainActivity extends Activity {
 
     private int dp(float value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private String modelPrefKey(String engine) {
+        return "model_" + ("codex".equalsIgnoreCase(engine) ? "codex" : "antigravity");
+    }
+
+    private String defaultModelForEngine(String engine) {
+        return "codex".equalsIgnoreCase(engine) ? "gpt-5.6-luna" : "auto";
+    }
+
+    private String displayModel(String model) {
+        return model == null || model.trim().isEmpty() || "auto".equalsIgnoreCase(model) ? "Auto" : model;
+    }
+
+    private String formatCount(long value) {
+        return String.format(Locale.getDefault(), "%,d", value);
     }
 
     private GradientDrawable cBox(int fillColor, int borderColor, int borderWidthDp, float radiusDp) {
@@ -1350,37 +1369,39 @@ public class MainActivity extends Activity {
         final LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
 
-        // 1. GEMINI MODELS SECTION
+        final boolean isCodex = "codex".equalsIgnoreCase(currentEngine);
+
+        // 1. ENGINE-SPECIFIC USAGE SECTION
         final LinearLayout geminiGroup = createSettingsGroupContainer();
         geminiGroup.setPadding(dp(16), dp(14), dp(16), dp(14));
-        renderModelGroupHeader(geminiGroup, "GEMINI MODELS", "Gemini Flash, Gemini Pro");
-        renderUsageProgressSection(geminiGroup, "Weekly Limit Remaining", 75, "75% remaining", "Refreshes in 141h 2m", CLAUDE_GREEN);
+        renderModelGroupHeader(geminiGroup, isCodex ? "CODEX USAGE" : "GEMINI MODELS", isCodex ? "Local Codex session metrics" : "Gemini Flash, Gemini Pro");
+        renderUsageProgressSection(geminiGroup, isCodex ? "Tokens Used" : "Weekly Limit Remaining", isCodex ? 100 : 75, isCodex ? "Loading usage..." : "75% remaining", isCodex ? "Read from ~/.codex sessions" : "Refreshes in 141h 2m", isCodex ? CLAUDE_AMBER : CLAUDE_GREEN);
         
         View spacerG = new View(this);
         LinearLayout.LayoutParams lpSpG = new LinearLayout.LayoutParams(-1, dp(12));
         geminiGroup.addView(spacerG, lpSpG);
         
-        renderUsageProgressSection(geminiGroup, "Five Hour Limit Remaining", 47, "47% remaining", "Refreshes in 3h 2m", 0xFFEAB308);
+        renderUsageProgressSection(geminiGroup, isCodex ? "Requests" : "Five Hour Limit Remaining", isCodex ? 100 : 47, isCodex ? "Loading usage..." : "47% remaining", isCodex ? "Read from Codex history" : "Refreshes in 3h 2m", isCodex ? CLAUDE_AMBER : 0xFFEAB308);
         list.addView(geminiGroup);
 
         // 2. CLAUDE AND GPT MODELS SECTION
         final LinearLayout claudeGroup = createSettingsGroupContainer();
         claudeGroup.setPadding(dp(16), dp(14), dp(16), dp(14));
-        renderModelGroupHeader(claudeGroup, "CLAUDE AND GPT MODELS", "Claude Opus, Claude Sonnet, GPT-OSS");
-        renderUsageProgressSection(claudeGroup, "Weekly Limit Remaining", 100, "100% remaining", "Quota available", CLAUDE_GREEN);
+        renderModelGroupHeader(claudeGroup, isCodex ? "CODEX MODEL" : "CLAUDE AND GPT MODELS", isCodex ? "Selected directly in the app" : "Claude Opus, Claude Sonnet, GPT-OSS");
+        renderUsageProgressSection(claudeGroup, isCodex ? "Active model" : "Weekly Limit Remaining", 100, isCodex ? displayModel(currentModel) : "100% remaining", isCodex ? "Applied to new prompts" : "Quota available", isCodex ? CLAUDE_AMBER : CLAUDE_GREEN);
         
         View spacerC = new View(this);
         LinearLayout.LayoutParams lpSpC = new LinearLayout.LayoutParams(-1, dp(12));
         claudeGroup.addView(spacerC, lpSpC);
 
-        renderUsageProgressSection(claudeGroup, "Five Hour Limit Remaining", 100, "100% remaining", "Quota available", CLAUDE_GREEN);
+        renderUsageProgressSection(claudeGroup, isCodex ? "Plan" : "Five Hour Limit Remaining", 100, isCodex ? "Codex CLI" : "100% remaining", isCodex ? "Usage tracked locally" : "Quota available", isCodex ? CLAUDE_AMBER : CLAUDE_GREEN);
         list.addView(claudeGroup);
 
         // 3. ENGINE & SERVER DETAILS
         final LinearLayout detailCard = createSettingsGroupContainer();
         detailCard.setPadding(dp(16), dp(14), dp(16), dp(14));
-        addStatRow(detailCard, "Active Engine", "Antigravity CLI (agy)");
-        addStatRow(detailCard, "Active Model", "Gemini 3.7 Flash (High)");
+        addStatRow(detailCard, "Active Engine", isCodex ? "Codex CLI" : "Antigravity CLI (agy)");
+        addStatRow(detailCard, "Active Model", displayModel(currentModel));
         addStatRow(detailCard, "Total Requests", "74 Prompts");
         addStatRow(detailCard, "Executed Steps", "2,782 Langkah");
         addStatRow(detailCard, "Tools Invocations", "1,125 Aksi");
@@ -1412,7 +1433,7 @@ public class MainActivity extends Activity {
             btnRefresh.setColorFilter(CLAUDE_TERRACOTTA);
             executor.execute(() -> {
                 try {
-                    String usageUrl = endpoint.replace("/api/chat", "/api/usage");
+                    String usageUrl = endpoint.replace("/api/chat", "/api/usage") + "?engine=" + currentEngine;
                     HttpURLConnection c = (HttpURLConnection) new URL(usageUrl).openConnection();
                     c.setRequestMethod("GET");
                     c.setConnectTimeout(5000);
@@ -1435,6 +1456,25 @@ public class MainActivity extends Activity {
 
                             String acc = json.optString("account", userEmail);
                             sub.setText("Account: " + acc);
+
+                            if (isCodex) {
+                                geminiGroup.removeAllViews();
+                                renderModelGroupHeader(geminiGroup, "CODEX USAGE", "Local Codex session metrics");
+                                renderUsageProgressSection(geminiGroup, "Tokens Used", 100, formatCount(json.optLong("estimatedTokens", 0)) + " tokens", "Read from ~/.codex sessions", CLAUDE_AMBER);
+                                View codexSpacer = new View(MainActivity.this);
+                                geminiGroup.addView(codexSpacer, new LinearLayout.LayoutParams(-1, dp(12)));
+                                renderUsageProgressSection(geminiGroup, "Requests", 100, json.optInt("totalPrompts", 0) + " prompts", "Read from Codex history", CLAUDE_AMBER);
+                                claudeGroup.removeAllViews();
+                                renderModelGroupHeader(claudeGroup, "CODEX MODEL", "Selected directly in the app");
+                                renderUsageProgressSection(claudeGroup, "Active model", 100, displayModel(currentModel), "Applied to new prompts", CLAUDE_AMBER);
+                                detailCard.removeAllViews();
+                                addStatRow(detailCard, "Active Engine", "Codex CLI");
+                                addStatRow(detailCard, "Active Model", displayModel(currentModel));
+                                addStatRow(detailCard, "Total Requests", json.optInt("totalPrompts", 0) + " Prompts");
+                                addStatRow(detailCard, "Estimated Tokens", formatCount(json.optLong("estimatedTokens", 0)));
+                                addStatRow(detailCard, "Connected Host", json.optString("hostname", currentServerHostname));
+                                return;
+                            }
 
                             int gW = json.optInt("geminiWeekly", 75);
                             String gWReset = json.optString("geminiWeeklyReset", "Refreshes in 141h 2m");
@@ -2391,6 +2431,14 @@ public class MainActivity extends Activity {
         lpTag.setMargins(dp(6), 0, 0, 0);
         actionRow.addView(repoTagLabel, lpTag);
 
+        modelTagLabel = cText(displayModel(currentModel), 11.5f, CLAUDE_TEXT_MUTED, true, false);
+        modelTagLabel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        modelTagLabel.setPadding(dp(9), dp(4), dp(9), dp(4));
+        modelTagLabel.setOnClickListener(v -> showModelPicker());
+        LinearLayout.LayoutParams lpModelTag = new LinearLayout.LayoutParams(-2, -2);
+        lpModelTag.setMargins(dp(6), 0, 0, 0);
+        actionRow.addView(modelTagLabel, lpModelTag);
+
         View spring = new View(this);
         actionRow.addView(spring, new LinearLayout.LayoutParams(0, 1, 1));
 
@@ -2506,10 +2554,43 @@ public class MainActivity extends Activity {
             boolean isAgy = "antigravity".equalsIgnoreCase(currentEngine);
             repoTagLabel.setText(isAgy ? "google/antigravity-cli" : "openai/codex-cli");
         }
+        if (modelTagLabel != null) modelTagLabel.setText(displayModel(currentModel));
+    }
+
+    private void showModelPicker() {
+        final boolean isCodex = "codex".equalsIgnoreCase(currentEngine);
+        final String[] models = isCodex
+                ? new String[]{"gpt-5.6-luna", "gpt-5.6-sol", "default"}
+                : new String[]{"auto", "gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.1-pro-high", "claude-sonnet-4-6", "gpt-oss-120b-medium"};
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Pilih Model", true);
+        TextView subtitle = cText(isCodex ? "Model Codex yang dipakai untuk prompt baru" : "Model Antigravity yang dipakai untuk prompt baru", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        root.addView(subtitle);
+        for (String model : models) {
+            TextView option = cText((model.equalsIgnoreCase(currentModel) ? "✓  " : "    ") + displayModel(model), 14f,
+                    model.equalsIgnoreCase(currentModel) ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MAIN, true, false);
+            option.setGravity(Gravity.CENTER_VERTICAL);
+            option.setPadding(dp(14), 0, dp(14), 0);
+            option.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(46));
+            lp.setMargins(0, dp(8), 0, 0);
+            root.addView(option, lp);
+            option.setOnClickListener(v -> {
+                currentModel = model;
+                prefs.edit().putString(modelPrefKey(currentEngine), currentModel).apply();
+                updateRepoTag();
+                dialog.dismiss();
+                startNewSession();
+                Toast.makeText(this, "Model: " + displayModel(currentModel), Toast.LENGTH_SHORT).show();
+            });
+        }
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     private void toggleEngine() {
         currentEngine = "antigravity".equalsIgnoreCase(currentEngine) ? "codex" : "antigravity";
+        currentModel = prefs.getString(modelPrefKey(currentEngine), defaultModelForEngine(currentEngine));
         prefs.edit().putString("engine", currentEngine).apply();
         updateRepoTag();
         refreshSettingsValues();
@@ -2889,6 +2970,7 @@ public class MainActivity extends Activity {
                 .apply();
 
         currentEngine = engine != null ? engine.trim() : "antigravity";
+        currentModel = prefs.getString(modelPrefKey(currentEngine), defaultModelForEngine(currentEngine));
         updateRepoTag();
         refreshSettingsValues();
         startNewSession();
@@ -3155,6 +3237,7 @@ public class MainActivity extends Activity {
                 JSONObject req = new JSONObject();
                 req.put("prompt", promptToSend);
                 req.put("engine", currentEngine);
+                req.put("model", currentModel);
                 req.put("resume", !isNewSession);
 
                 if (!filePathsToSend.isEmpty()) {

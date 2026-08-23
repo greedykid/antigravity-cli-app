@@ -142,6 +142,56 @@ function getUsageStats() {
   return cachedUsage;
 }
 
+function getCodexUsageStats() {
+  const home = os.homedir();
+  const historyFile = path.join(home, ".codex/history.jsonl");
+  let totalPrompts = 0;
+  let totalSessions = 0;
+  let estimatedTokens = 0;
+  let totalChars = 0;
+  try {
+    if (fs.existsSync(historyFile)) {
+      const lines = fs.readFileSync(historyFile, "utf8").split("\n").filter(Boolean);
+      totalPrompts = lines.length;
+      totalSessions = new Set(lines.map(line => {
+        try { return JSON.parse(line).session_id; } catch (e) { return null; }
+      }).filter(Boolean)).size;
+    }
+    const baseDir = path.join(home, ".codex/sessions");
+    if (fs.existsSync(baseDir)) {
+      const stack = [baseDir];
+      let visited = 0;
+      while (stack.length && visited < 400) {
+        const dir = stack.pop();
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) stack.push(full);
+          else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+            visited++;
+            const content = fs.readFileSync(full, "utf8");
+            totalChars += content.length;
+            for (const match of content.matchAll(/"(?:total_)?tokens"\s*:\s*(\d+)/g)) estimatedTokens += Number(match[1]);
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return {
+    ok: true,
+    account: "Codex account",
+    engine: "codex",
+    model: "Selected model from app",
+    totalPrompts,
+    totalSessions,
+    estimatedTokens: estimatedTokens || Math.round(totalChars / 4),
+    totalChars,
+    quotaStatus: "Usage dari local Codex rollouts",
+    tier: "Codex CLI",
+    hostname: os.hostname(),
+    uptime: Math.round(os.uptime() / 60) + " menit"
+  };
+}
+
 // -------------------------------------------------------------
 // NATIVE CODEX SESSION & TRANSCRIPT PARSER
 // -------------------------------------------------------------
@@ -353,10 +403,11 @@ function getTranscript(convId, limit = 1000) {
 // -------------------------------------------------------------
 // CLI PROCESS EXECUTORS
 // -------------------------------------------------------------
-function runCodex(prompt, conversationId) {
+function runCodex(prompt, conversationId, model) {
   return new Promise((resolve, reject) => {
     const tmpOutputFile = path.join(os.tmpdir(), `codex_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.txt`);
     const args = ["exec"];
+    if (model && model !== "default" && model !== "auto") args.push("--model", model);
     if (conversationId) {
       args.push("resume", conversationId);
     }
@@ -427,7 +478,7 @@ function runCodex(prompt, conversationId) {
   });
 }
 
-function runAgy(prompt, conversationId, resume = false) {
+function runAgy(prompt, conversationId, resume = false, model) {
   return new Promise((resolve, reject) => {
     const extraPath = ":/home/ubuntu/.local/bin:/usr/local/bin";
     const env = Object.assign({}, process.env, {
@@ -440,6 +491,7 @@ function runAgy(prompt, conversationId, resume = false) {
       args.push("-c");
     }
     args.push("-p", prompt, "--dangerously-skip-permissions");
+    if (model && model !== "auto" && model !== "default") args.push("--model", model);
 
     const child = spawn(AGY_BIN, args, {
       cwd: WORKDIR,
@@ -494,7 +546,7 @@ const server = http.createServer((req, res) => {
 
   // GET /api/usage
   if (req.method === "GET" && pathname === "/api/usage") {
-    const stats = getUsageStats();
+    const stats = parsedUrl.query.engine === "codex" ? getCodexUsageStats() : getUsageStats();
     return send(res, 200, stats);
   }
 
@@ -635,6 +687,7 @@ const server = http.createServer((req, res) => {
         const payload = JSON.parse(raw);
         let prompt = payload.prompt;
         const engine = (payload.engine || payload.cli || "antigravity").toLowerCase().trim();
+        const model = typeof payload.model === "string" ? payload.model.trim() : "";
         let conversationId = payload.conversationId || payload.session_id || null;
         const resume = payload.resume === true && Boolean(conversationId);
 
@@ -655,7 +708,7 @@ const server = http.createServer((req, res) => {
         let updatedTurns = [];
 
         if (engine === "codex") {
-          const result = await runCodex(prompt.trim(), conversationId);
+          const result = await runCodex(prompt.trim(), conversationId, model);
           responseText = result.response;
           activeConvId = result.sessionId || conversationId;
 
@@ -676,7 +729,7 @@ const server = http.createServer((req, res) => {
         } else {
           // Antigravity execution
           const isNewSession = !conversationId;
-          responseText = await runAgy(prompt.trim(), conversationId, resume);
+          responseText = await runAgy(prompt.trim(), conversationId, resume, model);
 
           const sData = getSessions();
           if (isNewSession) {
@@ -696,6 +749,7 @@ const server = http.createServer((req, res) => {
           ok: true,
           response: responseText,
           engine,
+          model: model || "default",
           conversationId: activeConvId,
           session: activeSession,
           turns: updatedTurns,
