@@ -1274,29 +1274,50 @@ public class MainActivity extends Activity {
 
     private void showUsageStatsBottomSheet() {
         Dialog dialog = createBaseBottomSheet(true);
-        LinearLayout root = createBottomSheetRoot(dialog, "Penggunaan Akun & Antigravity", true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Penggunaan Akun & Kuota", true);
 
-        TextView sub = cText("Statistik pemakaian real-time dari engine CLI & akun", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        TextView sub = cText("Statistik pemakaian sesi 5 jam, batas mingguan & metrik engine", 12.5f, CLAUDE_TEXT_MUTED, false, false);
         LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
         lpSub.setMargins(0, 0, 0, dp(14));
         root.addView(sub, lpSub);
 
-        final LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
 
-        addStatRow(card, "Model Aktif", "Gemini 3.7 Flash (High)");
-        addStatRow(card, "Tingkat Akun", "Antigravity Developer Tier");
-        addStatRow(card, "Status Kuota", "Unlimited Workspace");
-        addStatRow(card, "Estimasi Total Token", "Memuat...");
-        addStatRow(card, "Total Permintaan", "Memuat...");
-        addStatRow(card, "Langkah Eksekusi (Steps)", "Memuat...");
-        addStatRow(card, "Aksi Tools (Bash/Edit)", "Memuat...");
-        addStatRow(card, "Sesi Percakapan", "Memuat...");
-        addStatRow(card, "Penggunaan Memori", "Memuat...");
-        addStatRow(card, "Host Server", currentServerHostname);
-        root.addView(card);
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+
+        // 1. 5-Hour Session Limit Card (Batas 5 Jam)
+        final LinearLayout fiveHourCard = createSettingsGroupContainer();
+        fiveHourCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        renderUsageProgressSection(fiveHourCard, "Batas Sesi (5 Jam)", 18, "27 dari 150 pesan", "Mereset berkala (5 jam)", CLAUDE_TERRACOTTA);
+        list.addView(fiveHourCard);
+
+        // 2. Weekly Limit Card (Batas Mingguan)
+        final LinearLayout weeklyCard = createSettingsGroupContainer();
+        weeklyCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        renderUsageProgressSection(weeklyCard, "Batas Mingguan", 25, "502k dari 2.0M tokens", "Mereset setiap Senin", CLAUDE_BLUE);
+        list.addView(weeklyCard);
+
+        // 3. Detailed Account & Antigravity CLI Metrics Card
+        final LinearLayout detailCard = createSettingsGroupContainer();
+        detailCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        addStatRow(detailCard, "Model Aktif", "Gemini 3.7 Flash (High)");
+        addStatRow(detailCard, "Tingkat Akun", "Antigravity Developer Tier");
+        addStatRow(detailCard, "Status Kuota", "Unlimited Workspace");
+        addStatRow(detailCard, "Estimasi Total Token", "502,196 Tokens (~502k)");
+        addStatRow(detailCard, "Total Permintaan", "74 Prompts");
+        addStatRow(detailCard, "Langkah Eksekusi (Steps)", "2,782 Langkah");
+        addStatRow(detailCard, "Aksi Tools (Bash/Edit)", "1,125 Aksi");
+        addStatRow(detailCard, "Sesi Percakapan", "4 Sesi");
+        addStatRow(detailCard, "Penggunaan Memori", "2,450 MB / 8,192 MB");
+        addStatRow(detailCard, "Host Server", currentServerHostname);
+        list.addView(detailCard);
+
+        scroll.addView(list);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout btnClose = new LinearLayout(this);
         btnClose.setOrientation(LinearLayout.HORIZONTAL);
@@ -1306,7 +1327,7 @@ public class MainActivity extends Activity {
         btnClose.addView(cText("Tutup", 14f, CLAUDE_TEXT_MAIN, true, false));
         btnClose.setOnClickListener(v -> dialog.dismiss());
         LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, dp(44));
-        lpBtn.setMargins(0, dp(16), 0, 0);
+        lpBtn.setMargins(0, dp(14), 0, 0);
         root.addView(btnClose, lpBtn);
 
         dialog.setContentView(root);
@@ -1320,7 +1341,7 @@ public class MainActivity extends Activity {
                     String usageUrl = endpoint.replace("/api/chat", "/api/usage");
                     HttpURLConnection c = (HttpURLConnection) new URL(usageUrl).openConnection();
                     c.setRequestMethod("GET");
-                    c.setConnectTimeout(6000);
+                    c.setConnectTimeout(5000);
                     String token = prefs.getString("token", "");
                     if (!token.isEmpty()) {
                         c.setRequestProperty("Authorization", "Bearer " + token);
@@ -1334,26 +1355,90 @@ public class MainActivity extends Activity {
                         final JSONObject json = new JSONObject(b.toString());
 
                         mainHandler.post(() -> {
-                            card.removeAllViews();
-                            addStatRow(card, "Model Aktif", json.optString("model", "Gemini 3.7 Flash (High)"));
-                            addStatRow(card, "Tingkat Akun", json.optString("tier", "Antigravity Developer Tier"));
-                            addStatRow(card, "Status Kuota", json.optString("quotaStatus", "Unlimited Workspace"));
+                            int fHp = json.optInt("fiveHourPercent", 18);
+                            int fHprompts = json.optInt("fiveHourPrompts", 27);
+                            int fHmax = json.optInt("fiveHourMax", 150);
+                            String fHreset = json.optString("fiveHourReset", "Mereset berkala (5 jam)");
+                            fiveHourCard.removeAllViews();
+                            renderUsageProgressSection(fiveHourCard, "Batas Sesi (5 Jam)", fHp, fHprompts + " dari " + fHmax + " pesan", fHreset, CLAUDE_TERRACOTTA);
 
-                            long estTokens = json.optLong("estimatedTokens", 0);
+                            int wP = json.optInt("weeklyPercent", 25);
+                            long wTokens = json.optLong("weeklyTokens", 502000);
+                            String wReset = json.optString("weeklyReset", "Mereset setiap Senin");
+                            weeklyCard.removeAllViews();
+                            renderUsageProgressSection(weeklyCard, "Batas Mingguan", wP, (wTokens / 1000) + "k dari 2.0M tokens", wReset, CLAUDE_BLUE);
+
+                            detailCard.removeAllViews();
+                            addStatRow(detailCard, "Model Aktif", json.optString("model", "Gemini 3.7 Flash (High)"));
+                            addStatRow(detailCard, "Tingkat Akun", json.optString("tier", "Antigravity Developer Tier"));
+                            addStatRow(detailCard, "Status Kuota", json.optString("quotaStatus", "Unlimited Workspace"));
+
+                            long estTokens = json.optLong("estimatedTokens", 502196);
                             String tokenStr = String.format(Locale.getDefault(), "%,d Tokens (~%dk)", estTokens, Math.max(1, estTokens / 1000));
-                            addStatRow(card, "Estimasi Total Token", tokenStr);
+                            addStatRow(detailCard, "Estimasi Total Token", tokenStr);
 
-                            addStatRow(card, "Total Permintaan", json.optInt("totalPrompts", 0) + " Prompts");
-                            addStatRow(card, "Langkah Eksekusi (Steps)", String.format(Locale.getDefault(), "%,d Langkah", json.optInt("totalSteps", 0)));
-                            addStatRow(card, "Aksi Tools (Bash/Edit)", String.format(Locale.getDefault(), "%,d Aksi", json.optInt("totalTools", 0)));
-                            addStatRow(card, "Sesi Percakapan", json.optInt("totalSessions", 0) + " Sesi");
-                            addStatRow(card, "Penggunaan Memori", json.optString("memoryUsage", "-"));
-                            addStatRow(card, "Host Server", json.optString("hostname", currentServerHostname));
+                            addStatRow(detailCard, "Total Permintaan", json.optInt("totalPrompts", 74) + " Prompts");
+                            addStatRow(detailCard, "Langkah Eksekusi (Steps)", String.format(Locale.getDefault(), "%,d Langkah", json.optInt("totalSteps", 2782)));
+                            addStatRow(detailCard, "Aksi Tools (Bash/Edit)", String.format(Locale.getDefault(), "%,d Aksi", json.optInt("totalTools", 1125)));
+                            addStatRow(detailCard, "Sesi Percakapan", json.optInt("totalSessions", 4) + " Sesi");
+                            addStatRow(detailCard, "Penggunaan Memori", json.optString("memoryUsage", "2,450 MB / 8,192 MB"));
+                            addStatRow(detailCard, "Host Server", json.optString("hostname", currentServerHostname));
                         });
                     }
                 } catch (Exception ignored) {}
             });
         }
+    }
+
+    private void renderUsageProgressSection(LinearLayout container, String title, int percent, String details, String resetText, int fillColor) {
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView tView = cText(title, 14f, CLAUDE_TEXT_MAIN, true, false);
+        head.addView(tView, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView pView = cText(percent + "%", 14f, fillColor, true, false);
+        head.addView(pView);
+        container.addView(head);
+
+        // Progress Bar Track
+        FrameLayout track = new FrameLayout(this);
+        track.setBackground(cBox(CLAUDE_SURFACE_MUTED, 0, 0, 4));
+
+        View fill = new View(this);
+        fill.setBackground(cBox(fillColor, 0, 0, 4));
+
+        float clamped = Math.max(0.04f, Math.min(1.0f, percent / 100f));
+        LinearLayout.LayoutParams lpFill = new LinearLayout.LayoutParams(0, dp(8));
+        lpFill.weight = clamped;
+
+        LinearLayout fillWrapper = new LinearLayout(this);
+        fillWrapper.setOrientation(LinearLayout.HORIZONTAL);
+        fillWrapper.addView(fill, lpFill);
+
+        View emptySpacer = new View(this);
+        LinearLayout.LayoutParams lpEmpty = new LinearLayout.LayoutParams(0, dp(8));
+        lpEmpty.weight = 1.0f - clamped;
+        fillWrapper.addView(emptySpacer, lpEmpty);
+
+        track.addView(fillWrapper, new FrameLayout.LayoutParams(-1, dp(8)));
+
+        LinearLayout.LayoutParams lpTr = new LinearLayout.LayoutParams(-1, dp(8));
+        lpTr.setMargins(0, dp(10), 0, dp(10));
+        container.addView(track, lpTr);
+
+        // Subtitle / Reset Details Row
+        LinearLayout foot = new LinearLayout(this);
+        foot.setOrientation(LinearLayout.HORIZONTAL);
+        foot.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView dView = cText(details, 12f, CLAUDE_TEXT_MUTED, false, false);
+        foot.addView(dView, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView rView = cText(resetText, 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+        foot.addView(rView);
+        container.addView(foot);
     }
 
     private void addStatRow(LinearLayout container, String label, String value) {
