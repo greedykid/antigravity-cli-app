@@ -1236,6 +1236,10 @@ public class MainActivity extends Activity {
     private String activeSessionEngine = "";
     /** Provider Codex is configured to use, read from its config.toml. */
     private String codexProviderId = "";
+    /** Sessions the user has archived; hidden unless the filter is on. */
+    private final java.util.Set<String> archivedSessionIds = new java.util.HashSet<>();
+    private boolean showArchivedSessions = false;
+    private ImageView hubArchiveToggle;
     private String currentEngine = "antigravity";
     private String currentModel = "";
     private String currentServerHostname = "Server Remote";
@@ -2015,6 +2019,17 @@ public class MainActivity extends Activity {
         headerTitle.setPadding(dp(12), 0, 0, 0);
         topBar.addView(headerTitle, new LinearLayout.LayoutParams(0, -2, 1));
 
+        // Toggling the archive view, so nothing archived ever feels lost.
+        hubArchiveToggle = cIconButton(R.drawable.ic_history, 22, 40, Theme.TEXT_MUTED);
+        hubArchiveToggle.setOnClickListener(v -> {
+            showArchivedSessions = !showArchivedSessions;
+            hubArchiveToggle.setColorFilter(showArchivedSessions ? Theme.AMBER : Theme.TEXT_MUTED);
+            Toast.makeText(this, showArchivedSessions
+                    ? "Menampilkan sesi arsip" : "Sesi arsip disembunyikan", Toast.LENGTH_SHORT).show();
+            fetchHubSessions();
+        });
+        topBar.addView(hubArchiveToggle);
+
         ImageView tuneBtn = cIconButton(R.drawable.ic_tune, 22, 40, Theme.TEXT_MUTED);
         tuneBtn.setOnClickListener(v -> showMoreDropdownMenu(tuneBtn));
         topBar.addView(tuneBtn);
@@ -2142,7 +2157,8 @@ public class MainActivity extends Activity {
                 // Sessions belong to one CLI or the other, so the list follows
                 // the active engine instead of mixing both.
                 String sessionsUrl = endpoint.replace("/api/chat", "/api/sessions")
-                        + "?engine=" + BridgeClient.encode(currentEngine);
+                        + "?engine=" + BridgeClient.encode(currentEngine)
+                        + (showArchivedSessions ? "&includeArchived=1" : "");
                 HttpURLConnection c = (HttpURLConnection) new URL(sessionsUrl).openConnection();
                 c.setRequestMethod("GET");
                 c.setConnectTimeout(8000);
@@ -2169,6 +2185,15 @@ public class MainActivity extends Activity {
                         if (hubDeviceHostText != null) hubDeviceHostText.setText(currentServerHostname);
                         if (hubDeviceStatusText != null) hubDeviceStatusText.setText("Terhubung");
                         if (sidebarDeviceHost != null) sidebarDeviceHost.setText(currentServerHostname);
+                        archivedSessionIds.clear();
+                        if (sessions != null) {
+                            for (int i = 0; i < sessions.length(); i++) {
+                                JSONObject item = sessions.optJSONObject(i);
+                                if (item != null && item.optBoolean("archived", false)) {
+                                    archivedSessionIds.add(item.optString("conversationId", ""));
+                                }
+                            }
+                        }
                         JSONArray mine = filterSessionsForEngine(sessions);
                         renderSidebarRecent(mine);
                         renderTimeGroupedSessions(mine);
@@ -2274,7 +2299,8 @@ public class MainActivity extends Activity {
 
         if (sessions == null || sessions.length() == 0) {
             addTimeSectionHeader("Hari ini");
-            addSessionCard("Belum ada sesi " + engineLabel(currentEngine),
+            addSessionCard((showArchivedSessions ? "Tidak ada sesi (termasuk arsip) " : "Belum ada sesi ")
+                            + engineLabel(currentEngine),
                     "Terhubung • " + currentServerHostname, "Baru", null, true);
             return;
         }
@@ -2446,6 +2472,16 @@ public class MainActivity extends Activity {
         // Right date text
         TextView dateView = cText(dateStr, 12f, Theme.TEXT_MUTED, false, false);
         card.addView(dateView);
+
+        if (archivedSessionIds.contains(convId)) {
+            TextView badge = cText("Arsip", 10.5f, Theme.AMBER, true, false);
+            badge.setBackground(cBox(Theme.AMBER_BG, 0, 0, 8));
+            badge.setPadding(dp(8), dp(2), dp(8), dp(2));
+            LinearLayout.LayoutParams lpBadge = new LinearLayout.LayoutParams(-2, -2);
+            lpBadge.setMargins(dp(6), 0, 0, 0);
+            card.addView(badge, lpBadge);
+            card.setAlpha(0.6f);
+        }
 
         ImageView optBtn = cIconButton(R.drawable.ic_more_vert, 18, 32, Theme.TEXT_MUTED);
         optBtn.setOnClickListener(v -> showSessionOptionsBottomSheet(convId, title));
@@ -5720,6 +5756,30 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void setSessionArchived(final String convId, final boolean archived) {
+        executor.execute(() -> {
+            try {
+                JSONObject result = bridge.post("/api/sessions/archive",
+                        new JSONObject().put("conversationId", convId).put("archived", archived), 20000);
+                mainHandler.post(() -> {
+                    if (result.optBoolean("ok", false)) {
+                        if (archived) archivedSessionIds.add(convId);
+                        else archivedSessionIds.remove(convId);
+                        Toast.makeText(MainActivity.this,
+                                archived ? "Sesi diarsipkan" : "Sesi dikembalikan", Toast.LENGTH_SHORT).show();
+                        fetchHubSessions();
+                    } else {
+                        Toast.makeText(MainActivity.this,
+                                describeApiError(result, "Gagal mengubah arsip"), Toast.LENGTH_LONG).show();
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                        "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
     private void showSessionOptionsBottomSheet(final String convId, final String currentTitle) {
         final Dialog dialog = createBaseBottomSheet(true);
         LinearLayout root = createBottomSheetRoot(dialog, currentTitle != null && !currentTitle.isEmpty() ? currentTitle : "Pilihan Sesi", true);
@@ -5740,6 +5800,25 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpPin = new LinearLayout.LayoutParams(-1, -2);
         lpPin.setMargins(0, dp(4), 0, dp(10));
         root.addView(pinRow, lpPin);
+
+        // Archive: hides the session from the list. The transcript stays on the
+        // server, so this is always reversible.
+        final boolean isArchived = archivedSessionIds.contains(convId);
+        LinearLayout archiveRow = new LinearLayout(this);
+        archiveRow.setOrientation(LinearLayout.HORIZONTAL);
+        archiveRow.setGravity(Gravity.CENTER_VERTICAL);
+        archiveRow.setPadding(dp(14), dp(12), dp(14), dp(12));
+        archiveRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        archiveRow.addView(cIcon(R.drawable.ic_history, 20, Theme.AMBER));
+        archiveRow.addView(cText(isArchived ? "   Kembalikan dari Arsip" : "   Arsipkan Sesi",
+                14f, Theme.TEXT_MAIN, true, false));
+        archiveRow.setOnClickListener(v -> {
+            dialog.dismiss();
+            setSessionArchived(convId, !isArchived);
+        });
+        LinearLayout.LayoutParams lpArchive = new LinearLayout.LayoutParams(-1, -2);
+        lpArchive.setMargins(0, 0, 0, dp(10));
+        root.addView(archiveRow, lpArchive);
 
         // 1. Buka Sesi
         LinearLayout openRow = new LinearLayout(this);

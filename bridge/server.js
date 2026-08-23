@@ -16,6 +16,7 @@ const searchIndex = require("./search");
 const quota = require("./quota");
 const codexConfig = require("./codexconfig");
 const providerModels = require("./models");
+const archive = require("./archive");
 
 const PORT = config.port();
 const HOST = config.bindHost();
@@ -1194,7 +1195,7 @@ const server = http.createServer((req, res) => {
       features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload",
                  "usage_stats", "sse", "files", "git", "search", "sandbox_modes",
                  "jobs", "file_write", "projects", "audit", "session_export", "uploads_cleanup",
-                 "codex_config"],
+                 "codex_config", "session_archive"],
       sandboxMode: settings.load().sandboxMode
     });
   }
@@ -1605,12 +1606,37 @@ const server = http.createServer((req, res) => {
   // GET /api/sessions
   if (req.method === "GET" && pathname === "/api/sessions") {
     const sData = getSessions(parsedUrl.query.engine);
+    const includeArchived = parsedUrl.query.includeArchived === "1";
     return send(res, 200, {
       ok: true,
       hostname: sData.hostname,
       engine: parsedUrl.query.engine || null,
-      sessions: sData.sessions || []
+      archivedCount: archive.count(),
+      includeArchived,
+      sessions: archive.apply(sData.sessions || [], includeArchived)
     });
+  }
+
+  // POST /api/sessions/archive — hides a session from the list. The transcript
+  // is never touched, so this is always reversible.
+  if (req.method === "POST" && pathname === "/api/sessions/archive") {
+    let raw = "";
+    req.on("data", chunk => { raw += chunk; });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const wanted = payload.archived !== false;
+        const result = archive.setArchived(payload.conversationId, wanted);
+        audit(wanted ? "session.archived" : "session.unarchived", {
+          conversationId: payload.conversationId, ok: result.ok
+        });
+        if (result.ok) events.broadcast("sessions.changed", { archivedCount: archive.count() });
+        send(res, result.ok ? 200 : 400, Object.assign({}, result, { archivedCount: archive.count() }));
+      } catch (err) {
+        send(res, 400, { error: err.message });
+      }
+    });
+    return;
   }
 
   // GET /api/session/transcript?id=...
