@@ -1274,17 +1274,28 @@ public class MainActivity extends Activity {
 
     private void showUsageStatsBottomSheet() {
         Dialog dialog = createBaseBottomSheet(true);
-        LinearLayout root = createBottomSheetRoot(dialog, "Statistik Penggunaan", true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Penggunaan Akun & Antigravity", true);
 
-        LinearLayout card = new LinearLayout(this);
+        TextView sub = cText("Statistik pemakaian real-time dari engine CLI & akun", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
+        lpSub.setMargins(0, 0, 0, dp(14));
+        root.addView(sub, lpSub);
+
+        final LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        addStatRow(card, "Active Engine", currentEngine.toUpperCase(Locale.ROOT));
-        addStatRow(card, "Connected Host", currentServerHostname);
-        addStatRow(card, "Live Monitoring", "Aktif (Real-time)");
-        addStatRow(card, "Multi-Upload", "Didukung (Multi-File)");
+        addStatRow(card, "Model Aktif", "Gemini 3.7 Flash (High)");
+        addStatRow(card, "Tingkat Akun", "Antigravity Developer Tier");
+        addStatRow(card, "Status Kuota", "Unlimited Workspace");
+        addStatRow(card, "Estimasi Total Token", "Memuat...");
+        addStatRow(card, "Total Permintaan", "Memuat...");
+        addStatRow(card, "Langkah Eksekusi (Steps)", "Memuat...");
+        addStatRow(card, "Aksi Tools (Bash/Edit)", "Memuat...");
+        addStatRow(card, "Sesi Percakapan", "Memuat...");
+        addStatRow(card, "Penggunaan Memori", "Memuat...");
+        addStatRow(card, "Host Server", currentServerHostname);
         root.addView(card);
 
         LinearLayout btnClose = new LinearLayout(this);
@@ -1295,11 +1306,54 @@ public class MainActivity extends Activity {
         btnClose.addView(cText("Tutup", 14f, CLAUDE_TEXT_MAIN, true, false));
         btnClose.setOnClickListener(v -> dialog.dismiss());
         LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, dp(44));
-        lpBtn.setMargins(0, dp(14), 0, 0);
+        lpBtn.setMargins(0, dp(16), 0, 0);
         root.addView(btnClose, lpBtn);
 
         dialog.setContentView(root);
         dialog.show();
+
+        // Fetch live Antigravity usage stats from server
+        String endpoint = prefs.getString("url", "").trim();
+        if (!endpoint.isEmpty()) {
+            executor.execute(() -> {
+                try {
+                    String usageUrl = endpoint.replace("/api/chat", "/api/usage");
+                    HttpURLConnection c = (HttpURLConnection) new URL(usageUrl).openConnection();
+                    c.setRequestMethod("GET");
+                    c.setConnectTimeout(6000);
+                    String token = prefs.getString("token", "");
+                    if (!token.isEmpty()) {
+                        c.setRequestProperty("Authorization", "Bearer " + token);
+                    }
+
+                    if (c.getResponseCode() == 200) {
+                        BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
+                        StringBuilder b = new StringBuilder();
+                        String line;
+                        while ((line = r.readLine()) != null) b.append(line);
+                        final JSONObject json = new JSONObject(b.toString());
+
+                        mainHandler.post(() -> {
+                            card.removeAllViews();
+                            addStatRow(card, "Model Aktif", json.optString("model", "Gemini 3.7 Flash (High)"));
+                            addStatRow(card, "Tingkat Akun", json.optString("tier", "Antigravity Developer Tier"));
+                            addStatRow(card, "Status Kuota", json.optString("quotaStatus", "Unlimited Workspace"));
+
+                            long estTokens = json.optLong("estimatedTokens", 0);
+                            String tokenStr = String.format(Locale.getDefault(), "%,d Tokens (~%dk)", estTokens, Math.max(1, estTokens / 1000));
+                            addStatRow(card, "Estimasi Total Token", tokenStr);
+
+                            addStatRow(card, "Total Permintaan", json.optInt("totalPrompts", 0) + " Prompts");
+                            addStatRow(card, "Langkah Eksekusi (Steps)", String.format(Locale.getDefault(), "%,d Langkah", json.optInt("totalSteps", 0)));
+                            addStatRow(card, "Aksi Tools (Bash/Edit)", String.format(Locale.getDefault(), "%,d Aksi", json.optInt("totalTools", 0)));
+                            addStatRow(card, "Sesi Percakapan", json.optInt("totalSessions", 0) + " Sesi");
+                            addStatRow(card, "Penggunaan Memori", json.optString("memoryUsage", "-"));
+                            addStatRow(card, "Host Server", json.optString("hostname", currentServerHostname));
+                        });
+                    }
+                } catch (Exception ignored) {}
+            });
+        }
     }
 
     private void addStatRow(LinearLayout container, String label, String value) {

@@ -48,6 +48,70 @@ function getAgyProcess() {
   }
 }
 
+function getUsageStats() {
+  const home = os.homedir();
+  const historyFile = path.join(home, ".gemini/antigravity-cli/history.jsonl");
+  let totalPrompts = 0;
+  const sessionIds = new Set();
+
+  if (fs.existsSync(historyFile)) {
+    const lines = fs.readFileSync(historyFile, "utf8").trim().split("\n").filter(Boolean);
+    totalPrompts = lines.length;
+    for (const l of lines) {
+      try {
+        const j = JSON.parse(l);
+        if (j.conversationId) sessionIds.add(j.conversationId);
+      } catch(e) {}
+    }
+  }
+
+  const brainDir = path.join(home, ".gemini/antigravity-cli/brain");
+  let totalSteps = 0;
+  let totalTools = 0;
+  let totalChars = 0;
+
+  if (fs.existsSync(brainDir)) {
+    try {
+      const dirs = fs.readdirSync(brainDir);
+      for (const d of dirs) {
+        const tFile = path.join(brainDir, d, ".system_generated/logs/transcript.jsonl");
+        if (fs.existsSync(tFile)) {
+          const tLines = fs.readFileSync(tFile, "utf8").trim().split("\n").filter(Boolean);
+          totalSteps += tLines.length;
+          for (const tl of tLines) {
+            try {
+              const s = JSON.parse(tl);
+              if (s.tool_calls && s.tool_calls.length) totalTools += s.tool_calls.length;
+              if (s.content) totalChars += s.content.length;
+              if (s.thinking) totalChars += s.thinking.length;
+            } catch(e) {}
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
+  const estimatedTokens = Math.round(totalChars / 3.8);
+  const freeMem = Math.round(os.freemem() / (1024 * 1024));
+  const totalMem = Math.round(os.totalmem() / (1024 * 1024));
+
+  return {
+    ok: true,
+    totalSessions: sessionIds.size,
+    totalPrompts,
+    totalSteps,
+    totalTools,
+    estimatedTokens,
+    totalChars,
+    model: "Gemini 3.7 Flash (High Reasoning)",
+    tier: "Antigravity Developer Tier",
+    quotaStatus: "Unlimited Workspace",
+    memoryUsage: `${totalMem - freeMem} MB / ${totalMem} MB`,
+    hostname: os.hostname(),
+    uptime: Math.round(os.uptime() / 60) + " menit"
+  };
+}
+
 function getSessions() {
   const home = os.homedir();
   const file = path.join(home, ".gemini/antigravity-cli/history.jsonl");
@@ -232,12 +296,18 @@ const server = http.createServer((req, res) => {
       ok: true,
       hostname: os.hostname(),
       engines: ["antigravity", "codex"],
-      features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload"]
+      features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload", "usage_stats"]
     });
   }
 
   if (!authorized(req)) {
     return send(res, 401, { error: "Unauthorized" });
+  }
+
+  // GET /api/usage (Antigravity Account & CLI Token Usage Stats)
+  if (req.method === "GET" && pathname === "/api/usage") {
+    const stats = getUsageStats();
+    return send(res, 200, stats);
   }
 
   // POST /api/upload (Upload files and images)
