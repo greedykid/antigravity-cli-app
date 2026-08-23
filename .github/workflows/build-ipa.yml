@@ -24,18 +24,23 @@ jobs:
         run: xcodebuild -version && swift --version
 
       - name: Install XcodeGen
-        run: HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install xcodegen
+        run: |
+          curl -sL https://github.com/yonaskolb/XcodeGen/releases/download/2.42.0/xcodegen.zip -o xcodegen.zip
+          unzip -q xcodegen.zip
+          sudo cp xcodegen/bin/xcodegen /usr/local/bin/
+          sudo mkdir -p /usr/local/share/xcodegen
+          sudo cp -R xcodegen/share/xcodegen/* /usr/local/share/xcodegen/ || true
+          xcodegen --version
 
       - name: Generate Xcode project
         working-directory: ios
         run: |
-          xcodegen generate --spec project.yml --verbose
-          find . -maxdepth 2
+          xcodegen generate --spec project.yml
+          ls -la CodexRemote.xcodeproj
 
       - name: Build unsigned app
         working-directory: ios
         run: |
-          set +e
           xcodebuild \
             -project CodexRemote.xcodeproj \
             -scheme CodexRemote \
@@ -45,23 +50,10 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            EXPANDED_CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            ONLY_ACTIVE_ARCH=NO \
-            build > xcodebuild.log 2>&1
-          STATUS=$?
-          if [ $STATUS -ne 0 ]; then
-            ERROR_MSG=$(grep -i "error:" xcodebuild.log | head -n 5 | tr '\n' ' ')
-            if [ -z "$ERROR_MSG" ]; then
-              ERROR_MSG=$(tail -n 10 xcodebuild.log | tr '\n' ' ')
-            fi
-            echo "::error title=XcodeBuild Error::$ERROR_MSG"
-            echo "=== XCODEBUILD LOG ==="
-            tail -n 100 xcodebuild.log
-            exit $STATUS
-          fi
+            build
 
       # Package unsigned IPA by wrapping the .app into Payload/ directory
       - name: Package unsigned IPA
