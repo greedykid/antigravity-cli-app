@@ -1431,7 +1431,6 @@ public class MainActivity extends Activity {
                 byte[] fileBytes = bos.toByteArray();
                 String base64Data = Base64.encodeToString(fileBytes, Base64.NO_WRAP);
 
-                // Try to decode local thumbnail bitmap if image
                 Bitmap thumbBmp = null;
                 try {
                     BitmapFactory.Options opts = new BitmapFactory.Options();
@@ -1526,7 +1525,6 @@ public class MainActivity extends Activity {
         if (btnSend.getTag() != null) return;
 
         final String file = attachedServerPath;
-        final Bitmap sentImg = attachedLocalBitmap;
         attachedServerPath = null;
         attachedLocalBitmap = null;
         if (attachmentChip != null) attachmentChip.setVisibility(View.GONE);
@@ -1687,12 +1685,10 @@ public class MainActivity extends Activity {
             if (turns != null) {
                 int newTurnCount = turns.length();
 
-                // Only skip re-rendering if BOTH current and previous state are idle AND turns didn't change
                 if (!isLiveTaskRunning && !lastRenderedWasRunning && requestedConvId != null && requestedConvId.equals(lastLoadedSessionId) && newTurnCount == lastLoadedTurnCount) {
                     return;
                 }
 
-                // Smooth scroll check: ONLY scroll down if user is near bottom, so scrolling up is NEVER interrupted!
                 boolean isNearBottom = isScrollNearBottom();
                 boolean isInitialSessionLoad = requestedConvId != null && !requestedConvId.equals(lastLoadedSessionId);
 
@@ -1703,7 +1699,6 @@ public class MainActivity extends Activity {
                 chatMessagesList.removeAllViews();
                 showEmptyMascotState(turns.length() == 0 && !isLiveTaskRunning);
 
-                // Group consecutive tool & thinking turns into a SINGLE compact summary line
                 ArrayList<JSONObject> pendingTools = new ArrayList<>();
                 ArrayList<JSONObject> allSessionTools = new ArrayList<>();
 
@@ -1725,7 +1720,6 @@ public class MainActivity extends Activity {
                     }
                 }
 
-                // If there are pending tools at the very end of the chat transcript:
                 if (!pendingTools.isEmpty()) {
                     addCompactToolsGroupPill(pendingTools, isLiveTaskRunning);
                 } else if (isLiveTaskRunning) {
@@ -1739,13 +1733,11 @@ public class MainActivity extends Activity {
                     allSessionTools.addAll(dummy);
                 }
 
-                // LIVE REAL-TIME UPDATE of Bottom Sheet Modal while open!
                 if (activeBottomSheetDialog != null && activeBottomSheetDialog.isShowing()) {
                     ArrayList<JSONObject> toolsToUpdate = !pendingTools.isEmpty() ? pendingTools : allSessionTools;
                     updateExecutionBottomModalContent(toolsToUpdate, isLiveTaskRunning);
                 }
 
-                // Smooth scroll down ONLY if near bottom or initial session load (Respects user scroll position!)
                 if (isInitialSessionLoad || isNearBottom) {
                     chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
                 }
@@ -1854,7 +1846,6 @@ public class MainActivity extends Activity {
         modalRoot.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 24));
         modalRoot.setPadding(dp(20), dp(10), dp(20), dp(16));
 
-        // Top Drag Handle Pill
         final LinearLayout dragArea = new LinearLayout(this);
         dragArea.setOrientation(LinearLayout.VERTICAL);
         dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -1866,7 +1857,6 @@ public class MainActivity extends Activity {
         dragArea.addView(dragHandle, lpHandle);
         modalRoot.addView(dragArea);
 
-        // Header Title Row
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -1882,7 +1872,6 @@ public class MainActivity extends Activity {
         headerRow.addView(closeBtn);
         modalRoot.addView(headerRow);
 
-        // Subtitle Info Row
         LinearLayout subRow = new LinearLayout(this);
         subRow.setOrientation(LinearLayout.HORIZONTAL);
         subRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -1890,7 +1879,6 @@ public class MainActivity extends Activity {
         subRow.addView(sub, new LinearLayout.LayoutParams(0, -2, 1));
         modalRoot.addView(subRow);
 
-        // Scrollable List of Actions
         final ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(true);
@@ -2098,7 +2086,6 @@ public class MainActivity extends Activity {
         TextView timeV = cText(shortTime, 11, CLAUDE_TEXT_LIGHT, false, false);
         head.addView(timeV);
 
-        // Copy button in header
         final String rawCleanContent = cleanMarkdownForCopy(content);
         ImageView copyBtn = cIconButton(R.drawable.ic_content_paste, 16, 28, CLAUDE_TEXT_MUTED);
         copyBtn.setOnClickListener(v -> {
@@ -2112,7 +2099,7 @@ public class MainActivity extends Activity {
         // Check if content contains image tags or file attachment
         renderMessageContentWithMedia(card, content, isUser);
 
-        // Bottom Action Bar for Assistant Messages (Dedicated Salin / Copy Response Pill)
+        // Dedicated Bottom Action Bar for Assistant Messages (Salin / Copy Response Pill)
         if (!isUser && content != null && !content.trim().isEmpty()) {
             LinearLayout botActionRow = new LinearLayout(this);
             botActionRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -2148,15 +2135,14 @@ public class MainActivity extends Activity {
 
     private String cleanMarkdownForCopy(String raw) {
         if (raw == null) return "";
-        return raw.replaceAll("\[File: [^\n\]]+\]\n?", "").trim();
+        return raw.replaceAll("\\[File: [^\\n\\]]+\\]\\n?", "").trim();
     }
 
     // Media & Image Preview Renderer in Chat Messages
     private void renderMessageContentWithMedia(LinearLayout container, String text, boolean isUser) {
         if (text == null || text.isEmpty()) return;
 
-        // Parse [File: /path/to/image.png] or image markdown ![alt](url)
-        Pattern imgFilePat = Pattern.compile("\[File:\s*([^\]]+\.(?:png|jpg|jpeg|webp|gif|svg))\]", Pattern.CASE_INSENSITIVE);
+        Pattern imgFilePat = Pattern.compile("\\[File:\\s*([^\\]]+\\.(?:png|jpg|jpeg|webp|gif|svg))\\]", Pattern.CASE_INSENSITIVE);
         Matcher m = imgFilePat.matcher(text);
 
         String remainingText = text;
@@ -2165,7 +2151,6 @@ public class MainActivity extends Activity {
             String filePath = m.group(1).trim();
             remainingText = text.substring(0, m.start()) + text.substring(m.end());
 
-            // Add Image Preview Viewport into chat bubble
             ImageView imgPreview = new ImageView(this);
             imgPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
             imgPreview.setAdjustViewBounds(true);
@@ -2286,7 +2271,6 @@ public class MainActivity extends Activity {
                 lp.setMargins(0, dp(8), 0, dp(8));
                 container.addView(codeBox, lp);
             } else {
-                // Parse text lines, tables, quotes, headings
                 String text = sections[s];
                 String[] lines = text.split("\n");
                 ArrayList<String> tableBuffer = new ArrayList<>();
@@ -2296,13 +2280,10 @@ public class MainActivity extends Activity {
                     String line = lines[i];
                     String trimmed = line.trim();
 
-                    // Table lines
                     if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
                         flushQuoteBuffer(container, quoteBuffer);
                         tableBuffer.add(trimmed);
-                    }
-                    // Blockquotes (> Quote)
-                    else if (trimmed.startsWith(">")) {
+                    } else if (trimmed.startsWith(">")) {
                         flushTableBuffer(container, tableBuffer);
                         quoteBuffer.add(trimmed.substring(1).trim());
                     } else {
@@ -2331,9 +2312,6 @@ public class MainActivity extends Activity {
             quoteBox.setOrientation(LinearLayout.VERTICAL);
             quoteBox.setBackground(cBox(CLAUDE_QUOTE_BG, CLAUDE_TERRACOTTA, 0, 8));
             quoteBox.setPadding(dp(12), dp(8), dp(10), dp(8));
-
-            View leftBorder = new View(this);
-            leftBorder.setBackgroundColor(CLAUDE_TERRACOTTA);
 
             for (String q : quoteBuffer) {
                 SpannableStringBuilder span = parseInlineMarkdown(q);
@@ -2498,7 +2476,7 @@ public class MainActivity extends Activity {
         SpannableStringBuilder ssb = new SpannableStringBuilder(line);
 
         // Bold (**bold** or __bold__)
-        Pattern boldPat = Pattern.compile("(\*\*|__)(.+?)\1");
+        Pattern boldPat = Pattern.compile("(\\*\\*|__)(.+?)\\1");
         Matcher boldMat = boldPat.matcher(ssb.toString());
         while (boldMat.find()) {
             int start = boldMat.start();
@@ -2510,12 +2488,12 @@ public class MainActivity extends Activity {
         }
 
         // Italic (*italic* or _italic_)
-        Pattern italicPat = Pattern.compile("(?<!\*|_)(\*|_)(?!\*|_)(.+?)\1");
+        Pattern italicPat = Pattern.compile("(?<!\\*|_)((\\*|_))(?!\\*|_)(.+?)\\1");
         Matcher italicMat = italicPat.matcher(ssb.toString());
         while (italicMat.find()) {
             int start = italicMat.start();
             int end = italicMat.end();
-            String inner = italicMat.group(2);
+            String inner = italicMat.group(3);
             ssb.replace(start, end, inner);
             ssb.setSpan(new StyleSpan(Typeface.ITALIC), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             italicMat = italicPat.matcher(ssb.toString());
