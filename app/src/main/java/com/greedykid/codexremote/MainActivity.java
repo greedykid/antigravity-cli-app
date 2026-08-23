@@ -953,14 +953,79 @@ public class MainActivity extends Activity {
                         renderSidebarRecent(sessions);
                         renderTimeGroupedSessions(sessions);
                     });
+                } else {
+                    // Anything other than 200 used to fall through silently:
+                    // the spinner never stopped and the list stayed empty.
+                    mainHandler.post(() -> showHubLoadFailure(code));
                 }
             } catch (Exception e) {
+                final String reason = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                 mainHandler.post(() -> {
                     if (hubLoadingProgress != null) hubLoadingProgress.setVisibility(View.GONE);
                     if (hubDeviceStatusText != null) hubDeviceStatusText.setText("Terputus");
+                    showHubMessage("Tidak bisa menghubungi server", reason, false);
                 });
             }
         });
+    }
+
+    // A 401 means the phone still holds a token the server has replaced
+    // (for example after `codex-remote rotate`). Say so instead of showing
+    // an empty screen, and offer the one action that fixes it.
+    private void showHubLoadFailure(int code) {
+        if (hubLoadingProgress != null) hubLoadingProgress.setVisibility(View.GONE);
+        if (code == 401 || code == 403) {
+            if (hubDeviceStatusText != null) hubDeviceStatusText.setText("Token ditolak");
+            showHubMessage("Pairing kedaluwarsa",
+                    "Server menolak token ini (HTTP " + code + "). Scan ulang QR pairing dari terminal server.", true);
+        } else {
+            if (hubDeviceStatusText != null) hubDeviceStatusText.setText("HTTP " + code);
+            showHubMessage("Gagal memuat sesi", "Server membalas HTTP " + code + ".", false);
+        }
+    }
+
+    private void showHubMessage(String title, String detail, boolean offerPairing) {
+        if (hubSessionGroupsContainer == null) return;
+        hubSessionGroupsContainer.removeAllViews();
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 18));
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+
+        card.addView(cIcon(offerPairing ? R.drawable.ic_security : R.drawable.ic_link_off, 26,
+                offerPairing ? CLAUDE_AMBER : CLAUDE_TEXT_MUTED));
+
+        TextView t = cText(title, 15.5f, CLAUDE_TEXT_MAIN, true, false);
+        t.setPadding(0, dp(12), 0, dp(4));
+        card.addView(t);
+        card.addView(cText(detail, 13f, CLAUDE_TEXT_MUTED, false, false));
+
+        if (offerPairing) {
+            TextView action = cText("Scan QR Pairing", 14f, Color.WHITE, true, false);
+            action.setGravity(Gravity.CENTER);
+            action.setPadding(dp(16), dp(12), dp(16), dp(12));
+            action.setBackground(cBox(CLAUDE_TERRACOTTA, 0, 0, 12));
+            action.setOnClickListener(v -> startQrScanner());
+            LinearLayout.LayoutParams lpA = new LinearLayout.LayoutParams(-1, -2);
+            lpA.setMargins(0, dp(14), 0, 0);
+            card.addView(action, lpA);
+        }
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(16), 0, 0);
+        hubSessionGroupsContainer.addView(card, lp);
+    }
+
+    // Turns a bridge JSON reply into a message worth showing the user.
+    private String describeApiError(JSONObject json, String fallback) {
+        int status = json.optInt("status", 0);
+        if (status == 401 || status == 403) {
+            return "Unauthorized — token pairing sudah tidak cocok dengan server. Scan ulang QR pairing.";
+        }
+        String error = json.optString("error", "");
+        if (!error.isEmpty()) return error + (status > 0 ? " (HTTP " + status + ")" : "");
+        return fallback;
     }
 
     private void renderTimeGroupedSessions(JSONArray sessions) {
@@ -2799,6 +2864,11 @@ public class MainActivity extends Activity {
 
     private void showEmptyMascotState(boolean show) {
         if (emptyMascotView != null) {
+            // chatMessagesList.removeAllViews() detaches the mascot, so flipping
+            // visibility alone would never bring it back — re-attach it first.
+            if (show && emptyMascotView.getParent() == null && chatMessagesList != null) {
+                chatMessagesList.addView(emptyMascotView, new LinearLayout.LayoutParams(-1, -2));
+            }
             emptyMascotView.setVisibility(show ? View.VISIBLE : View.GONE);
         }
         // Only run the float animation while the mascot is on screen.
@@ -4220,7 +4290,7 @@ public class MainActivity extends Activity {
                 mainHandler.post(() -> {
                     list.removeAllViews();
                     if (!json.optBoolean("ok", false)) {
-                        list.addView(cText(json.optString("error", "Gagal memuat"), 13f, CLAUDE_RED, false, false));
+                        list.addView(cText(describeApiError(json, "Gagal memuat"), 13f, CLAUDE_RED, false, false));
                         return;
                     }
                     pathLabel.setText("/" + json.optString("path", "."));
@@ -4317,7 +4387,7 @@ public class MainActivity extends Activity {
                 mainHandler.post(() -> {
                     body.removeAllViews();
                     if (!json.optBoolean("ok", false)) {
-                        body.addView(cText(json.optString("error", "Gagal membaca"), 13f, CLAUDE_RED, false, false));
+                        body.addView(cText(describeApiError(json, "Gagal membaca"), 13f, CLAUDE_RED, false, false));
                         return;
                     }
                     if (json.optBoolean("binary", false)) {
@@ -4386,7 +4456,7 @@ public class MainActivity extends Activity {
         body.removeAllViews();
 
         if (!json.optBoolean("ok", false)) {
-            body.addView(cText(json.optString("error", "Bukan repository git"), 13.5f, CLAUDE_TEXT_MUTED, false, false));
+            body.addView(cText(describeApiError(json, "Bukan repository git"), 13.5f, CLAUDE_TEXT_MUTED, false, false));
             TextView hint = cText("Set folder repo di Pengaturan → Git repo path.", 12.5f, CLAUDE_TEXT_LIGHT, false, false);
             hint.setPadding(0, dp(8), 0, 0);
             body.addView(hint);
@@ -5000,8 +5070,28 @@ public class MainActivity extends Activity {
                     c.setRequestProperty("Authorization", "Bearer " + token);
                 }
                 int code = c.getResponseCode();
+
+                // /health needs no token, so a 200 there says nothing about auth.
+                // Probe an authenticated route as well, otherwise a stale token
+                // reads as "Gateway Online" while every screen stays empty.
+                int authCode = 0;
+                if (code == 200) {
+                    try {
+                        HttpURLConnection ac = bridge.open("/api/sessions", "GET", 8000);
+                        authCode = ac.getResponseCode();
+                        ac.disconnect();
+                    } catch (Exception ignored) {}
+                }
+                final int authStatus = authCode;
+
                 mainHandler.post(() -> {
-                    if (code == 200) {
+                    if (code == 200 && (authStatus == 401 || authStatus == 403)) {
+                        if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_AMBER, 0, 0, 4));
+                        if (sidebarStatusText != null) sidebarStatusText.setText("Token ditolak");
+                        Toast.makeText(this, "Server hidup, tapi token pairing ditolak. Scan ulang QR.", Toast.LENGTH_LONG).show();
+                        showHubMessage("Pairing kedaluwarsa",
+                                "Server menolak token ini (HTTP " + authStatus + "). Scan ulang QR pairing dari terminal server.", true);
+                    } else if (code == 200) {
                         if (sidebarStatusDot != null) sidebarStatusDot.setBackground(cBox(CLAUDE_GREEN, 0, 0, 4));
                         if (sidebarStatusText != null) sidebarStatusText.setText("Gateway Online");
                         Toast.makeText(this, "Gateway Online! Terhubung sukses.", Toast.LENGTH_SHORT).show();
