@@ -47,6 +47,7 @@ targets:
         INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_IDENTITY: ""
+        EXPANDED_CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGNING_ALLOWED: "NO"
         AD_HOC_CODE_SIGNING_ALLOWED: "YES"
@@ -54,3 +55,4 @@ targets:
         DEVELOPMENT_TEAM: ""
         PROVISIONING_PROFILE_SPECIFIER: ""
         SWIFT_COMPILATION_MODE: "wholemodule"
+        ONLY_ACTIVE_ARCH: "NO"
