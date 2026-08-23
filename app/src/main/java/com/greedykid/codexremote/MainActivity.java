@@ -6803,7 +6803,13 @@ public class MainActivity extends Activity {
                 JSONObject req = new JSONObject();
                 req.put("prompt", promptToSend);
                 req.put("engine", currentEngine);
-                req.put("model", currentModel);
+                // Codex reads its model from config.toml. Sending one here
+                // overrode it with whatever the app happened to have stored,
+                // which after a provider switch is a model the new provider
+                // does not serve.
+                if (!isCodexEngine()) {
+                    req.put("model", currentModel);
+                }
                 req.put("resume", !isNewSession);
 
                 if (!filePathsToSend.isEmpty()) {

@@ -786,6 +786,8 @@ function runCodex(prompt, conversationId, model, job) {
 
     let fullOutput = "";
     let error = "";
+    let lastCodexError = "";
+    let agentMessage = "";
     child.stdout.on("data", chunk => {
       const text = chunk.toString();
       fullOutput += text;
@@ -795,6 +797,19 @@ function runCodex(prompt, conversationId, model, job) {
           if (event.type === "thread.started" && event.thread_id) {
             activeCodexSessionId = event.thread_id;
           }
+          // The run can fail while the process still exits 0, so failures are
+          // read from the event stream rather than the exit code.
+          if (event.type === "error" && event.message) {
+            lastCodexError = String(event.message);
+          }
+          if (event.type === "turn.failed" && event.error && event.error.message) {
+            lastCodexError = String(event.error.message);
+          }
+          if (event.type === "item.completed" && event.item
+              && event.item.type === "agent_message" && event.item.text) {
+            agentMessage = String(event.item.text);
+          }
+
           events.broadcast("cli.event", {
             jobId: job ? job.id : null,
             engine: "codex",
@@ -834,12 +849,11 @@ function runCodex(prompt, conversationId, model, job) {
         }
       } catch (e) {}
 
-      if (!assistantMsg) {
-        assistantMsg = fullOutput.trim();
-        if (assistantMsg.includes("codex\n")) {
-          const parts = assistantMsg.split("codex\n");
-          assistantMsg = parts[parts.length - 1].trim();
-        }
+      // The agent message parsed from the stream, never the raw stream itself:
+      // dumping the JSONL turned a failed run into a wall of events presented
+      // as the assistant's reply.
+      if (!assistantMsg && agentMessage.trim()) {
+        assistantMsg = agentMessage.trim();
       }
 
       // With --json the id arrives as a thread.started event, not as text.
@@ -850,12 +864,16 @@ function runCodex(prompt, conversationId, model, job) {
         returnedSessionId = m[1].trim();
       }
 
-      if (code === 0 || assistantMsg) {
+      if (assistantMsg) {
         activeCodexSessionId = returnedSessionId;
-        resolve({
-          response: assistantMsg || "Done.",
-          sessionId: returnedSessionId
-        });
+        resolve({ response: assistantMsg, sessionId: returnedSessionId });
+      } else if (lastCodexError) {
+        // Surface the provider's own words — "402 Payment Required", a missing
+        // model, a bad key — instead of a silent empty turn.
+        reject(new Error(lastCodexError));
+      } else if (code === 0) {
+        activeCodexSessionId = returnedSessionId;
+        resolve({ response: "Done.", sessionId: returnedSessionId });
       } else {
         reject(new Error((error || fullOutput || `Codex exited with code ${code}`).trim()));
       }
