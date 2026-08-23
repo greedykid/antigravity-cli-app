@@ -2365,17 +2365,17 @@ public class MainActivity extends Activity {
         actionRow.setGravity(Gravity.CENTER_VERTICAL);
 
         btnAttach = cIconButton(R.drawable.ic_add, 24, 38, CLAUDE_TEXT_MUTED);
-        btnAttach.setOnClickListener(v -> openFileAndImagePicker());
+        btnAttach.setOnClickListener(v -> openMultiFilePicker());
         actionRow.addView(btnAttach);
 
         btnVoice = cIconButton(R.drawable.ic_mic, 22, 38, CLAUDE_TEXT_MUTED);
-        btnVoice.setOnClickListener(v -> startVoiceSpeechRecognition());
+        btnVoice.setOnClickListener(v -> startVoiceRecognition());
         actionRow.addView(btnVoice);
 
         repoTagLabel = cText(currentEngine.equalsIgnoreCase("codex") ? "Codex" : "Antigravity", 12f, CLAUDE_TEXT_MUTED, true, false);
         repoTagLabel.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
         repoTagLabel.setPadding(dp(10), dp(4), dp(10), dp(4));
-        repoTagLabel.setOnClickListener(v -> toggleAiEngine());
+        repoTagLabel.setOnClickListener(v -> toggleEngine());
         LinearLayout.LayoutParams lpTag = new LinearLayout.LayoutParams(-2, -2);
         lpTag.setMargins(dp(6), 0, 0, 0);
         actionRow.addView(repoTagLabel, lpTag);
