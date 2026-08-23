@@ -26,9 +26,13 @@ struct RootView: View {
             .tabItem { Label("Kode", systemImage: "chevron.left.forwardslash.chevron.right") }
             .tag(1)
 
+            NavigationStack { TerminalView() }
+                .tabItem { Label("Terminal", systemImage: "terminal") }
+                .tag(2)
+
             NavigationStack { SettingsView() }
                 .tabItem { Label("Pengaturan", systemImage: "gearshape") }
-                .tag(2)
+                .tag(3)
         }
         .tint(palette.accent)
         .preferredColorScheme(.dark)

@@ -523,10 +523,13 @@ public class MainActivity extends Activity {
         final ProgressBar pb = new ProgressBar(this);
         root.addView(pb, new LinearLayout.LayoutParams(-2, -2, Gravity.CENTER));
 
-        dialog.setContentView(root);
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        LinearLayout.LayoutParams lpModalCard = new LinearLayout.LayoutParams(-1, (int) (dm.heightPixels * 0.88f));
+        rootWrapper.addView(root, lpModalCard);
+
+        dialog.setContentView(rootWrapper);
         if (dialog.getWindow() != null) {
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, fullHeight);
-            dialog.getWindow().setGravity(Gravity.BOTTOM);
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         }
         dialog.show();
 
@@ -693,24 +696,236 @@ public class MainActivity extends Activity {
         });
     }
 
+
+    // ============================================================
+    // SCREEN 3: FULL INTERACTIVE TERMINAL PTY SCREEN
+    // ============================================================
+    private void buildTerminalScreen(FrameLayout root) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setBackgroundColor(Color.parseColor("#0d1117"));
+        content.setPadding(dp(16), dp(12), dp(16), dp(12));
+
+        // 1. TopBar Header
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(0, dp(4), 0, dp(10));
+
+        ImageView menuIcon = cIconButton(R.drawable.ic_menu, 24, 40, Color.parseColor("#c9d1d9"));
+        menuIcon.setOnClickListener(v -> openSidebar());
+        topBar.addView(menuIcon);
+
+        ImageView termIc = cIcon(R.drawable.ic_code, 20, Theme.GREEN);
+        topBar.addView(termIc);
+
+        TextView title = cText("  Terminal PTY", 18, Color.parseColor("#c9d1d9"), true, false);
+        topBar.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+
+        ImageView copyBtn = cIconButton(R.drawable.ic_content_copy, 20, 36, Color.parseColor("#8b949e"));
+        copyBtn.setOnClickListener(v -> {
+            if (fullTermOutputView != null) {
+                ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cb != null) {
+                    cb.setPrimaryClip(ClipData.newPlainText("Terminal Logs", fullTermOutputView.getText().toString()));
+                    Toast.makeText(MainActivity.this, "Output terminal tersalin", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        topBar.addView(copyBtn);
+
+        TextView clearTv = cText("Clear", 12.5f, Color.parseColor("#8b949e"), true, false);
+        clearTv.setPadding(dp(10), dp(6), dp(10), dp(6));
+        clearTv.setClickable(true);
+        clearTv.setOnClickListener(v -> {
+            if (fullTermOutputView != null) {
+                fullTermOutputView.setText("$ Terminal cleared.\n");
+            }
+        });
+        topBar.addView(clearTv);
+        content.addView(topBar);
+
+        // 2. Working Directory & Host badge
+        LinearLayout cwdBar = new LinearLayout(this);
+        cwdBar.setOrientation(LinearLayout.HORIZONTAL);
+        cwdBar.setGravity(Gravity.CENTER_VERTICAL);
+        cwdBar.setBackground(cBox(Color.parseColor("#161b22"), Color.parseColor("#30363d"), 1, 10));
+        cwdBar.setPadding(dp(10), dp(6), dp(10), dp(6));
+
+        ImageView hostIc = cIcon(R.drawable.ic_laptop, 14, Theme.GREEN);
+        cwdBar.addView(hostIc);
+
+        fullTermCwdView = cText("  " + currentServerHostname + ":~", 11.5f, Color.parseColor("#58a6ff"), true, false);
+        fullTermCwdView.setTypeface(Typeface.MONOSPACE);
+        fullTermCwdView.setSingleLine(true);
+        fullTermCwdView.setEllipsize(TextUtils.TruncateAt.START);
+        cwdBar.addView(fullTermCwdView, new LinearLayout.LayoutParams(0, -2, 1));
+        content.addView(cwdBar);
+
+        // 3. Preset Quick Chips Bar
+        HorizontalScrollView chipScroll = new HorizontalScrollView(this);
+        chipScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout chipRow = new LinearLayout(this);
+        chipRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        final String[] FULL_PRESETS = new String[]{
+            "git status", "git diff", "git log -n 5", "git branch -a", "ls -la", "pwd", "npm test", "docker ps", "free -h", "uptime", "whoami"
+        };
+
+        for (final String cmd : FULL_PRESETS) {
+            TextView chip = cText(cmd, 11.5f, Color.parseColor("#58a6ff"), true, false);
+            chip.setTypeface(Typeface.MONOSPACE);
+            chip.setBackground(cBox(Color.parseColor("#21262d"), Color.parseColor("#30363d"), 1, 10));
+            chip.setPadding(dp(10), dp(5), dp(10), dp(5));
+            chip.setClickable(true);
+            chip.setOnClickListener(v -> {
+                if (fullTermInput != null) {
+                    fullTermInput.setText(cmd);
+                    executeFullTerminalCommand(cmd);
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.setMargins(0, dp(8), dp(6), dp(8));
+            chipRow.addView(chip, lp);
+        }
+        chipScroll.addView(chipRow);
+        content.addView(chipScroll);
+
+        // 4. Output Console
+        fullTermScrollView = new ScrollView(this);
+        fullTermScrollView.setFillViewport(true);
+        fullTermScrollView.setBackground(cBox(Color.parseColor("#0d1117"), Color.parseColor("#30363d"), 1, 14));
+        fullTermScrollView.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+        fullTermOutputView = cText("$ Antigravity Remote Terminal (PTY) Active.\nHost: " + currentServerHostname + "\nKetik perintah bash di bawah:\n\n", 12f, Color.parseColor("#c9d1d9"), false, false);
+        fullTermOutputView.setTypeface(Typeface.MONOSPACE);
+        fullTermOutputView.setTextIsSelectable(true);
+        fullTermScrollView.addView(fullTermOutputView);
+        content.addView(fullTermScrollView, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        // 5. Bottom Command Input Row
+        LinearLayout inputRow = new LinearLayout(this);
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
+        inputRow.setPadding(0, dp(10), 0, dp(4));
+
+        fullTermInput = new EditText(this);
+        fullTermInput.setHint("Ketik perintah bash (cth: git status)...");
+        fullTermInput.setHintTextColor(Color.parseColor("#8b949e"));
+        fullTermInput.setTextColor(Color.parseColor("#f0f6fc"));
+        fullTermInput.setTextSize(13.5f);
+        fullTermInput.setTypeface(Typeface.MONOSPACE);
+        fullTermInput.setBackground(cBox(Color.parseColor("#161b22"), Color.parseColor("#30363d"), 1, 14));
+        fullTermInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+        fullTermInput.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_SEND) {
+                String cmd = fullTermInput.getText().toString().trim();
+                if (!cmd.isEmpty()) executeFullTerminalCommand(cmd);
+                return true;
+            }
+            return false;
+        });
+        inputRow.addView(fullTermInput, new LinearLayout.LayoutParams(0, dp(46), 1));
+
+        LinearLayout btnRun = new LinearLayout(this);
+        btnRun.setOrientation(LinearLayout.HORIZONTAL);
+        btnRun.setGravity(Gravity.CENTER);
+        btnRun.addView(cIcon(R.drawable.ic_play, 16, Theme.ON_ACCENT));
+        btnRun.addView(cText(" Run", 13.5f, Theme.ON_ACCENT, true, false));
+        btnRun.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
+        btnRun.setPadding(dp(14), dp(10), dp(16), dp(10));
+        btnRun.setClickable(true);
+        btnRun.setOnClickListener(v -> {
+            if (fullTermInput != null) {
+                String cmd = fullTermInput.getText().toString().trim();
+                if (!cmd.isEmpty()) executeFullTerminalCommand(cmd);
+            }
+        });
+        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-2, dp(46));
+        lpBtn.setMargins(dp(8), 0, 0, 0);
+        inputRow.addView(btnRun, lpBtn);
+
+        content.addView(inputRow);
+        root.addView(content, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void executeFullTerminalCommand(final String cmd) {
+        if (cmd.isEmpty()) return;
+        terminalCommandHistory.add(cmd);
+        terminalHistoryIndex = terminalCommandHistory.size();
+
+        if (fullTermInput != null) fullTermInput.setText("");
+        if (fullTermOutputView != null) {
+            fullTermOutputView.append("$ " + cmd + "\n[Menjalankan...]\n");
+        }
+        if (fullTermScrollView != null) {
+            fullTermScrollView.post(() -> fullTermScrollView.fullScroll(View.FOCUS_DOWN));
+        }
+
+        executor.execute(() -> {
+            try {
+                JSONObject req = new JSONObject();
+                req.put("command", cmd);
+                JSONObject res = bridge.post("/api/terminal/exec", req);
+                final String output = res.optString("output", "");
+                final String err = res.optString("error", "");
+                final String cwd = res.optString("cwd", "");
+                final int exitCode = res.optInt("exitCode", 0);
+
+                mainHandler.post(() -> {
+                    if (fullTermOutputView != null) {
+                        if (!output.isEmpty()) {
+                            fullTermOutputView.append(output + (output.endsWith("\n") ? "" : "\n"));
+                        } else if (!err.isEmpty()) {
+                            fullTermOutputView.append("Error: " + err + "\n");
+                        } else {
+                            fullTermOutputView.append("(Perintah selesai dengan status " + exitCode + ")\n");
+                        }
+                    }
+                    if (fullTermCwdView != null && !cwd.isEmpty()) {
+                        fullTermCwdView.setText("  " + currentServerHostname + ":" + cwd);
+                    }
+                    if (fullTermScrollView != null) {
+                        fullTermScrollView.post(() -> fullTermScrollView.fullScroll(View.FOCUS_DOWN));
+                    }
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (fullTermOutputView != null) {
+                        fullTermOutputView.append("Gagal terhubung ke bridge: " + e.getMessage() + "\n");
+                    }
+                    if (fullTermScrollView != null) {
+                        fullTermScrollView.post(() -> fullTermScrollView.fullScroll(View.FOCUS_DOWN));
+                    }
+                });
+            }
+        });
+    }
+
     // ============================================================
     // FEATURE D: INTERACTIVE QUICK TERMINAL MODAL
     // ============================================================
     private void openQuickTerminalModal() {
-        final Dialog dialog = new Dialog(this);
+        final Dialog dialog = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.parseColor("#99000000")));
             dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
 
-        DisplayMetrics dm = getResources().getDisplayMetrics();
-        final int fullHeight = (int) (dm.heightPixels * 0.90f);
+        LinearLayout rootWrapper = new LinearLayout(this);
+        rootWrapper.setOrientation(LinearLayout.VERTICAL);
+        rootWrapper.setGravity(Gravity.BOTTOM);
+
+        View topDismissArea = new View(this);
+        topDismissArea.setOnClickListener(v -> dialog.dismiss());
+        rootWrapper.addView(topDismissArea, new LinearLayout.LayoutParams(-1, 0, 1));
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(cBox(Color.parseColor("#0d1117"), Theme.BORDER, 1, 24));
-        root.setPadding(dp(18), dp(12), dp(18), dp(16));
+        root.setPadding(dp(18), dp(12), dp(18), dp(14));
 
         // Header
         LinearLayout header = new LinearLayout(this);
@@ -875,6 +1090,13 @@ public class MainActivity extends Activity {
     private FrameLayout viewHubContainer;
     private FrameLayout viewChatContainer;
     private FrameLayout viewSettingsContainer;
+    private FrameLayout viewTerminalContainer;
+    private TextView fullTermOutputView;
+    private ScrollView fullTermScrollView;
+    private EditText fullTermInput;
+    private TextView fullTermCwdView;
+    private final ArrayList<String> terminalCommandHistory = new ArrayList<>();
+    private int terminalHistoryIndex = -1;
 
     // Hub View Components (Claude Code Sessions)
     private TextView hubDeviceHostText;
@@ -1128,6 +1350,12 @@ public class MainActivity extends Activity {
         buildSettingsScreen(viewSettingsContainer);
         mainContentContainer.addView(viewSettingsContainer, new LinearLayout.LayoutParams(-1, -1));
 
+        // Screen 3: Full Terminal PTY Screen
+        viewTerminalContainer = new FrameLayout(this);
+        viewTerminalContainer.setVisibility(View.GONE);
+        buildTerminalScreen(viewTerminalContainer);
+        mainContentContainer.addView(viewTerminalContainer, new LinearLayout.LayoutParams(-1, -1));
+
         rootFrame.addView(mainContentContainer, new FrameLayout.LayoutParams(-1, -1));
 
         // Sidebar Backdrop Scrim
@@ -1198,6 +1426,11 @@ public class MainActivity extends Activity {
         addSidebarMenuItem(body, R.drawable.ic_code, "Kode", null, 0, false, () -> {
             closeSidebar();
             showScreen(0);
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_play, "Terminal PTY", "Full", 3, false, () -> {
+            closeSidebar();
+            showScreen(3);
         });
 
         addSidebarMenuItem(body, R.drawable.ic_swap, "Engine",
@@ -1513,6 +1746,9 @@ public class MainActivity extends Activity {
         viewHubContainer.setVisibility(screenIndex == 0 ? View.VISIBLE : View.GONE);
         viewChatContainer.setVisibility(screenIndex == 1 ? View.VISIBLE : View.GONE);
         viewSettingsContainer.setVisibility(screenIndex == 2 ? View.VISIBLE : View.GONE);
+        if (viewTerminalContainer != null) {
+            viewTerminalContainer.setVisibility(screenIndex == 3 ? View.VISIBLE : View.GONE);
+        }
 
         if (screenIndex == 0) {
             stopAutoRefresh();
@@ -1536,6 +1772,11 @@ public class MainActivity extends Activity {
         } else if (screenIndex == 2) {
             stopAutoRefresh();
             refreshSettingsValues();
+        } else if (screenIndex == 3) {
+            stopAutoRefresh();
+            if (fullTermInput != null) {
+                fullTermInput.requestFocus();
+            }
         }
     }
 
