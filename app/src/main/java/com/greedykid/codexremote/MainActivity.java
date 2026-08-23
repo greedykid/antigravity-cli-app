@@ -906,7 +906,7 @@ public class MainActivity extends Activity {
     // FEATURE D: INTERACTIVE QUICK TERMINAL MODAL
     // ============================================================
     private void openQuickTerminalModal() {
-        final Dialog dialog = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        final Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.parseColor("#99000000")));

@@ -1,5 +1,14 @@
 import SwiftUI
 
+struct TerminalExecResponse: Codable {
+    let ok: Bool?
+    let command: String?
+    let cwd: String?
+    let output: String?
+    let exitCode: Int?
+    let error: String?
+}
+
 struct TerminalView: View {
     @EnvironmentObject private var state: AppState
     @State private var commandInput: String = ""
@@ -133,16 +142,16 @@ struct TerminalView: View {
                     return
                 }
                 let payload: [String: Any] = ["command": cmd]
-                let res = try await client.postJSON(path: "/api/terminal/exec", body: payload)
+                let res = try await client.post("/api/terminal/exec", body: payload, as: TerminalExecResponse.self)
                 await MainActor.run {
-                    if let out = res["output"] as? String, !out.isEmpty {
+                    if let out = res.output, !out.isEmpty {
                         outputLogs += out + (out.hasSuffix("\n") ? "" : "\n")
-                    } else if let err = res["error"] as? String, !err.isEmpty {
+                    } else if let err = res.error, !err.isEmpty {
                         outputLogs += "Error: \(err)\n"
                     } else {
                         outputLogs += "(Perintah selesai)\n"
                     }
-                    if let cwd = res["cwd"] as? String, !cwd.isEmpty {
+                    if let cwd = res.cwd, !cwd.isEmpty {
                         currentCwd = cwd
                     }
                     isRunning = false
