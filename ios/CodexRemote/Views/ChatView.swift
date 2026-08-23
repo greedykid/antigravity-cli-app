@@ -176,13 +176,13 @@ struct ChatView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 // Prompts
-                quickChip("⚡ Perbaiki Error", insert: "Tolong perbaiki error berikut: ")
-                quickChip("🔍 Review Kode", insert: "Tolong review dan periksa kode ini untuk potensi bug atau peningkatan: ")
-                quickChip("🧪 Jalankan Test", insert: "Jalankan test suite dan laporkan hasilnya.")
-                quickChip("📖 Jelaskan Alur", insert: "Jelaskan alur kerja kode ini secara ringkas.")
-                quickChip("📦 Git Status", insert: "Cek git status dan rangkum perubahan.")
-                quickChip("🚀 Git Diff", insert: "Tampilkan git diff dari perubahan terbaru.")
-                quickChip("📝 Buat Commit", insert: "Buat commit git dengan pesan yang jelas untuk perubahan saat ini.")
+                quickChip(icon: "wrench.and.screwdriver.fill", title: "Perbaiki Error", insert: "Tolong perbaiki error berikut: ")
+                quickChip(icon: "doc.text.magnifyingglass", title: "Review Kode", insert: "Tolong review dan periksa kode ini untuk potensi bug atau peningkatan: ")
+                quickChip(icon: "play.circle.fill", title: "Jalankan Test", insert: "Jalankan test suite dan laporkan hasilnya.")
+                quickChip(icon: "text.book.closed.fill", title: "Jelaskan Alur", insert: "Jelaskan alur kerja kode ini secara ringkas.")
+                quickChip(icon: "shippingbox.fill", title: "Git Status", insert: "Cek git status dan rangkum perubahan.")
+                quickChip(icon: "arrow.triangle.branch", title: "Git Diff", insert: "Tampilkan git diff dari perubahan terbaru.")
+                quickChip(icon: "square.and.pencil", title: "Buat Commit", insert: "Buat commit git dengan pesan yang jelas untuk perubahan saat ini.")
 
                 // Symbols
                 symbolChip("```", snippet: "```\n\n```")
@@ -198,7 +198,7 @@ struct ChatView: View {
         }
     }
 
-    private func quickChip(_ title: String, insert: String) -> some View {
+    private func quickChip(icon: String, title: String, insert: String) -> some View {
         Button {
             if draft.isEmpty {
                 draft = insert
@@ -207,14 +207,19 @@ struct ChatView: View {
             }
             inputFocused = true
         } label: {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(palette.textMain)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(palette.surface)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(palette.border, lineWidth: 1))
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(palette.accent)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(palette.textMain)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(palette.surface)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(palette.border, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }

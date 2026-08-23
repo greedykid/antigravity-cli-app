@@ -165,13 +165,13 @@ public class MainActivity extends Activity {
         quickActionRow.setGravity(Gravity.CENTER_VERTICAL);
 
         // Prompts & Tools
-        addQuickChip(quickActionRow, "⚡ Perbaiki Error", "Tolong perbaiki error berikut: ");
-        addQuickChip(quickActionRow, "🔍 Review Kode", "Tolong review dan periksa kode ini untuk potensi bug atau peningkatan: ");
-        addQuickChip(quickActionRow, "🧪 Jalankan Test", "Jalankan test suite dan laporkan hasilnya.");
-        addQuickChip(quickActionRow, "📖 Jelaskan Alur", "Jelaskan alur kerja kode ini secara ringkas.");
-        addQuickChip(quickActionRow, "📦 Git Status", "Cek git status dan rangkum perubahan.");
-        addQuickChip(quickActionRow, "🚀 Git Diff", "Tampilkan git diff dari perubahan terbaru.");
-        addQuickChip(quickActionRow, "📝 Buat Commit", "Buat commit git dengan pesan yang jelas untuk perubahan saat ini.");
+        addQuickChip(quickActionRow, R.drawable.ic_build, "Perbaiki Error", "Tolong perbaiki error berikut: ");
+        addQuickChip(quickActionRow, R.drawable.ic_search, "Review Kode", "Tolong review dan periksa kode ini untuk potensi bug atau peningkatan: ");
+        addQuickChip(quickActionRow, R.drawable.ic_code, "Jalankan Test", "Jalankan test suite dan laporkan hasilnya.");
+        addQuickChip(quickActionRow, R.drawable.ic_description, "Jelaskan Alur", "Jelaskan alur kerja kode ini secara ringkas.");
+        addQuickChip(quickActionRow, R.drawable.ic_source_branch, "Git Status", "Cek git status dan rangkum perubahan.");
+        addQuickChip(quickActionRow, R.drawable.ic_tune, "Git Diff", "Tampilkan git diff dari perubahan terbaru.");
+        addQuickChip(quickActionRow, R.drawable.ic_edit, "Buat Commit", "Buat commit git dengan pesan yang jelas untuk perubahan saat ini.");
         
         // Code Symbols
         addSymbolChip(quickActionRow, "```", "```\n\n```", 4);
@@ -322,7 +322,11 @@ public class MainActivity extends Activity {
 
         card.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView btnRetry = cText("Kirim Ulang 🔄", 12.5f, Theme.ON_ACCENT, true, false);
+        LinearLayout btnRetry = new LinearLayout(this);
+        btnRetry.setOrientation(LinearLayout.HORIZONTAL);
+        btnRetry.setGravity(Gravity.CENTER);
+        btnRetry.addView(cIcon(R.drawable.ic_refresh, 14, Theme.ON_ACCENT));
+        btnRetry.addView(cText(" Kirim Ulang", 12.5f, Theme.ON_ACCENT, true, false));
         btnRetry.setBackground(cBox(Theme.ACCENT, 0, 0, 10));
         btnRetry.setPadding(dp(10), dp(6), dp(10), dp(6));
         btnRetry.setClickable(true);
@@ -528,7 +532,7 @@ public class MainActivity extends Activity {
                     }
                     final String parent = res.optString("parent", null);
                     if (parent != null && !parent.isEmpty()) {
-                        LinearLayout upRow = createFileRow("📁 .. (Kembali ke folder atas)", true, 0L);
+                        LinearLayout upRow = createFileRow(".. (Kembali ke folder atas)", true, 0L);
                         upRow.setOnClickListener(v -> {
                             dialog.dismiss();
                             openFileExplorerModal(parent);
@@ -551,7 +555,7 @@ public class MainActivity extends Activity {
                         final boolean isDir = "dir".equalsIgnoreCase(type);
                         final String relativeTarget = (dirPath.equals(".") ? "" : dirPath + "/") + name;
 
-                        LinearLayout row = createFileRow((isDir ? "📁 " : "📄 ") + name, isDir, size);
+                        LinearLayout row = createFileRow(name, isDir, size);
                         row.setOnClickListener(v -> {
                             if (isDir) {
                                 dialog.dismiss();
@@ -581,7 +585,10 @@ public class MainActivity extends Activity {
         row.setClickable(true);
         row.setFocusable(true);
 
-        TextView t = cText(label, 13.5f, isDir ? Theme.ACCENT : Theme.TEXT_MAIN, isDir, false);
+        ImageView ic = cIcon(isDir ? R.drawable.ic_folder : R.drawable.ic_description, 18, isDir ? Theme.ACCENT : Theme.TEXT_MUTED);
+        row.addView(ic);
+
+        TextView t = cText("  " + label, 13.5f, isDir ? Theme.ACCENT : Theme.TEXT_MAIN, isDir, false);
         t.setTypeface(Typeface.MONOSPACE);
         row.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
 
@@ -622,7 +629,11 @@ public class MainActivity extends Activity {
         title.setTypeface(Typeface.MONOSPACE);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView btnInsert = cText("Masukkan ke Chat 💬", 12f, Theme.ACCENT, true, false);
+        LinearLayout btnInsert = new LinearLayout(this);
+        btnInsert.setOrientation(LinearLayout.HORIZONTAL);
+        btnInsert.setGravity(Gravity.CENTER);
+        btnInsert.addView(cIcon(R.drawable.ic_chat, 14, Theme.ACCENT));
+        btnInsert.addView(cText(" Masukkan ke Chat", 12f, Theme.ACCENT, true, false));
         btnInsert.setBackground(cBox(Theme.ACCENT_SOFT, 0, 0, 10));
         btnInsert.setPadding(dp(8), dp(4), dp(8), dp(4));
         btnInsert.setClickable(true);
@@ -748,7 +759,11 @@ public class MainActivity extends Activity {
         cmdInput.setPadding(dp(12), dp(8), dp(12), dp(8));
         inputRow.addView(cmdInput, new LinearLayout.LayoutParams(0, dp(44), 1));
 
-        final TextView btnExec = cText(" Run 🚀", 13f, Theme.ON_ACCENT, true, false);
+        final LinearLayout btnExec = new LinearLayout(this);
+        btnExec.setOrientation(LinearLayout.HORIZONTAL);
+        btnExec.setGravity(Gravity.CENTER);
+        btnExec.addView(cIcon(R.drawable.ic_play, 14, Theme.ON_ACCENT));
+        btnExec.addView(cText(" Run", 13f, Theme.ON_ACCENT, true, false));
         btnExec.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
         btnExec.setPadding(dp(14), dp(10), dp(14), dp(10));
         btnExec.setClickable(true);
@@ -766,13 +781,21 @@ public class MainActivity extends Activity {
                     req.put("command", cmd);
                     JSONObject res = bridge.post("/api/terminal/exec", req);
                     final String output = res.optString("output", "");
+                    final String err = res.optString("error", "");
+                    final int exitCode = res.optInt("exitCode", 0);
                     mainHandler.post(() -> {
-                        outView.append(output.isEmpty() ? "(Selesai tanpa output)\n" : output + "\n");
+                        if (!output.isEmpty()) {
+                            outView.append(output + (output.endsWith("\n") ? "" : "\n"));
+                        } else if (!err.isEmpty()) {
+                            outView.append("Error: " + err + "\n");
+                        } else {
+                            outView.append("(Perintah selesai dengan status " + exitCode + ")\n");
+                        }
                         outScroll.post(() -> outScroll.fullScroll(View.FOCUS_DOWN));
                     });
                 } catch (Exception e) {
                     mainHandler.post(() -> {
-                        outView.append("Error: " + e.getMessage() + "\n");
+                        outView.append("Gagal terhubung ke bridge: " + e.getMessage() + "\n");
                         outScroll.post(() -> outScroll.fullScroll(View.FOCUS_DOWN));
                     });
                 }
@@ -1824,7 +1847,7 @@ public class MainActivity extends Activity {
         }
 
         if (!pinnedList.isEmpty()) {
-            addTimeSectionHeader("📌 Disematkan");
+            addTimeSectionHeader("Disematkan");
             for (JSONObject s : pinnedList) {
                 renderSingleSessionItem(s, false);
             }
@@ -4231,7 +4254,7 @@ public class MainActivity extends Activity {
         pinRow.setPadding(dp(14), dp(12), dp(14), dp(12));
         pinRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
         pinRow.addView(cIcon(R.drawable.ic_push_pin, 20, Theme.ACCENT));
-        pinRow.addView(cText(isPinned ? "   Batal Sematkan Sesi" : "   Sematkan Sesi ke Atas 📌", 14f, Theme.TEXT_MAIN, true, false));
+        pinRow.addView(cText(isPinned ? "   Batal Sematkan Sesi" : "   Sematkan Sesi ke Atas", 14f, Theme.TEXT_MAIN, true, false));
         pinRow.setOnClickListener(v -> {
             dialog.dismiss();
             togglePinSession(convId);
@@ -4941,7 +4964,7 @@ public class MainActivity extends Activity {
         root.addView(desc);
 
         // 1. Galeri Foto
-        LinearLayout optGallery = createAttachmentOptionRow("🖼️  Pilih dari Galeri (Foto / Screenshot)", "Format PNG, JPG, WebP");
+        LinearLayout optGallery = createAttachmentOptionRow(R.drawable.ic_image, "Pilih dari Galeri (Foto / Screenshot)", "Format PNG, JPG, WebP");
         optGallery.setOnClickListener(v -> {
             dialog.dismiss();
             Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
@@ -4957,7 +4980,7 @@ public class MainActivity extends Activity {
         root.addView(optGallery);
 
         // 2. Kamera
-        LinearLayout optCamera = createAttachmentOptionRow("📷  Ambil Foto dengan Kamera", "Foto langsung dari layar / objek");
+        LinearLayout optCamera = createAttachmentOptionRow(R.drawable.ic_camera, "Ambil Foto dengan Kamera", "Foto langsung dari layar / objek");
         optCamera.setOnClickListener(v -> {
             dialog.dismiss();
             try {
@@ -4974,7 +4997,7 @@ public class MainActivity extends Activity {
         root.addView(optCamera);
 
         // 3. Semua Dokumen & File
-        LinearLayout optFiles = createAttachmentOptionRow("📄  Pilih Dokumen / File Lainnya", "Format sembarang (txt, json, code, dll)");
+        LinearLayout optFiles = createAttachmentOptionRow(R.drawable.ic_attach_file, "Pilih Dokumen / File Lainnya", "Format sembarang (txt, json, code, dll)");
         optFiles.setOnClickListener(v -> {
             dialog.dismiss();
             Intent intent = new Intent(Intent.ACTION_GET_CONTENT);

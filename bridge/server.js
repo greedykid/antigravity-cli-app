@@ -1041,23 +1041,58 @@ const server = http.createServer((req, res) => {
     req.on("end", () => {
       try {
         const payload = JSON.parse(raw || "{}");
-        const cmd = typeof payload.command === "string" ? payload.command.trim() : "";
-        if (!cmd) return send(res, 400, { error: "command is required" });
-        const execCwd = payload.cwd ? files.safeResolve(WORKDIR, payload.cwd) : WORKDIR;
+        const rawCmd = typeof payload.command === "string" ? payload.command.trim() : "";
+        if (!rawCmd) return send(res, 400, { error: "command is required" });
         
-        audit("terminal.exec", { command: cmd.slice(0, 100), cwd: execCwd });
+        if (!global.__terminalCwd) {
+          global.__terminalCwd = fs.existsSync(path.join(WORKDIR, "codexcli-remote-app")) 
+            ? path.join(WORKDIR, "codexcli-remote-app") 
+            : WORKDIR;
+        }
+
+        // Handle cd command
+        if (rawCmd.startsWith("cd ") || rawCmd === "cd") {
+          const target = rawCmd === "cd" ? (WORKDIR || os.homedir()) : rawCmd.slice(3).trim();
+          const newDir = path.isAbsolute(target) ? target : path.resolve(global.__terminalCwd, target);
+          if (fs.existsSync(newDir) && fs.statSync(newDir).isDirectory()) {
+            global.__terminalCwd = newDir;
+            return send(res, 200, {
+              ok: true,
+              command: rawCmd,
+              cwd: global.__terminalCwd,
+              output: `Directory changed to: ${global.__terminalCwd}\n`,
+              exitCode: 0
+            });
+          } else {
+            return send(res, 200, {
+              ok: false,
+              command: rawCmd,
+              cwd: global.__terminalCwd,
+              output: `cd: no such file or directory: ${target}\n`,
+              exitCode: 1,
+              error: "Directory not found"
+            });
+          }
+        }
+
+        audit("terminal.exec", { command: rawCmd.slice(0, 100), cwd: global.__terminalCwd });
         
         const child_process = require("child_process");
-        child_process.exec(cmd, {
-          cwd: execCwd || WORKDIR,
-          timeout: 30000,
-          maxBuffer: 2 * 1024 * 1024,
-          env: Object.assign({}, process.env, { PATH: (process.env.PATH || "") + ":/home/ubuntu/.local/bin:/usr/local/bin" })
+        child_process.exec(rawCmd, {
+          cwd: global.__terminalCwd,
+          shell: "/bin/bash",
+          timeout: 45000,
+          maxBuffer: 4 * 1024 * 1024,
+          env: Object.assign({}, process.env, {
+            PATH: (process.env.PATH || "") + ":/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin"
+          })
         }, (error, stdout, stderr) => {
+          const out = (stdout || "") + (stderr || "");
           send(res, 200, {
             ok: !error,
-            command: cmd,
-            output: (stdout || "") + (stderr || ""),
+            command: rawCmd,
+            cwd: global.__terminalCwd,
+            output: out.length > 0 ? out : (error ? error.message : "(Perintah selesai tanpa output)\n"),
             exitCode: error ? (error.code || 1) : 0,
             error: error ? error.message : null
           });
