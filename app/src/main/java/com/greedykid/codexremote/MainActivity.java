@@ -1274,9 +1274,10 @@ public class MainActivity extends Activity {
 
     private void showUsageStatsBottomSheet() {
         Dialog dialog = createBaseBottomSheet(true);
-        LinearLayout root = createBottomSheetRoot(dialog, "Penggunaan Akun & Kuota", true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Models & Quota", true);
 
-        TextView sub = cText("Statistik pemakaian sesi 5 jam, batas mingguan & kuota akun aktif", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+        final String userEmail = "rizkiarbi65@gmail.com";
+        final TextView sub = cText("Account: " + userEmail, 13.5f, CLAUDE_TEXT_MAIN, true, false);
         LinearLayout.LayoutParams lpSub = new LinearLayout.LayoutParams(-1, -2);
         lpSub.setMargins(0, 0, 0, dp(14));
         root.addView(sub, lpSub);
@@ -1288,32 +1289,41 @@ public class MainActivity extends Activity {
         final LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
 
-        // 1. 5-Hour Session Limit Card (Batas 5 Jam)
-        final LinearLayout fiveHourCard = createSettingsGroupContainer();
-        fiveHourCard.setPadding(dp(16), dp(14), dp(16), dp(14));
-        renderUsageProgressSection(fiveHourCard, "Batas Sesi (5 Jam)", 62, "28 dari 45 pesan terpakai", "Mereset berkala (5 jam)", CLAUDE_TERRACOTTA);
-        list.addView(fiveHourCard);
+        // 1. GEMINI MODELS SECTION
+        final LinearLayout geminiGroup = createSettingsGroupContainer();
+        geminiGroup.setPadding(dp(16), dp(14), dp(16), dp(14));
+        renderModelGroupHeader(geminiGroup, "GEMINI MODELS", "Gemini Flash, Gemini Pro");
+        renderUsageProgressSection(geminiGroup, "Weekly Limit Remaining", 75, "75% remaining", "Refreshes in 141h 2m", CLAUDE_GREEN);
+        
+        View spacerG = new View(this);
+        LinearLayout.LayoutParams lpSpG = new LinearLayout.LayoutParams(-1, dp(12));
+        geminiGroup.addView(spacerG, lpSpG);
+        
+        renderUsageProgressSection(geminiGroup, "Five Hour Limit Remaining", 47, "47% remaining", "Refreshes in 3h 2m", 0xFFEAB308);
+        list.addView(geminiGroup);
 
-        // 2. Weekly Limit Card (Batas Mingguan)
-        final LinearLayout weeklyCard = createSettingsGroupContainer();
-        weeklyCard.setPadding(dp(16), dp(14), dp(16), dp(14));
-        renderUsageProgressSection(weeklyCard, "Batas Mingguan", 16, "49 dari 300 pesan terpakai", "Mereset setiap Senin", CLAUDE_BLUE);
-        list.addView(weeklyCard);
+        // 2. CLAUDE AND GPT MODELS SECTION
+        final LinearLayout claudeGroup = createSettingsGroupContainer();
+        claudeGroup.setPadding(dp(16), dp(14), dp(16), dp(14));
+        renderModelGroupHeader(claudeGroup, "CLAUDE AND GPT MODELS", "Claude Opus, Claude Sonnet, GPT-OSS");
+        renderUsageProgressSection(claudeGroup, "Weekly Limit Remaining", 100, "100% remaining", "Quota available", CLAUDE_GREEN);
+        
+        View spacerC = new View(this);
+        LinearLayout.LayoutParams lpSpC = new LinearLayout.LayoutParams(-1, dp(12));
+        claudeGroup.addView(spacerC, lpSpC);
 
-        // 3. Detailed Account & Antigravity CLI Metrics Card
+        renderUsageProgressSection(claudeGroup, "Five Hour Limit Remaining", 100, "100% remaining", "Quota available", CLAUDE_GREEN);
+        list.addView(claudeGroup);
+
+        // 3. ENGINE & SERVER DETAILS
         final LinearLayout detailCard = createSettingsGroupContainer();
         detailCard.setPadding(dp(16), dp(14), dp(16), dp(14));
-
-        addStatRow(detailCard, "Model Aktif", "Gemini 3.7 Flash (High)");
-        addStatRow(detailCard, "Tingkat Akun", "Antigravity Developer Tier");
-        addStatRow(detailCard, "Status Kuota", "Unlimited Workspace");
-        addStatRow(detailCard, "Estimasi Total Token", "502,196 Tokens (~502k)");
-        addStatRow(detailCard, "Total Permintaan", "74 Prompts");
-        addStatRow(detailCard, "Langkah Eksekusi (Steps)", "2,782 Langkah");
-        addStatRow(detailCard, "Aksi Tools (Bash/Edit)", "1,125 Aksi");
-        addStatRow(detailCard, "Sesi Percakapan", "4 Sesi");
-        addStatRow(detailCard, "Penggunaan Memori", "2,450 MB / 8,192 MB");
-        addStatRow(detailCard, "Host Server", currentServerHostname);
+        addStatRow(detailCard, "Active Engine", "Antigravity CLI (agy)");
+        addStatRow(detailCard, "Active Model", "Gemini 3.7 Flash (High)");
+        addStatRow(detailCard, "Total Requests", "74 Prompts");
+        addStatRow(detailCard, "Executed Steps", "2,782 Langkah");
+        addStatRow(detailCard, "Tools Invocations", "1,125 Aksi");
+        addStatRow(detailCard, "Connected Host", currentServerHostname);
         list.addView(detailCard);
 
         scroll.addView(list);
@@ -1333,7 +1343,7 @@ public class MainActivity extends Activity {
         dialog.setContentView(root);
         dialog.show();
 
-        // Fetch live Antigravity usage stats from server and sync
+        // Fetch live Antigravity usage stats from server
         String endpoint = prefs.getString("url", "").trim();
         if (!endpoint.isEmpty()) {
             executor.execute(() -> {
@@ -1356,40 +1366,56 @@ public class MainActivity extends Activity {
                         final JSONObject json = new JSONObject(b.toString());
 
                         mainHandler.post(() -> {
-                            int fHp = json.optInt("fiveHourPercent", 62);
-                            int fHprompts = json.optInt("fiveHourPrompts", 28);
-                            int fHmax = json.optInt("fiveHourMax", 45);
-                            String fHreset = json.optString("fiveHourReset", "Mereset berkala (5 jam)");
-                            fiveHourCard.removeAllViews();
-                            renderUsageProgressSection(fiveHourCard, "Batas Sesi (5 Jam)", fHp, fHprompts + " dari " + fHmax + " pesan terpakai", fHreset, CLAUDE_TERRACOTTA);
+                            String acc = json.optString("account", userEmail);
+                            sub.setText("Account: " + acc);
 
-                            int wP = json.optInt("weeklyPercent", 16);
-                            int wPrompts = json.optInt("weeklyPrompts", 49);
-                            int wMax = json.optInt("weeklyMax", 300);
-                            String wReset = json.optString("weeklyReset", "Mereset setiap Senin");
-                            weeklyCard.removeAllViews();
-                            renderUsageProgressSection(weeklyCard, "Batas Mingguan", wP, wPrompts + " dari " + wMax + " pesan terpakai", wReset, CLAUDE_BLUE);
+                            int gW = json.optInt("geminiWeekly", 75);
+                            String gWReset = json.optString("geminiWeeklyReset", "Refreshes in 141h 2m");
+                            int g5H = json.optInt("geminiFiveHour", 47);
+                            String g5HReset = json.optString("geminiFiveHourReset", "Refreshes in 3h 2m");
+
+                            geminiGroup.removeAllViews();
+                            renderModelGroupHeader(geminiGroup, "GEMINI MODELS", "Gemini Flash, Gemini Pro");
+                            renderUsageProgressSection(geminiGroup, "Weekly Limit Remaining", gW, gW + "% remaining", gWReset, CLAUDE_GREEN);
+                            
+                            View sp1 = new View(MainActivity.this);
+                            geminiGroup.addView(sp1, new LinearLayout.LayoutParams(-1, dp(12)));
+                            
+                            renderUsageProgressSection(geminiGroup, "Five Hour Limit Remaining", g5H, g5H + "% remaining", g5HReset, g5H < 50 ? 0xFFEAB308 : CLAUDE_GREEN);
+
+                            int cW = json.optInt("claudeWeekly", 100);
+                            int c5H = json.optInt("claudeFiveHour", 100);
+                            claudeGroup.removeAllViews();
+                            renderModelGroupHeader(claudeGroup, "CLAUDE AND GPT MODELS", "Claude Opus, Claude Sonnet, GPT-OSS");
+                            renderUsageProgressSection(claudeGroup, "Weekly Limit Remaining", cW, cW + "% remaining", "Quota available", CLAUDE_GREEN);
+                            
+                            View sp2 = new View(MainActivity.this);
+                            claudeGroup.addView(sp2, new LinearLayout.LayoutParams(-1, dp(12)));
+                            
+                            renderUsageProgressSection(claudeGroup, "Five Hour Limit Remaining", c5H, c5H + "% remaining", "Quota available", CLAUDE_GREEN);
 
                             detailCard.removeAllViews();
-                            addStatRow(detailCard, "Model Aktif", json.optString("model", "Gemini 3.7 Flash (High)"));
-                            addStatRow(detailCard, "Tingkat Akun", json.optString("tier", "Antigravity Developer Tier"));
-                            addStatRow(detailCard, "Status Kuota", json.optString("quotaStatus", "Unlimited Workspace"));
-
-                            long estTokens = json.optLong("estimatedTokens", 502196);
-                            String tokenStr = String.format(Locale.getDefault(), "%,d Tokens (~%dk)", estTokens, Math.max(1, estTokens / 1000));
-                            addStatRow(detailCard, "Estimasi Total Token", tokenStr);
-
-                            addStatRow(detailCard, "Total Permintaan", json.optInt("totalPrompts", 74) + " Prompts");
-                            addStatRow(detailCard, "Langkah Eksekusi (Steps)", String.format(Locale.getDefault(), "%,d Langkah", json.optInt("totalSteps", 2782)));
-                            addStatRow(detailCard, "Aksi Tools (Bash/Edit)", String.format(Locale.getDefault(), "%,d Aksi", json.optInt("totalTools", 1125)));
-                            addStatRow(detailCard, "Sesi Percakapan", json.optInt("totalSessions", 4) + " Sesi");
-                            addStatRow(detailCard, "Penggunaan Memori", json.optString("memoryUsage", "2,450 MB / 8,192 MB"));
-                            addStatRow(detailCard, "Host Server", json.optString("hostname", currentServerHostname));
+                            addStatRow(detailCard, "Active Engine", "Antigravity CLI (agy)");
+                            addStatRow(detailCard, "Active Model", json.optString("model", "Gemini 3.7 Flash (High)"));
+                            addStatRow(detailCard, "Total Requests", json.optInt("totalPrompts", 74) + " Prompts");
+                            addStatRow(detailCard, "Executed Steps", String.format(Locale.getDefault(), "%,d Langkah", json.optInt("totalSteps", 2782)));
+                            addStatRow(detailCard, "Tools Invocations", String.format(Locale.getDefault(), "%,d Aksi", json.optInt("totalTools", 1125)));
+                            addStatRow(detailCard, "Connected Host", json.optString("hostname", currentServerHostname));
                         });
                     }
                 } catch (Exception ignored) {}
             });
         }
+    }
+
+    private void renderModelGroupHeader(LinearLayout container, String groupTitle, String modelsSub) {
+        TextView gTitle = cText(groupTitle, 13f, CLAUDE_TEXT_MAIN, true, false);
+        container.addView(gTitle);
+
+        TextView mSub = cText("Models within this group: " + modelsSub, 11.5f, CLAUDE_TEXT_MUTED, false, false);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(2), 0, dp(12));
+        container.addView(mSub, lp);
     }
 
     private void renderUsageProgressSection(LinearLayout container, String title, int percent, String details, String resetText, int fillColor) {
