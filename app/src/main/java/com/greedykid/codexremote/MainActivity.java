@@ -69,6 +69,7 @@ import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
+import android.widget.PopupWindow;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -1052,13 +1053,29 @@ public class MainActivity extends Activity {
     /** Keeps only the active engine's sessions, whatever the server returned. */
     private JSONArray filterSessionsForEngine(JSONArray sessions) {
         if (sessions == null) return null;
-        JSONArray filtered = new JSONArray();
+        ArrayList<JSONObject> list = new ArrayList<>();
         for (int i = 0; i < sessions.length(); i++) {
             JSONObject s = sessions.optJSONObject(i);
             if (s == null) continue;
             String engine = s.optString("engine", "antigravity");
             boolean isCodex = "codex".equalsIgnoreCase(engine);
-            if (isCodex == isCodexEngine()) filtered.put(s);
+            if (isCodex == isCodexEngine()) {
+                list.add(s);
+            }
+        }
+
+        // Auto sort: Most recently opened / chatted sessions move to the very top
+        Collections.sort(list, (a, b) -> {
+            String idA = a.optString("conversationId", "");
+            String idB = b.optString("conversationId", "");
+            long tsA = Math.max(a.optLong("timestamp", 0), prefs.getLong("session_accessed_" + idA, 0));
+            long tsB = Math.max(b.optLong("timestamp", 0), prefs.getLong("session_accessed_" + idB, 0));
+            return Long.compare(tsB, tsA);
+        });
+
+        JSONArray filtered = new JSONArray();
+        for (JSONObject s : list) {
+            filtered.put(s);
         }
         return filtered;
     }
@@ -1250,6 +1267,9 @@ public class MainActivity extends Activity {
         sessionEpoch++;
         activeJobId = null;
         activeConversationId = convId;
+        if (convId != null && !convId.isEmpty()) {
+            prefs.edit().putLong("session_accessed_" + convId, System.currentTimeMillis()).apply();
+        }
         activeSessionEngine = currentEngine;
         activeSessionTitle = title != null && !title.isEmpty() ? title : "Session";
 
@@ -3549,36 +3569,81 @@ public class MainActivity extends Activity {
     }
 
     private void showMoreDropdownMenu(View anchorView) {
-        PopupMenu popup = new PopupMenu(this, anchorView);
-        addDropdownItem(popup, 1, "Scan QR Code Pairing", R.drawable.ic_qr_code, Theme.TEXT_MAIN);
-        addDropdownItem(popup, 2, "Paste from Clipboard", R.drawable.ic_content_paste, Theme.TEXT_MAIN);
-        addDropdownItem(popup, 3, "Pengaturan (Settings)", R.drawable.ic_settings, Theme.TEXT_MAIN);
-        addDropdownItem(popup, 4, "Interrupt / Stop Task", R.drawable.ic_stop, Theme.RED);
-        addDropdownItem(popup, 5, "Refresh Transcript", R.drawable.ic_refresh, Theme.TEXT_MAIN);
-        addDropdownItem(popup, 6, "Clear to New Session", R.drawable.ic_add, Theme.ACCENT);
-        addDropdownItem(popup, 7, "Cari Sesi", R.drawable.ic_search, Theme.TEXT_MAIN);
-        addDropdownItem(popup, 8, "File Workspace", R.drawable.ic_folder, Theme.TEXT_MAIN);
-        addDropdownItem(popup, 9, "Git", R.drawable.ic_source_branch, Theme.TEXT_MAIN);
-        addDropdownItem(popup, 10, "Ekspor Transkrip", R.drawable.ic_content_copy, Theme.TEXT_MAIN);
-        addDropdownItem(popup, 11, "Ubah Nama Sesi", R.drawable.ic_edit, Theme.TEXT_MAIN);
-        forceShowPopupIcons(popup);
+        final PopupWindow popupWindow = new PopupWindow(this);
 
-        popup.setOnMenuItemClickListener(item -> {
-            int id = item.getItemId();
-            if (id == 1) startQrScanner();
-            else if (id == 2) pasteFromClipboard();
-            else if (id == 3) showScreen(2);
-            else if (id == 4) stopRunningCliProcess();
-            else if (id == 5) fetchActiveSessionTurns(true);
-            else if (id == 6) startNewSession();
-            else if (id == 7) showSearchPanel();
-            else if (id == 8) showFileBrowser(".");
-            else if (id == 9) showGitPanel();
-            else if (id == 10) exportActiveSession();
-            else if (id == 11) showRenameSessionDialog(activeConversationId, activeSessionTitle);
-            return true;
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 20));
+        root.setPadding(dp(6), dp(8), dp(6), dp(8));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            root.setElevation(dp(18));
+        }
+
+        // 1. Ubah Nama Sesi
+        addCustomPopupItem(root, "Ubah Nama Sesi", R.drawable.ic_edit, Theme.TEXT_MAIN, () -> {
+            popupWindow.dismiss();
+            showRenameSessionDialog(activeConversationId, activeSessionTitle);
         });
-        popup.show();
+
+        // 2. Ekspor Transkrip
+        addCustomPopupItem(root, "Ekspor Transkrip", R.drawable.ic_content_copy, Theme.TEXT_MAIN, () -> {
+            popupWindow.dismiss();
+            exportActiveSession();
+        });
+
+        // 3. Refresh Transkrip
+        addCustomPopupItem(root, "Refresh Transkrip", R.drawable.ic_refresh, Theme.TEXT_MAIN, () -> {
+            popupWindow.dismiss();
+            fetchActiveSessionTurns(true);
+        });
+
+        // 4. Bersihkan ke Sesi Baru
+        addCustomPopupItem(root, "Bersihkan ke Sesi Baru", R.drawable.ic_add, Theme.ACCENT, () -> {
+            popupWindow.dismiss();
+            startNewSession();
+        });
+
+        // 5. Interrupt / Stop Task
+        addCustomPopupItem(root, "Interrupt / Stop Task", R.drawable.ic_stop, Theme.RED, () -> {
+            popupWindow.dismiss();
+            stopRunningCliProcess();
+        });
+
+        // 6. Pengaturan
+        addCustomPopupItem(root, "Pengaturan", R.drawable.ic_settings, Theme.TEXT_MUTED, () -> {
+            popupWindow.dismiss();
+            showScreen(2);
+        });
+
+        popupWindow.setContentView(root);
+        popupWindow.setWidth(dp(220));
+        popupWindow.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+        popupWindow.setFocusable(true);
+        popupWindow.setOutsideTouchable(true);
+        popupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+
+        int xOffset = -dp(180);
+        int yOffset = dp(6);
+        popupWindow.showAsDropDown(anchorView, xOffset, yOffset);
+    }
+
+    private void addCustomPopupItem(LinearLayout container, String title, int iconRes, int tint, Runnable onClick) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setBackground(cBox(Color.TRANSPARENT, 0, 0, 12));
+
+        ImageView icon = cIcon(iconRes, 18, tint);
+        row.addView(icon);
+
+        int textColor = tint == Theme.RED ? Theme.RED : (tint == Theme.ACCENT ? Theme.ACCENT : Theme.TEXT_MAIN);
+        TextView text = cText("   " + title, 13.5f, textColor, false, false);
+        text.setSingleLine(true);
+        row.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
+
+        row.setOnClickListener(v -> onClick.run());
+        container.addView(row, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private void addDropdownItem(PopupMenu popup, int id, String title, int iconRes, int tint) {
@@ -4575,6 +4640,9 @@ public class MainActivity extends Activity {
             JSONObject session = json.optJSONObject("session");
             if (session != null) {
                 activeSessionTitle = session.optString("title", activeSessionTitle);
+                if (requestedConvId != null && !requestedConvId.isEmpty()) {
+                    prefs.edit().putLong("session_accessed_" + requestedConvId, System.currentTimeMillis()).apply();
+                }
                 chatTopTitle.setText(activeSessionTitle);
             }
 

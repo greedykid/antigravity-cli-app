@@ -22,6 +22,28 @@ const WORKDIR = config.workdir();
 const AGY_BIN = process.env.AGY_BIN || path.join(os.homedir(), ".local/bin/agy");
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
 let activeCodexSessionId = null;
+const SESSION_ACTIVITY_FILE = path.join(os.homedir(), ".gemini/antigravity-cli/session_activity.json");
+
+function getSessionActivityMap() {
+  try {
+    if (fs.existsSync(SESSION_ACTIVITY_FILE)) {
+      return JSON.parse(fs.readFileSync(SESSION_ACTIVITY_FILE, "utf8"));
+    }
+  } catch (e) {}
+  return {};
+}
+
+function touchSessionActivity(convId) {
+  if (!convId) return;
+  try {
+    const map = getSessionActivityMap();
+    map[convId] = Date.now();
+    const dir = path.dirname(SESSION_ACTIVITY_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SESSION_ACTIVITY_FILE, JSON.stringify(map, null, 2), "utf8");
+  } catch (e) {}
+}
+
 const SESSION_TITLES_FILE = path.join(os.homedir(), ".gemini/antigravity-cli/session_titles.json");
 
 function getCustomSessionTitles() {
@@ -441,12 +463,20 @@ function getSessions(engineFilter) {
   });
 
   const customTitles = getCustomSessionTitles();
+  const activityMap = getSessionActivityMap();
   for (const s of merged) {
     if (customTitles[s.conversationId]) {
       s.title = customTitles[s.conversationId];
       s.customTitle = true;
     }
+    if (activityMap[s.conversationId]) {
+      s.timestamp = Math.max(s.timestamp || 0, activityMap[s.conversationId]);
+    }
   }
+
+  merged.sort((a, b) => {
+    return (b.timestamp || 0) - (a.timestamp || 0);
+  });
 
   // Filter before the cap. Trimming to 50 first and filtering afterwards would
   // hide an engine's sessions whenever the other engine dominates the top 50.
@@ -1221,6 +1251,7 @@ const server = http.createServer((req, res) => {
     if (!convId) {
       return send(res, 400, { error: "Missing session id parameter" });
     }
+    touchSessionActivity(convId);
     const msgs = getTranscript(convId, 1000);
     const sData = getSessions();
     const foundSession = (sData.sessions || []).find(s => s.conversationId === convId) || { conversationId: convId, title: "Session" };
@@ -1254,6 +1285,7 @@ const server = http.createServer((req, res) => {
           return send(res, 400, { error: "Title cannot be empty" });
         }
         saveCustomSessionTitle(convId, newTitle);
+        touchSessionActivity(convId);
         audit("session.rename", { conversationId: convId, title: newTitle });
         return send(res, 200, {
           ok: true,
