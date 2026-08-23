@@ -2522,30 +2522,50 @@ public class MainActivity extends Activity {
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
 
-        // Group 1: Profile / Email Card (Top, clean without Pro badge)
+        // Group 1: Creator Credit Profile Card
         LinearLayout topProfileCard = new LinearLayout(this);
         topProfileCard.setOrientation(LinearLayout.HORIZONTAL);
         topProfileCard.setGravity(Gravity.CENTER_VERTICAL);
         topProfileCard.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 18));
-        topProfileCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        topProfileCard.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-        String email = prefs.getString("user_email", "developer@antigravity.ai");
-        settingsUserEmailText = cText(email, 14.5f, Theme.TEXT_MAIN, true, false);
-        settingsUserEmailText.setSingleLine(true);
-        topProfileCard.addView(settingsUserEmailText, new LinearLayout.LayoutParams(0, -2, 1));
+        topProfileCard.addView(buildAvatarBadge("greedykid@github.com"), new LinearLayout.LayoutParams(dp(42), dp(42)));
 
-        ImageView editIcon = cIcon(R.drawable.ic_person, 18, Theme.TEXT_MUTED);
-        topProfileCard.addView(editIcon);
+        LinearLayout profText = new LinearLayout(this);
+        profText.setOrientation(LinearLayout.VERTICAL);
+        profText.setPadding(dp(12), 0, 0, 0);
 
-        topProfileCard.setOnClickListener(v -> showEditEmailBottomSheet());
+        LinearLayout nameRow = new LinearLayout(this);
+        nameRow.setOrientation(LinearLayout.HORIZONTAL);
+        nameRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView nameText = cText("greedykid", 15.5f, Theme.TEXT_MAIN, true, false);
+        nameRow.addView(nameText);
+
+        TextView badge = cText(" Creator ", 10.5f, Theme.ON_ACCENT, true, false);
+        badge.setBackground(cBox(Theme.ACCENT, 0, 0, 6));
+        badge.setPadding(dp(6), dp(2), dp(6), dp(2));
+        LinearLayout.LayoutParams lpB = new LinearLayout.LayoutParams(-2, -2);
+        lpB.setMargins(dp(8), 0, 0, 0);
+        nameRow.addView(badge, lpB);
+        profText.addView(nameRow);
+
+        TextView sub = cText("Pembuat • github.com/greedykid", 12f, Theme.TEXT_MUTED, false, false);
+        profText.addView(sub);
+
+        topProfileCard.addView(profText, new LinearLayout.LayoutParams(0, -2, 1));
+
+        ImageView chevron = cIcon(R.drawable.ic_chevron_right, 20, Theme.TEXT_MUTED);
+        topProfileCard.addView(chevron);
+
+        topProfileCard.setOnClickListener(v -> showCreatorCreditBottomSheet());
 
         LinearLayout.LayoutParams lpProf = new LinearLayout.LayoutParams(-1, -2);
         lpProf.setMargins(0, dp(4), 0, dp(14));
         list.addView(topProfileCard, lpProf);
 
-        // Group 2: Profil & Penggunaan (Penagihan removed!)
+        // Group 2: Profil Creator & Penggunaan
         LinearLayout g2 = createSettingsGroupContainer();
-        addSettingsRowItem(g2, R.drawable.ic_person, "Profil", null, () -> showEditEmailBottomSheet(), true);
+        addSettingsRowItem(g2, R.drawable.ic_person, "Kredit Pembuat (Creator)", "greedykid", () -> showCreatorCreditBottomSheet(), true);
         addSettingsRowItem(g2, R.drawable.ic_analytics, "Penggunaan", null, () -> showUsageStatsBottomSheet(), false);
         list.addView(g2);
 
@@ -2873,39 +2893,95 @@ public class MainActivity extends Activity {
         return root;
     }
 
-    private void showEditEmailBottomSheet() {
+    private void showCreatorCreditBottomSheet() {
         Dialog dialog = createBaseBottomSheet(true);
-        LinearLayout root = createBottomSheetRoot(dialog, "Profil Pengguna", true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Kredit Pembuat Aplikasi", true);
 
-        TextView sub = cText("Alamat email atau ID pengembang", 12.5f, Theme.TEXT_MUTED, false, false);
-        root.addView(sub);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
 
-        final EditText input = new EditText(this);
-        input.setText(prefs.getString("user_email", "developer@antigravity.ai"));
-        input.setTextColor(Theme.TEXT_MAIN);
-        input.setHintTextColor(Theme.TEXT_LIGHT);
-        input.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
-        input.setPadding(dp(14), dp(12), dp(14), dp(12));
-        LinearLayout.LayoutParams lpIn = new LinearLayout.LayoutParams(-1, dp(48));
-        lpIn.setMargins(0, dp(8), 0, dp(16));
-        root.addView(input, lpIn);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
 
-        LinearLayout btnSave = new LinearLayout(this);
-        btnSave.setOrientation(LinearLayout.HORIZONTAL);
-        btnSave.setGravity(Gravity.CENTER);
-        btnSave.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
-        btnSave.setPadding(dp(16), dp(12), dp(16), dp(12));
-        btnSave.addView(cText("Simpan Perubahan", 14f, Theme.ON_ACCENT, true, false));
-        btnSave.setOnClickListener(v -> {
-            String em = input.getText().toString().trim();
-            if (!em.isEmpty()) {
-                prefs.edit().putString("user_email", em).apply();
-                refreshSettingsValues();
-                if (sidebarUserEmail != null) sidebarUserEmail.setText("  " + em);
+        // Creator Hero Card
+        LinearLayout heroCard = new LinearLayout(this);
+        heroCard.setOrientation(LinearLayout.HORIZONTAL);
+        heroCard.setGravity(Gravity.CENTER_VERTICAL);
+        heroCard.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 16));
+        heroCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        heroCard.addView(buildAvatarBadge("greedykid@github.com"), new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        LinearLayout heroInfo = new LinearLayout(this);
+        heroInfo.setOrientation(LinearLayout.VERTICAL);
+        heroInfo.setPadding(dp(14), 0, 0, 0);
+
+        LinearLayout nameLine = new LinearLayout(this);
+        nameLine.setOrientation(LinearLayout.HORIZONTAL);
+        nameLine.setGravity(Gravity.CENTER_VERTICAL);
+        nameLine.addView(cText("greedykid", 17f, Theme.TEXT_MAIN, true, true));
+
+        TextView roleBadge = cText(" Creator & Developer ", 11f, Theme.ON_ACCENT, true, false);
+        roleBadge.setBackground(cBox(Theme.ACCENT, 0, 0, 6));
+        roleBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
+        LinearLayout.LayoutParams lpR = new LinearLayout.LayoutParams(-2, -2);
+        lpR.setMargins(dp(8), 0, 0, 0);
+        nameLine.addView(roleBadge, lpR);
+        heroInfo.addView(nameLine);
+
+        TextView tagLine = cText("GitHub: @greedykid", 13f, Theme.TEXT_MUTED, false, false);
+        tagLine.setPadding(0, dp(2), 0, 0);
+        heroInfo.addView(tagLine);
+
+        heroCard.addView(heroInfo, new LinearLayout.LayoutParams(0, -2, 1));
+        content.addView(heroCard);
+
+        TextView desc = cText("Aplikasi Antigravity Code Remote dikembangkan dan di-maintain secara terbuka oleh @greedykid untuk kemudahan mengontrol Codex CLI & Antigravity CLI dari perangkat seluler Android.", 13f, Theme.TEXT_MUTED, false, false);
+        desc.setLineSpacing(0, 1.25f);
+        LinearLayout.LayoutParams lpD = new LinearLayout.LayoutParams(-1, -2);
+        lpD.setMargins(0, dp(14), 0, dp(14));
+        content.addView(desc, lpD);
+
+        // Action Buttons
+        LinearLayout btnGithub = new LinearLayout(this);
+        btnGithub.setOrientation(LinearLayout.HORIZONTAL);
+        btnGithub.setGravity(Gravity.CENTER);
+        btnGithub.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
+        btnGithub.setPadding(dp(14), dp(11), dp(14), dp(11));
+        btnGithub.addView(cIcon(R.drawable.ic_link, 16, Theme.ON_ACCENT));
+        btnGithub.addView(cText("  Kunjungi Profil GitHub (@greedykid)", 13.5f, Theme.ON_ACCENT, true, false));
+        btnGithub.setOnClickListener(v -> {
+            try {
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/greedykid"));
+                startActivity(browserIntent);
+            } catch (Exception e) {
+                Toast.makeText(MainActivity.this, "Gagal membuka browser", Toast.LENGTH_SHORT).show();
             }
-            dialog.dismiss();
         });
-        root.addView(btnSave, new LinearLayout.LayoutParams(-1, dp(46)));
+        content.addView(btnGithub, new LinearLayout.LayoutParams(-1, dp(46)));
+
+        LinearLayout btnRepo = new LinearLayout(this);
+        btnRepo.setOrientation(LinearLayout.HORIZONTAL);
+        btnRepo.setGravity(Gravity.CENTER);
+        btnRepo.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        btnRepo.setPadding(dp(14), dp(11), dp(14), dp(11));
+        btnRepo.addView(cIcon(R.drawable.ic_source_branch, 16, Theme.TEXT_MAIN));
+        btnRepo.addView(cText("  Repository: codexcli-remote-app", 13f, Theme.TEXT_MAIN, true, false));
+        btnRepo.setOnClickListener(v -> {
+            try {
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/greedykid/codexcli-remote-app"));
+                startActivity(browserIntent);
+            } catch (Exception e) {
+                Toast.makeText(MainActivity.this, "Gagal membuka browser", Toast.LENGTH_SHORT).show();
+            }
+        });
+        LinearLayout.LayoutParams lpRepo = new LinearLayout.LayoutParams(-1, dp(44));
+        lpRepo.setMargins(0, dp(8), 0, 0);
+        content.addView(btnRepo, lpRepo);
+
+        scroll.addView(content);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
 
         dialog.setContentView(root);
         dialog.show();
