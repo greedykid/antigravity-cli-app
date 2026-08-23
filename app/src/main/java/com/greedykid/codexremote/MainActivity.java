@@ -2140,6 +2140,13 @@ public class MainActivity extends Activity {
         buildEmptyMascotState();
         chatMessagesList.addView(emptyMascotView);
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            chatScroll.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+                if (scrollY == 0 && !isLiveTaskRunning && activeConversationId != null) {
+                    syncLiveExecution();
+                }
+            });
+        }
         chatScroll.addView(chatMessagesList);
         contentLayout.addView(chatScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
@@ -3138,16 +3145,19 @@ public class MainActivity extends Activity {
         ArrayList<String> images = new ArrayList<>();
 
         try {
-            Pattern imgPat = Pattern.compile("\\[File:\\s*([^\\]]+\\.(?:png|jpg|jpeg|webp|gif|svg))\\]", Pattern.CASE_INSENSITIVE);
+            Pattern imgPat = Pattern.compile("\\[(?:Attached\\s+)?File:\\s*([^\\]]+)\\]", Pattern.CASE_INSENSITIVE);
             Matcher m = imgPat.matcher(rawContent);
             while (m.find()) {
-                images.add(m.group(1).trim());
+                String p = m.group(1).trim();
+                if (p.toLowerCase().matches(".*\\.(png|jpg|jpeg|webp|gif|svg)$")) {
+                    images.add(p);
+                }
                 remainingText = remainingText.replace(m.group(0), "");
             }
         } catch (Exception ignored) {}
 
-        // Render attached image previews aligned to the right
-        for (String imgPath : images) {
+        // Render attached image previews aligned to the right, clickable for fullscreen
+        for (final String imgPath : images) {
             ImageView iv = new ImageView(this);
             iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
             iv.setAdjustViewBounds(true);
@@ -3160,6 +3170,8 @@ public class MainActivity extends Activity {
             container.addView(iv, lpImg);
 
             loadImageIntoView(imgPath, iv);
+
+            iv.setOnClickListener(v -> showFullscreenImageDialog(imgPath));
         }
 
         String userPromptText = remainingText.trim();
@@ -3246,8 +3258,7 @@ public class MainActivity extends Activity {
             if (readCount == 1 && !singleFilename.isEmpty()) {
                 label.append("Dibaca ");
                 int start = label.length();
-                String shortName = singleFilename.length() > 32 ? singleFilename.substring(0, 14) + "..." + singleFilename.substring(singleFilename.length() - 15) : singleFilename;
-                label.append(shortName);
+                label.append(singleFilename);
                 label.setSpan(new ForegroundColorSpan(CLAUDE_TEXT_MAIN), start, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             } else if (editCount == 1 && !singleFilename.isEmpty()) {
                 label.append("Mengedit ");
@@ -3282,7 +3293,9 @@ public class MainActivity extends Activity {
         pillText.setText(label);
         pillText.setTextSize(14f);
         pillText.setTextColor(CLAUDE_TEXT_MUTED);
-        actionHeader.addView(pillText, new LinearLayout.LayoutParams(-2, -2));
+        pillText.setSingleLine(true);
+        pillText.setEllipsize(TextUtils.TruncateAt.END);
+        actionHeader.addView(pillText, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         // Dynamic diff badge (+added in green, -deleted in red)
         if (totalAdded > 0 || totalDeleted > 0) {
@@ -3318,6 +3331,7 @@ public class MainActivity extends Activity {
 
         // If single read image, render image thumbnail underneath
         if (singleImageThumbnail != null) {
+            final String finalImg = singleImageThumbnail;
             ImageView imgThumb = new ImageView(this);
             imgThumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
             imgThumb.setAdjustViewBounds(true);
@@ -3329,6 +3343,7 @@ public class MainActivity extends Activity {
             pillRow.addView(imgThumb, lpImg);
 
             loadImageIntoView(singleImageThumbnail, imgThumb);
+            imgThumb.setOnClickListener(v -> showFullscreenImageDialog(finalImg));
         }
 
         pillRow.setOnClickListener(v -> openExecutionBottomModal(steps, isRunning));
