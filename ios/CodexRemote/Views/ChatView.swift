@@ -160,10 +160,12 @@ struct ChatView: View {
 
     private var emptyState: some View {
         VStack(spacing: 14) {
-            MascotView(palette: palette).frame(width: 140, height: 140)
-            Text(state.engine.brandTitle)
-                .font(.system(size: 19, weight: .bold, design: palette.headingFont))
-                .foregroundColor(palette.textMain)
+            // The product logo already spells out the app name, so the separate
+            // title line underneath it is gone.
+            Image("BrandLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 150)
             Text(state.engine.tagline)
                 .font(.system(size: 13.5))
                 .foregroundColor(palette.textMuted)

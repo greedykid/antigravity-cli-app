@@ -3532,14 +3532,16 @@ public class MainActivity extends Activity {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
 
-        // App Logo & Info Row
-        LinearLayout logoRow = new LinearLayout(this);
-        logoRow.setOrientation(LinearLayout.HORIZONTAL);
-        logoRow.setGravity(Gravity.CENTER_VERTICAL);
-        logoRow.setPadding(0, dp(4), 0, dp(12));
-
-        ImageView sp = cIcon(R.drawable.ic_spark, 36, Theme.ACCENT);
-        logoRow.addView(sp);
+        // Brand logo. It already carries the product name, so the separate
+        // title line that used to sit beside a generic spark icon is gone.
+        ImageView brandLogo = new ImageView(this);
+        brandLogo.setImageResource(R.drawable.brand_logo);
+        brandLogo.setAdjustViewBounds(true);
+        brandLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams lpLogo = new LinearLayout.LayoutParams(dp(140), -2);
+        lpLogo.gravity = Gravity.CENTER_HORIZONTAL;
+        lpLogo.setMargins(0, dp(6), 0, dp(12));
+        content.addView(brandLogo, lpLogo);
 
         String verName = "0.3.0";
         int verCode = 1;
@@ -3549,13 +3551,12 @@ public class MainActivity extends Activity {
             verCode = pInfo.versionCode;
         } catch (Exception ignored) {}
 
-        LinearLayout lt = new LinearLayout(this);
-        lt.setOrientation(LinearLayout.VERTICAL);
-        lt.setPadding(dp(12), 0, 0, 0);
-        lt.addView(cText("Antigravity Code Remote", 16.5f, Theme.TEXT_MAIN, true, true));
-        lt.addView(cText("Versi Terpasang: v" + verName + " (Build " + verCode + ")", 12.5f, Theme.TEXT_MUTED, false, false));
-        logoRow.addView(lt);
-        content.addView(logoRow);
+        TextView verLine = cText("Versi Terpasang: v" + verName + " (Build " + verCode + ")",
+                12.5f, Theme.TEXT_MUTED, false, false);
+        verLine.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lpVer = new LinearLayout.LayoutParams(-1, -2);
+        lpVer.setMargins(0, 0, 0, dp(12));
+        content.addView(verLine, lpVer);
 
         TextView info = cText("Klien remote cerdas untuk Antigravity CLI dan Codex CLI di Android dengan live synchronization, terminal interaktif, dan format markdown kaya.", 13f, Theme.TEXT_MUTED, false, false);
         info.setLineSpacing(0, 1.25f);
@@ -5096,9 +5097,11 @@ public class MainActivity extends Activity {
         emptyMascotView.setPadding(dp(24), dp(56), dp(24), dp(56));
 
         ImageView mascot = new ImageView(this);
-        mascot.setImageResource(Theme.mascotRes());
+        // The real product logo, which already spells out the app name.
+        mascot.setImageResource(R.drawable.brand_logo);
+        mascot.setAdjustViewBounds(true);
         mascot.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        LinearLayout.LayoutParams lpMascot = new LinearLayout.LayoutParams(dp(148), dp(148));
+        LinearLayout.LayoutParams lpMascot = new LinearLayout.LayoutParams(dp(150), -2);
         emptyMascotView.addView(mascot, lpMascot);
 
         // Gentle idle float so the empty session does not feel static.
@@ -5108,16 +5111,11 @@ public class MainActivity extends Activity {
         mascotFloatAnimator.setRepeatMode(ValueAnimator.REVERSE);
         mascotFloatAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
 
-        TextView brandName = cText(Theme.brandTitle(), 19, Theme.TEXT_MAIN, true, true);
-        brandName.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams lpBn = new LinearLayout.LayoutParams(-1, -2);
-        lpBn.setMargins(0, dp(18), 0, 0);
-        emptyMascotView.addView(brandName, lpBn);
-
+        // The engine still identifies itself here, in text and in the palette.
         TextView tagline = cText(Theme.engineTagline(), 13.5f, Theme.TEXT_MUTED, false, false);
         tagline.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpTag = new LinearLayout.LayoutParams(-1, -2);
-        lpTag.setMargins(dp(20), dp(8), dp(20), 0);
+        lpTag.setMargins(dp(20), dp(18), dp(20), 0);
         emptyMascotView.addView(tagline, lpTag);
     }
 
