@@ -249,6 +249,7 @@ const server = http.createServer((req, res) => {
           filename: safeName,
           originalName: filename,
           filePath: targetPath,
+          url: "/api/uploads/" + safeName,
           size: buffer.length
         });
       } catch (err) {
@@ -256,6 +257,30 @@ const server = http.createServer((req, res) => {
       }
     });
     return;
+  }
+
+  // GET /api/uploads/:file (Serve uploaded images and files)
+  if (req.method === "GET" && (pathname.startsWith("/api/uploads/") || pathname === "/api/upload")) {
+    const filename = pathname.startsWith("/api/uploads/") ? path.basename(pathname.replace("/api/uploads/", "")) : parsedUrl.query.file;
+    if (!filename) return send(res, 400, { error: "Missing filename" });
+    const targetPath = path.join(UPLOADS_DIR, path.basename(filename));
+    if (!fs.existsSync(targetPath)) return send(res, 404, { error: "File not found" });
+    const ext = path.extname(targetPath).toLowerCase();
+    const mimeTypes = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".webp": "image/webp",
+      ".gif": "image/gif",
+      ".svg": "image/svg+xml"
+    };
+    const contentType = mimeTypes[ext] || "application/octet-stream";
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=86400",
+      "Access-Control-Allow-Origin": "*"
+    });
+    return fs.createReadStream(targetPath).pipe(res);
   }
 
   // GET /api/session/live
