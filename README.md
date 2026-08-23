@@ -12,6 +12,7 @@ Antigravity Remote adalah aplikasi Android native yang memungkinkan Anda mengont
 * **⚡ Instant In-Session Live Streaming:** Transkrip percakapan, proses pemikiran (*Thinking*), dan eksekusi perintah (*Tool Calls*) ter-update secara real-time detik demi detik di layar tanpa perlu keluar-masuk sesi.
 * **📂 Interactive Accordion Bottom Sheet:** Rincian eksekusi tool dan thinking dapat dibuka dalam modal swipeable yang dapat digeser naik-turun atau dimaksimalkan (*fullscreen*), lengkap dengan status *live spinner*.
 * **📷 Instant QR Code Pairing:** Cukup scan QR code di terminal PC/VPS Anda dengan kamera HP untuk terhubung secara instan tanpa perlu mengetik URL panjang.
+* **🖼️ Pairing dari Galeri:** Punya screenshot QR dari sesi SSH atau foto lama? Pilih gambarnya langsung — tidak perlu kamera menyorot terminal.
 * **📋 1-Tap Clipboard Pairing:** Salin tautan pairing (`agy://connect?...`) atau JSON token di HP, lalu ketuk *Paste from Clipboard*.
 * **🔄 Two-Way Live Terminal Synchronization:** Pantau sesi terminal PC yang sedang berjalan secara langsung di HP (*Live Companion HUD*), atau lanjutkan instruksi dari HP secara bergantian.
 * **🔀 Dual Engine Gateway:** Beralih antara engine **Google Antigravity CLI** dan **OpenAI Codex CLI** dengan 1 ketukan.
