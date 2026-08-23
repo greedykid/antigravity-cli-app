@@ -41,6 +41,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+      - name: Resolve version
+        id: version
+        run: |
+          VERSION=$(grep -oP "versionName\s+'\K[^']+" app/build.gradle)
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Product version: $VERSION"
+
       - name: Build debug APK
         run: |
           # Without pipefail a pipeline reports tee's exit status, so a failed
@@ -66,9 +73,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: v0.3.0
-          name: "Antigravity Remote v0.3.0"
-          body: "Rilis versi 0.3.0 dengan Terminal PTY layar penuh dan perbaikan keyboard."
+          tag_name: v${{ steps.version.outputs.value }}
+          name: "Antigravity Remote v${{ steps.version.outputs.value }}"
+          body: |
+            Build otomatis dari commit ${{ github.sha }}.
+
+            * `app-debug.apk` — Android, sudah ditandatangani debug key, bisa langsung dipasang.
+            * `CodexRemote.ipa` — iOS, **belum ditandatangani**: pasang lewat AltStore/Sideloadly atau tanda tangani sendiri.
           files: app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

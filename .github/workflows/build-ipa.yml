@@ -32,6 +32,15 @@ jobs:
           sudo cp -R xcodegen/share/xcodegen/* /usr/local/share/xcodegen/ || true
           xcodegen --version
 
+      - name: Resolve version
+        id: version
+        run: |
+          # Android's versionName is the single product version; the iOS
+          # marketing version follows it instead of being maintained separately.
+          VERSION=$(grep -oP "versionName\s+'\K[^']+" app/build.gradle)
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Product version: $VERSION"
+
       - name: Generate Xcode project
         working-directory: ios
         run: |
@@ -54,6 +63,7 @@ jobs:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             COMPILER_INDEX_STORE_ENABLE=NO \
+            MARKETING_VERSION=${{ steps.version.outputs.value }} \
             build
 
       # Package unsigned IPA by wrapping the .app into Payload/ directory
@@ -85,9 +95,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: v0.3.0
-          name: "Antigravity Remote v0.3.0"
-          body: "Rilis versi 0.3.0 dengan Terminal PTY layar penuh dan perbaikan keyboard."
+          # Same release as the APK so one page carries both platforms.
+          tag_name: v${{ steps.version.outputs.value }}
+          name: "Antigravity Remote v${{ steps.version.outputs.value }}"
           files: ios/build/CodexRemote.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
