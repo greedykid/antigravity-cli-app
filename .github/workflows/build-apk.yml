@@ -3,6 +3,10 @@ name: Build APK
 on:
   push:
     branches: [main]
+    # iOS-only changes have their own workflow; no need to rebuild the APK.
+    paths-ignore:
+      - 'ios/**'
+      - '.github/workflows/build-ipa.yml'
   workflow_dispatch:
 
 permissions:
