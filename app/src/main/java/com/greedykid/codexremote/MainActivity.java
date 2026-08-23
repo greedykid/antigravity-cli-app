@@ -3434,6 +3434,15 @@ public class MainActivity extends Activity {
         btnReinstall.addView(cIcon(R.drawable.ic_refresh, 14, Theme.TEXT_MUTED));
         btnReinstall.addView(cText("  Pasang Ulang APK (Reinstall)", 12f, Theme.TEXT_MUTED, false, false));
 
+        LinearLayout btnChangelog = new LinearLayout(this);
+        btnChangelog.setOrientation(LinearLayout.HORIZONTAL);
+        btnChangelog.setGravity(Gravity.CENTER);
+        btnChangelog.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 12));
+        btnChangelog.setPadding(dp(14), dp(10), dp(14), dp(10));
+        btnChangelog.addView(cIcon(R.drawable.ic_description, 16, Theme.ACCENT));
+        btnChangelog.addView(cText("  Lihat Catatan Rilis (Changelog)", 13f, Theme.TEXT_MAIN, true, false));
+        btnChangelog.setOnClickListener(v -> showChangelogBottomSheet());
+
         LinearLayout btnReleasePage = new LinearLayout(this);
         btnReleasePage.setOrientation(LinearLayout.HORIZONTAL);
         btnReleasePage.setGravity(Gravity.CENTER);
@@ -3464,6 +3473,10 @@ public class MainActivity extends Activity {
         lpBtnRe.setMargins(0, dp(8), 0, 0);
         updateCard.addView(btnReinstall, lpBtnRe);
 
+        LinearLayout.LayoutParams lpBtnCh = new LinearLayout.LayoutParams(-1, dp(42));
+        lpBtnCh.setMargins(0, dp(8), 0, 0);
+        updateCard.addView(btnChangelog, lpBtnCh);
+
         LinearLayout.LayoutParams lpBtnR = new LinearLayout.LayoutParams(-1, dp(42));
         lpBtnR.setMargins(0, dp(8), 0, 0);
         updateCard.addView(btnReleasePage, lpBtnR);
@@ -3478,6 +3491,142 @@ public class MainActivity extends Activity {
 
         // Auto check updates on open
         checkAppUpdates(updateCard, cardHeadIcon, cardTitle, statusView, detailsView, btnDownload, btnReinstall, progressBar);
+    }
+
+    private void showChangelogBottomSheet() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Catatan Rilis & Changelog", true);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(true);
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(0, dp(4), 0, dp(16));
+
+        // Live remote release card from GitHub
+        final LinearLayout liveNotesCard = new LinearLayout(this);
+        liveNotesCard.setOrientation(LinearLayout.VERTICAL);
+        liveNotesCard.setVisibility(View.GONE);
+        list.addView(liveNotesCard);
+
+        // v0.3.0
+        list.addView(createChangelogItem(
+                "v0.3.0 (Versi Terbaru)",
+                "24 Agustus 2026",
+                Theme.GREEN,
+                new String[]{
+                        "⚡ In-App Check Updates & Auto-Installer: Periksa dan pasang pembaruan APK langsung dari aplikasi.",
+                        "👆 Swipe Gestures on Bottom Sheets: Swipe ke atas untuk Fullscreen, swipe ke bawah untuk menutup modal.",
+                        "🛡️ Sliding Inactivity Timeout: Mencegah timeout freeze pada eksekusi proses yang lama.",
+                        "🖼️ Multi-Image Attachment & Fullscreen Zoom Preview: Pratinjau gambar resolusi tinggi sebelum/setelah dikirim.",
+                        "💻 Quick Terminal (PTY) Keyboard Layout: Penyesuaian layout keyboard responsif & live background task badge.",
+                        "📊 Execution & Thoughts Modal Animation: Animasi slide halus kanan/kiri saat membuka detail aksi AI."
+                }
+        ));
+
+        // v0.2.9
+        list.addView(createChangelogItem(
+                "v0.2.9",
+                "22 Agustus 2026",
+                Theme.ACCENT,
+                new String[]{
+                        "🔄 Multi-Server Profile Switching: Simpan dan kelola banyak server bridge dengan mudah.",
+                        "📂 File Explorer & Code Viewer: Buka direktori proyek dan sematkan file langsung ke chat AI.",
+                        "✨ Interactive Markdown Rendering: Format teks kaya dengan syntax highlight, code block copy, dan tabel."
+                }
+        ));
+
+        // v0.2.0
+        list.addView(createChangelogItem(
+                "v0.2.0",
+                "18 Agustus 2026",
+                Theme.TEXT_MUTED,
+                new String[]{
+                        "🚀 Dual CLI Engine: Dukungan penuh Antigravity CLI dan Codex CLI.",
+                        "📡 Server-Sent Events (SSE): Streaming output langsung dan notifikasi latar belakang saat selesai."
+                }
+        ));
+
+        scroll.addView(list);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, (int) (getResources().getDisplayMetrics().heightPixels * 0.70f)));
+
+        dialog.setContentView(root);
+        dialog.show();
+
+        // Fetch latest release body from GitHub in background
+        executor.execute(() -> {
+            try {
+                URL url = new URL("https://api.github.com/repos/greedykid/codexcli-remote-app/releases/tags/latest");
+                HttpURLConnection c = (HttpURLConnection) url.openConnection();
+                c.setRequestMethod("GET");
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(10000);
+                c.setRequestProperty("User-Agent", "CodexRemote-App");
+                c.setRequestProperty("Accept", "application/vnd.github.v3+json");
+                if (c.getResponseCode() == 200) {
+                    BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = r.readLine()) != null) sb.append(line);
+                    r.close();
+                    c.disconnect();
+                    JSONObject rel = new JSONObject(sb.toString());
+                    final String body = rel.optString("body", "");
+                    final String tag = rel.optString("tag_name", "latest");
+                    if (!body.isEmpty()) {
+                        mainHandler.post(() -> {
+                            liveNotesCard.removeAllViews();
+                            liveNotesCard.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
+                            liveNotesCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+                            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                            lp.setMargins(0, 0, 0, dp(14));
+                            liveNotesCard.setLayoutParams(lp);
+
+                            TextView t = cText("Catatan Rilis GitHub (" + tag + ")", 13.5f, Theme.ACCENT, true, false);
+                            liveNotesCard.addView(t);
+
+                            TextView b = cText(body, 12f, Theme.TEXT_MAIN, false, false);
+                            b.setPadding(0, dp(4), 0, 0);
+                            liveNotesCard.addView(b);
+
+                            liveNotesCard.setVisibility(View.VISIBLE);
+                        });
+                    }
+                }
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private LinearLayout createChangelogItem(String version, String date, int badgeColor, String[] bulletPoints) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        LinearLayout.LayoutParams lpCard = new LinearLayout.LayoutParams(-1, -2);
+        lpCard.setMargins(0, 0, 0, dp(12));
+        card.setLayoutParams(lpCard);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView verBadge = cText(version, 13.5f, badgeColor, true, false);
+        header.addView(verBadge, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView dateText = cText(date, 12f, Theme.TEXT_LIGHT, false, false);
+        header.addView(dateText);
+        card.addView(header);
+
+        for (String bullet : bulletPoints) {
+            TextView item = cText("• " + bullet, 12.5f, Theme.TEXT_MUTED, false, false);
+            item.setPadding(0, dp(4), 0, 0);
+            item.setLineSpacing(0, 1.15f);
+            card.addView(item);
+        }
+
+        return card;
     }
 
     private void checkAppUpdates(final LinearLayout updateCard, final ImageView cardHeadIcon, final TextView cardTitle, final TextView statusView, final TextView detailsView, final LinearLayout btnDownload, final LinearLayout btnReinstall, final ProgressBar progressBar) {
