@@ -5,6 +5,11 @@ const path = require('path');
 const { execSync } = require('child_process');
 const qrcode = require('qrcode-terminal');
 
+let config;
+for (const candidate of ['../bridge/config.js', './config.js']) {
+  try { config = require(path.join(__dirname, candidate)); break; } catch (e) {}
+}
+
 function getTunnelUrl() {
   try {
     const journal = execSync('journalctl -u codex-tunnel -n 150 --no-pager', { encoding: 'utf8' });
@@ -18,7 +23,11 @@ function getTunnelUrl() {
 
 const tunnelBase = getTunnelUrl();
 const chatEndpoint = `${tunnelBase}/api/chat`;
-const token = 'codex-remote-token-2026';
+const token = config ? config.loadToken() : (process.env.TOKEN || process.env.REMOTE_TOKEN || '');
+if (!token) {
+  console.log('\n✘ Token belum ada. Jalankan server bridge sekali agar token dibuat.\n');
+  process.exit(1);
+}
 
 const payload = {
   agy: 'v1',

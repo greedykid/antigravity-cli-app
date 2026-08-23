@@ -82,6 +82,31 @@ for profile in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
     fi
 done
 
+# 6b. Install / refresh systemd services from the templates in deploy/
+if command -v systemctl >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    echo -e "\033[34m▶ Installing systemd services...\033[0m"
+    NODE_BIN="$(command -v node)"
+    CODEX_BIN_PATH="$(command -v codex || echo codex)"
+    CLOUDFLARED_BIN="$(command -v cloudflared || echo "$HOME/.local/bin/cloudflared")"
+
+    for unit in codex-bridge codex-tunnel; do
+        if [ -f "$INSTALL_DIR/deploy/$unit.service" ]; then
+            sed -e "s|__USER__|$(id -un)|g" \
+                -e "s|__HOME__|$HOME|g" \
+                -e "s|__APP_DIR__|$INSTALL_DIR|g" \
+                -e "s|__NODE__|$NODE_BIN|g" \
+                -e "s|__CODEX_BIN__|$CODEX_BIN_PATH|g" \
+                -e "s|__CLOUDFLARED__|$CLOUDFLARED_BIN|g" \
+                "$INSTALL_DIR/deploy/$unit.service" | sudo tee "/etc/systemd/system/$unit.service" >/dev/null
+        fi
+    done
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now codex-bridge codex-tunnel >/dev/null 2>&1 || true
+    sudo systemctl restart codex-bridge codex-tunnel >/dev/null 2>&1 || true
+    sleep 3
+fi
+
 echo ""
 echo -e "\033[32m✔ Setup Completed Successfully!\033[0m"
 echo -e "\033[32m✔ Global CLI commands installed: \033[1;37mcodex-remote\033[0;32m and \033[1;37magy-remote\033[0m"

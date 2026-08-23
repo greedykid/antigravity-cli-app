@@ -1,0 +1,25 @@
+[Unit]
+Description=Codex CLI Remote Bridge Server
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__HOME__
+Environment=NODE_ENV=production
+Environment=PORT=8787
+# Loopback only: cloudflared connects locally, so the CLI-executing API is
+# never reachable straight from the public IP.
+Environment=BRIDGE_HOST=127.0.0.1
+Environment=WORKDIR=__HOME__
+Environment=CODEX_BIN=__CODEX_BIN__
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# The token lives in ~/.codex-remote/token, generated on first start.
+# Free the port first: a stale listener used to make every restart fail.
+ExecStartPre=-/bin/sh -c '/usr/bin/fuser -k -TERM 8787/tcp; sleep 1; /usr/bin/fuser -k -KILL 8787/tcp; true'
+ExecStart=__NODE__ __APP_DIR__/bridge/server.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

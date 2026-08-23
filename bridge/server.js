@@ -4,13 +4,23 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const url = require("url");
+const crypto = require("crypto");
+const config = require("./config");
 
-const PORT = process.env.PORT || 8787;
-const TOKEN = process.env.TOKEN || "codex-remote-token-2026";
-const WORKDIR = process.env.WORKDIR || "/home/ubuntu";
-const AGY_BIN = process.env.AGY_BIN || "/home/ubuntu/.local/bin/agy";
+const PORT = config.port();
+const HOST = config.bindHost();
+const TOKEN = config.loadToken();
+const WORKDIR = config.workdir();
+const AGY_BIN = process.env.AGY_BIN || path.join(os.homedir(), ".local/bin/agy");
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
 let activeCodexSessionId = null;
+
+if (config.isLegacyToken(TOKEN)) {
+  console.error("[Security] Refusing to start: the token is the public default from this repository.");
+  console.error("[Security] Unset TOKEN/REMOTE_TOKEN and restart to generate a private one,");
+  console.error(`[Security] or write your own secret to ${config.TOKEN_FILE}.`);
+  process.exit(1);
+}
 
 const UPLOADS_DIR = path.join(WORKDIR, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -27,8 +37,19 @@ function send(res, code, data) {
   res.end(JSON.stringify(data));
 }
 
+// Constant-time compare so the token cannot be recovered by timing the 401s.
 function authorized(req) {
-  return !TOKEN || req.headers.authorization === `Bearer ${TOKEN}`;
+  if (!TOKEN) return true;
+  const header = req.headers.authorization || "";
+  const expected = `Bearer ${TOKEN}`;
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(a, b);
+  } catch (e) {
+    return false;
+  }
 }
 
 function getAgyProcess() {
@@ -806,8 +827,11 @@ const server = http.createServer((req, res) => {
   send(res, 404, { error: "Not found" });
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`[Antigravity & Codex Remote Bridge] Listening on http://0.0.0.0:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`[Antigravity & Codex Remote Bridge] Listening on http://${HOST}:${PORT}`);
   console.log(`[Config] Engine: agy / codex | Workdir: ${WORKDIR}`);
-  console.log(`[Security] Token protection: ${TOKEN ? "ENABLED" : "DISABLED"}`);
+  console.log(`[Security] Token protection: ${TOKEN ? "ENABLED" : "DISABLED"} | Token file: ${config.TOKEN_FILE}`);
+  if (HOST === "0.0.0.0") {
+    console.warn("[Security] Bound to every interface. Set BRIDGE_HOST=127.0.0.1 to reach it only through the tunnel.");
+  }
 });

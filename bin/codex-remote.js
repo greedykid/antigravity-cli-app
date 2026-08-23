@@ -5,6 +5,11 @@ const path = require('path');
 const os = require('os');
 const { execSync, spawn } = require('child_process');
 
+let config;
+for (const candidate of ['../bridge/config.js', './config.js', '../config.js']) {
+  try { config = require(path.join(__dirname, candidate)); break; } catch (e) {}
+}
+
 let qrcode;
 try {
   qrcode = require('qrcode-terminal');
@@ -62,7 +67,11 @@ function getTunnelUrl() {
 function showPairing() {
   const tunnelBase = getTunnelUrl();
   const chatEndpoint = `${tunnelBase}/api/chat`;
-  const token = process.env.REMOTE_TOKEN || 'codex-remote-token-2026';
+  const token = config ? config.loadToken() : (process.env.TOKEN || process.env.REMOTE_TOKEN || '');
+  if (!token) {
+    console.log('\n✘ Tidak menemukan token. Jalankan server bridge sekali agar token dibuat.\n');
+    return;
+  }
 
   const payload = {
     agy: 'v1',
@@ -94,7 +103,8 @@ function showPairing() {
   console.log('   codex-remote         -> Tampilkan QR Code Pairing ini lagi');
   console.log('   codex-remote status  -> Cek status aktif server');
   console.log('   codex-remote logs    -> Lihat live logs server & aktivitas');
-  console.log('   codex-remote restart -> Restart server & cloudflare tunnel\n');
+  console.log('   codex-remote restart -> Restart server & cloudflare tunnel');
+  console.log('   codex-remote rotate  -> Ganti token dengan yang baru (perlu pairing ulang)\n');
 }
 
 function showStatus() {
@@ -132,7 +142,27 @@ function restartServices() {
   }
 }
 
+function rotateToken() {
+  if (!config) {
+    console.log('\n✘ Modul config tidak ditemukan.\n');
+    return;
+  }
+  const fresh = config.rotateToken();
+  console.log(`\n✔ Token baru dibuat: ${fresh}`);
+  console.log('  Restart server lalu pairing ulang dari HP.\n');
+  try {
+    execSync('sudo systemctl restart codex-bridge', { stdio: 'inherit' });
+    setTimeout(showPairing, 1500);
+  } catch (e) {
+    console.log('  Restart manual: sudo systemctl restart codex-bridge');
+  }
+}
+
 switch (action) {
+  case 'rotate':
+  case 'rotate-token':
+    rotateToken();
+    break;
   case 'status':
     showStatus();
     break;

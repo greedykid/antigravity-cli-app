@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare Tunnel for Codex Bridge
+After=network.target codex-bridge.service
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__HOME__
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=__CLOUDFLARED__ tunnel --url http://127.0.0.1:8787 --logfile __HOME__/tunnel.log
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
