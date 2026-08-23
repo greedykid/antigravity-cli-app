@@ -2844,7 +2844,7 @@ public class MainActivity extends Activity {
         mascotFloatAnimator.setRepeatMode(ValueAnimator.REVERSE);
         mascotFloatAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
 
-        TextView brandName = cText(Theme.wordmark() + " Code", 19, Theme.TEXT_MAIN, true, true);
+        TextView brandName = cText(Theme.brandTitle(), 19, Theme.TEXT_MAIN, true, true);
         brandName.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpBn = new LinearLayout.LayoutParams(-1, -2);
         lpBn.setMargins(0, dp(18), 0, 0);

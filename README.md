@@ -16,6 +16,7 @@ Antigravity Remote adalah aplikasi Android native yang memungkinkan Anda mengont
 * **📋 1-Tap Clipboard Pairing:** Salin tautan pairing (`agy://connect?...`) atau JSON token di HP, lalu ketuk *Paste from Clipboard*.
 * **🔄 Two-Way Live Terminal Synchronization:** Pantau sesi terminal PC yang sedang berjalan secara langsung di HP (*Live Companion HUD*), atau lanjutkan instruksi dari HP secara bergantian.
 * **🔀 Dual Engine Gateway:** Beralih antara engine **Google Antigravity CLI** dan **OpenAI Codex CLI** dengan 1 ketukan.
+* **🎨 Tema per Engine:** Seluruh tampilan berganti mengikuti engine aktif — Antigravity dengan palet hangat terracotta dan tipografi serif, Codex dengan palet slate dingin beraksen teal dan tipografi sans. Wordmark, maskot, warna tombol, blok kode, sampai status bar ikut berubah.
 * **📊 Rich Markdown & Native Tables:** Dukungan format Markdown lengkap dengan tabel horizontal scrollable dan tombol salin kode cepat.
 * **🎙️ Voice Dictation & File Upload:** Dukungan input suara (Speech-to-Text) dan upload file / gambar langsung ke server.
 * **🔔 Notifikasi Task Selesai:** Kirim prompt panjang, kunci layar — HP memberi tahu saat task selesai atau gagal lewat koneksi SSE latar belakang.

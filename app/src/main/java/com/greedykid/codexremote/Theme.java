@@ -133,6 +133,11 @@ public final class Theme {
         return isCodex() ? "Codex" : "Antigravity";
     }
 
+    /** Title shown on the empty-session screen. */
+    public static String brandTitle() {
+        return isCodex() ? "Codex Remote" : "Antigravity Code";
+    }
+
     public static String engineLabel() {
         return isCodex() ? "Codex CLI" : "Antigravity CLI";
     }
