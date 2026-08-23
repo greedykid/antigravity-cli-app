@@ -87,7 +87,7 @@ function dropMissing(validIds) {
   }
 }
 
-function query(needleRaw, limit) {
+function query(needleRaw, limit, engineFilter) {
   const data = load();
   const needle = (needleRaw || "").trim().toLowerCase();
   if (!needle) return [];
@@ -98,6 +98,7 @@ function query(needleRaw, limit) {
 
   for (const entry of entries) {
     if (results.length >= limit) break;
+    if (engineFilter && (entry.engine || "antigravity") !== engineFilter) continue;
 
     const inTitle = (entry.title || "").toLowerCase().includes(needle);
     const at = inTitle ? -1 : entry.text.indexOf(needle);

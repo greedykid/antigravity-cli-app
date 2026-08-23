@@ -366,7 +366,7 @@ function getCodexTranscript(sessionId, limit = 1000) {
 // -------------------------------------------------------------
 // SESSIONS & TRANSCRIPT RETRIEVAL
 // -------------------------------------------------------------
-function getSessions() {
+function getSessions(engineFilter) {
   const home = os.homedir();
   const file = path.join(home, ".gemini/antigravity-cli/history.jsonl");
   const agyMap = new Map();
@@ -392,14 +392,25 @@ function getSessions() {
   const codexSessions = getCodexSessions();
   const agySessions = Array.from(agyMap.values());
 
-  const merged = [...codexSessions, ...agySessions].sort((a, b) => {
+  let merged = [...codexSessions, ...agySessions].sort((a, b) => {
     return (b.timestamp || 0) - (a.timestamp || 0);
   });
+
+  // Filter before the cap. Trimming to 50 first and filtering afterwards would
+  // hide an engine's sessions whenever the other engine dominates the top 50.
+  if (engineFilter) {
+    const wanted = normalizeEngine(engineFilter);
+    merged = merged.filter(s => normalizeEngine(s.engine) === wanted);
+  }
 
   return {
     hostname: os.hostname(),
     sessions: merged.slice(0, 50)
   };
+}
+
+function normalizeEngine(value) {
+  return String(value || "").toLowerCase() === "codex" ? "codex" : "antigravity";
 }
 
 function getTranscript(convId, limit = 1000) {
@@ -652,7 +663,9 @@ function transcriptSources(convId) {
   return sources;
 }
 
-function searchTranscripts(query, limit) {
+function searchTranscripts(query, limit, engineFilter) {
+  // Index every session, then narrow the answer: switching engines must not
+  // force a re-index of the sessions it just hid.
   const sData = getSessions();
   const sessions = sData.sessions || [];
 
@@ -668,8 +681,15 @@ function searchTranscripts(query, limit) {
   searchIndex.dropMissing(sessions.map(s => s.conversationId).filter(Boolean));
   searchIndex.persist();
 
-  const results = searchIndex.query(query, limit);
-  return { ok: true, query, count: results.length, results, indexed: searchIndex.stats().sessions };
+  const results = searchIndex.query(query, limit, engineFilter ? normalizeEngine(engineFilter) : null);
+  return {
+    ok: true,
+    query,
+    engine: engineFilter || null,
+    count: results.length,
+    results,
+    indexed: searchIndex.stats().sessions
+  };
 }
 
 function exportFilename(session) {
@@ -1045,7 +1065,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && pathname === "/api/search") {
     const query = (parsedUrl.query.q || "").trim();
     if (!query) return send(res, 400, { error: "Missing q parameter" });
-    return send(res, 200, searchTranscripts(query, Number(parsedUrl.query.limit) || 40));
+    return send(res, 200, searchTranscripts(query, Number(parsedUrl.query.limit) || 40, parsedUrl.query.engine));
   }
 
   // GET /api/usage
@@ -1130,10 +1150,11 @@ const server = http.createServer((req, res) => {
 
   // GET /api/sessions
   if (req.method === "GET" && pathname === "/api/sessions") {
-    const sData = getSessions();
+    const sData = getSessions(parsedUrl.query.engine);
     return send(res, 200, {
       ok: true,
       hostname: sData.hostname,
+      engine: parsedUrl.query.engine || null,
       sessions: sData.sessions || []
     });
   }

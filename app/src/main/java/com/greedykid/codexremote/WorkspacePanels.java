@@ -673,7 +673,9 @@ public class WorkspacePanels {
 
         executor.execute(() -> {
             try {
-                JSONObject json = bridge.get("/api/search?q=" + BridgeClient.encode(query), 30000);
+                // Search stays inside the engine the user is working in.
+                JSONObject json = bridge.get("/api/search?q=" + BridgeClient.encode(query)
+                        + "&engine=" + BridgeClient.encode(prefs.getString("engine", "antigravity")), 30000);
                 mainHandler.post(() -> {
                     results.removeAllViews();
                     JSONArray items = json.optJSONArray("results");

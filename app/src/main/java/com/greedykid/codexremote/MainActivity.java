@@ -939,7 +939,10 @@ public class MainActivity extends Activity {
 
         executor.execute(() -> {
             try {
-                String sessionsUrl = endpoint.replace("/api/chat", "/api/sessions");
+                // Sessions belong to one CLI or the other, so the list follows
+                // the active engine instead of mixing both.
+                String sessionsUrl = endpoint.replace("/api/chat", "/api/sessions")
+                        + "?engine=" + BridgeClient.encode(currentEngine);
                 HttpURLConnection c = (HttpURLConnection) new URL(sessionsUrl).openConnection();
                 c.setRequestMethod("GET");
                 c.setConnectTimeout(8000);
@@ -966,8 +969,9 @@ public class MainActivity extends Activity {
                         if (hubDeviceHostText != null) hubDeviceHostText.setText(currentServerHostname);
                         if (hubDeviceStatusText != null) hubDeviceStatusText.setText("Terhubung");
                         if (sidebarDeviceHost != null) sidebarDeviceHost.setText(currentServerHostname);
-                        renderSidebarRecent(sessions);
-                        renderTimeGroupedSessions(sessions);
+                        JSONArray mine = filterSessionsForEngine(sessions);
+                        renderSidebarRecent(mine);
+                        renderTimeGroupedSessions(mine);
                     });
                 } else {
                     // Anything other than 200 used to fall through silently:
@@ -1033,13 +1037,28 @@ public class MainActivity extends Activity {
         hubSessionGroupsContainer.addView(card, lp);
     }
 
+    /** Keeps only the active engine's sessions, whatever the server returned. */
+    private JSONArray filterSessionsForEngine(JSONArray sessions) {
+        if (sessions == null) return null;
+        JSONArray filtered = new JSONArray();
+        for (int i = 0; i < sessions.length(); i++) {
+            JSONObject s = sessions.optJSONObject(i);
+            if (s == null) continue;
+            String engine = s.optString("engine", "antigravity");
+            boolean isCodex = "codex".equalsIgnoreCase(engine);
+            if (isCodex == isCodexEngine()) filtered.put(s);
+        }
+        return filtered;
+    }
+
     private void renderTimeGroupedSessions(JSONArray sessions) {
         if (hubLoadingProgress != null) hubLoadingProgress.setVisibility(View.GONE);
         if (hubSessionGroupsContainer != null) hubSessionGroupsContainer.removeAllViews();
 
         if (sessions == null || sessions.length() == 0) {
             addTimeSectionHeader("Hari ini");
-            addSessionCard("Mulai sesi koding baru", "Terhubung • " + currentServerHostname, "Baru", null, true);
+            addSessionCard("Belum ada sesi " + engineLabel(currentEngine),
+                    "Terhubung • " + currentServerHostname, "Baru", null, true);
             return;
         }
 
@@ -1217,6 +1236,7 @@ public class MainActivity extends Activity {
         prefs.edit()
                 .putString("last_conversation_id", convId == null ? "" : convId)
                 .putString("last_conversation_title", activeSessionTitle)
+                .putString("last_conversation_engine", currentEngine)
                 .apply();
         lastLoadedSessionId = null;
         lastLoadedTurnCount = -1;
@@ -1245,7 +1265,9 @@ public class MainActivity extends Activity {
 
         String cachedId = prefs.getString("last_conversation_id", "");
         String cachedTitle = prefs.getString("last_conversation_title", "Sesi");
-        if (!cachedId.isEmpty()) {
+        String cachedEngine = prefs.getString("last_conversation_engine", currentEngine);
+        // A session from the other engine must not resurface after a switch.
+        if (!cachedId.isEmpty() && cachedEngine.equalsIgnoreCase(currentEngine)) {
             navigatedFromHub = false;
             openSpecificSession(cachedId, cachedTitle);
             return;
@@ -1254,8 +1276,8 @@ public class MainActivity extends Activity {
         Toast.makeText(this, "Mencari sesi terakhir...", Toast.LENGTH_SHORT).show();
         executor.execute(() -> {
             try {
-                JSONObject json = bridge.get("/api/sessions");
-                JSONArray sessions = json.optJSONArray("sessions");
+                JSONObject json = bridge.get("/api/sessions?engine=" + BridgeClient.encode(currentEngine));
+                JSONArray sessions = filterSessionsForEngine(json.optJSONArray("sessions"));
                 if (sessions == null || sessions.length() == 0) {
                     mainHandler.post(() -> {
                         Toast.makeText(MainActivity.this, "Belum ada sesi — memulai yang baru", Toast.LENGTH_SHORT).show();
@@ -3092,6 +3114,7 @@ public class MainActivity extends Activity {
                 .putString("pending_engine_notice_from", previous)
                 .remove("last_conversation_id")
                 .remove("last_conversation_title")
+                .remove("last_conversation_engine")
                 .apply();
 
         // Every colour, the wordmark, the mascot and the heading face change

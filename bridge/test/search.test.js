@@ -123,3 +123,45 @@ test("a loader that throws does not take the index down", () => {
   assert.ok(entry);
   assert.equal(search.query("judul aman", 10).length, 1);
 });
+
+// Sessions belong to one CLI or the other; the app shows only the active
+// engine's history, so search has to narrow the same way.
+test("engine filter returns only that engine's sessions", () => {
+  const src = sourceFile("mix.jsonl", "x");
+  search.sync({ conversationId: "c1", title: "Codex satu", engine: "codex", timestamp: 3 },
+    [src], () => [{ role: "user", content: "kata bersama" }]);
+  search.sync({ conversationId: "a1", title: "Agy satu", engine: "antigravity", timestamp: 2 },
+    [src], () => [{ role: "user", content: "kata bersama" }]);
+
+  const codex = search.query("kata bersama", 10, "codex");
+  assert.equal(codex.length, 1);
+  assert.equal(codex[0].conversationId, "c1");
+
+  const agy = search.query("kata bersama", 10, "antigravity");
+  assert.equal(agy.length, 1);
+  assert.equal(agy[0].conversationId, "a1");
+});
+
+test("no filter still returns both engines", () => {
+  const src = sourceFile("both.jsonl", "x");
+  search.sync({ conversationId: "c2", title: "C", engine: "codex", timestamp: 2 },
+    [src], () => [{ role: "user", content: "gabungan" }]);
+  search.sync({ conversationId: "a2", title: "A", engine: "antigravity", timestamp: 1 },
+    [src], () => [{ role: "user", content: "gabungan" }]);
+  assert.equal(search.query("gabungan", 10).length, 2);
+});
+
+test("a session with no engine recorded counts as antigravity", () => {
+  const src = sourceFile("noengine.jsonl", "x");
+  search.sync({ conversationId: "n1", title: "Tanpa engine", timestamp: 1 },
+    [src], () => [{ role: "user", content: "warisan" }]);
+  assert.equal(search.query("warisan", 10, "antigravity").length, 1);
+  assert.equal(search.query("warisan", 10, "codex").length, 0);
+});
+
+test("filtering an engine with no matches yields nothing, not everything", () => {
+  const src = sourceFile("only-agy.jsonl", "x");
+  search.sync({ conversationId: "a3", title: "A", engine: "antigravity", timestamp: 1 },
+    [src], () => [{ role: "user", content: "khusus agy" }]);
+  assert.deepEqual(search.query("khusus agy", 10, "codex"), []);
+});
