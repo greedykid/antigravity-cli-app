@@ -62,5 +62,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f latest
+          git push -f origin latest || true
           gh release upload latest app/build/outputs/apk/debug/app-debug.apk --clobber || \
           gh release create latest app/build/outputs/apk/debug/app-debug.apk --title "Antigravity Remote Latest Release" --notes "Latest build APK & IPA"
