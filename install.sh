@@ -1,152 +1,92 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Antigravity & Codex Remote - 1-Click Server & Tunnel Auto Installer
+# https://github.com/greedykid/codexcli-remote-app
+# ==============================================================================
+
 set -e
 
-# ==============================================================================
-#  🚀 ANTIGRAVITY & CODEX REMOTE - ONE-LINE AUTO INSTALLER
-# ==============================================================================
+echo -e "\033[1;36m"
+echo "  ========================================================"
+echo "    🌌 Antigravity & Codex Remote Server Setup"
+echo "    Real-time Mobile Companion for Antigravity & Codex CLI"
+echo "  ========================================================"
+echo -e "\033[0m"
 
-BOLD="\033[1m"
-GREEN="\033[0;32m"
-CYAN="\033[0;36m"
-YELLOW="\033[1;33m"
-RED="\033[0;31m"
-RESET="\033[0m"
-
-echo -e "${CYAN}"
-echo "╔═══════════════════════════════════════════════════════════════╗"
-echo "║        🤖 ANTIGRAVITY & CODEX CLI REMOTE - AUTO INSTALLER     ║"
-echo "╚═══════════════════════════════════════════════════════════════╝"
-echo -e "${RESET}"
-
-CURRENT_USER=$(whoami)
-INSTALL_DIR="${HOME}/.codexcli-remote-app"
-if [ "${CURRENT_USER}" = "root" ]; then
-  INSTALL_DIR="/opt/codexcli-remote-app"
+# 1. Check & Install Node.js if missing
+if ! command -v node >/dev/null 2>&1; then
+    echo -e "\033[34m▶ Installing Node.js (LTS)...\033[0m"
+    if command -v apt-get >/dev/null 2>&1; then
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+    else
+        echo -e "\033[31m✘ Node.js is required. Please install Node.js 18+ first.\033[0m"
+        exit 1
+    fi
 fi
 
-# 1. Dependency Checks: curl, git, node, npm
-echo -e "${YELLOW}[1/5] Memeriksa dependensi sistem...${RESET}"
-
-if ! command -v curl &> /dev/null; then
-  echo "Menginstall curl..."
-  if command -v apt-get &> /dev/null; then
-    sudo apt-get update -y && sudo apt-get install -y curl
-  elif command -v yum &> /dev/null; then
-    sudo yum install -y curl
-  fi
+# 2. Check & Install cloudflared if missing
+if ! command -v cloudflared >/dev/null 2>&1; then
+    echo -e "\033[34m▶ Installing Cloudflared tunnel...\033[0m"
+    ARCH=$(uname -m)
+    CLOUDFLARED_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+        CLOUDFLARED_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+    fi
+    
+    mkdir -p "$HOME/.local/bin"
+    curl -fsSL "$CLOUDFLARED_URL" -o "$HOME/.local/bin/cloudflared"
+    chmod +x "$HOME/.local/bin/cloudflared"
+    
+    if sudo -n true 2>/dev/null; then
+        sudo cp "$HOME/.local/bin/cloudflared" /usr/local/bin/cloudflared 2>/dev/null || true
+    fi
 fi
 
-if ! command -v git &> /dev/null; then
-  echo "Menginstall git..."
-  if command -v apt-get &> /dev/null; then
-    sudo apt-get update -y && sudo apt-get install -y git
-  elif command -v yum &> /dev/null; then
-    sudo yum install -y git
-  fi
+# 3. Setup App Repository Directory
+INSTALL_DIR="$HOME/.codex-remote/app"
+if [ -d "/home/ubuntu/codexcli-remote-app" ]; then
+    INSTALL_DIR="/home/ubuntu/codexcli-remote-app"
 fi
 
-if ! command -v node &> /dev/null; then
-  echo -e "${YELLOW}Node.js belum terinstall. Menginstall Node.js 20 LTS...${RESET}"
-  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-  sudo apt-get install -y nodejs
+if [ ! -d "$INSTALL_DIR/bridge" ]; then
+    echo -e "\033[34m▶ Downloading Antigravity Remote Bridge Server...\033[0m"
+    mkdir -p "$HOME/.codex-remote"
+    rm -rf "$INSTALL_DIR"
+    git clone --depth=1 https://github.com/greedykid/codexcli-remote-app.git "$INSTALL_DIR"
 fi
 
-NODE_VER=$(node -v)
-echo -e "${GREEN}✓ Node.js terdeteksi: ${NODE_VER}${RESET}"
-
-# 2. Check and install cloudflared
-if ! command -v cloudflared &> /dev/null; then
-  echo -e "${YELLOW}Menginstall Cloudflared untuk tunneling publik aman...${RESET}"
-  ARCH=$(uname -m)
-  if [ "${ARCH}" = "x86_64" ]; then
-    CF_ARCH="amd64"
-  elif [ "${ARCH}" = "aarch64" ] || [ "${ARCH}" = "arm64" ]; then
-    CF_ARCH="arm64"
-  else
-    CF_ARCH="386"
-  fi
-  sudo curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CF_ARCH}" -o /usr/local/bin/cloudflared
-  sudo chmod +x /usr/local/bin/cloudflared
-fi
-echo -e "${GREEN}✓ Cloudflared siap digunakan.${RESET}"
-
-# 3. Clone / Update Repository
-echo -e "${YELLOW}[2/5] Mengunduh komponen Codex Remote Bridge...${RESET}"
-if [ -d "${INSTALL_DIR}/.git" ]; then
-  echo "Memperbarui repositori di ${INSTALL_DIR}..."
-  cd "${INSTALL_DIR}"
-  git pull origin main
-else
-  mkdir -p "${INSTALL_DIR}"
-  git clone https://github.com/greedykid/codexcli-remote-app.git "${INSTALL_DIR}"
-  cd "${INSTALL_DIR}"
-fi
-
-# 4. Install NPM packages in bridge
-echo -e "${YELLOW}[3/5] Menginstall modul server bridge...${RESET}"
-cd "${INSTALL_DIR}/bridge"
+# 4. Install Bridge Dependencies
+echo -e "\033[34m▶ Installing bridge dependencies...\033[0m"
+cd "$INSTALL_DIR/bridge"
 npm install --silent
 
-# 5. Setup Systemd Services
-echo -e "${YELLOW}[4/5] Mengonfigurasi background services (systemd)...${RESET}"
-NODE_BIN=$(which node)
-CLOUDFLARED_BIN=$(which cloudflared || echo "/usr/local/bin/cloudflared")
+# 5. Install Global CLI Command (codex-remote & agy-remote)
+mkdir -p "$HOME/.local/bin"
+cp "$INSTALL_DIR/bin/codex-remote" "$HOME/.local/bin/codex-remote"
+chmod +x "$HOME/.local/bin/codex-remote"
+cp "$INSTALL_DIR/bin/codex-remote" "$HOME/.local/bin/agy-remote"
+chmod +x "$HOME/.local/bin/agy-remote"
 
-# codex-bridge.service
-sudo tee /etc/systemd/system/codex-bridge.service > /dev/null <<EOF
-[Unit]
-Description=Codex CLI Remote Bridge Server
-After=network.target
+if sudo -n true 2>/dev/null; then
+    sudo cp "$INSTALL_DIR/bin/codex-remote" /usr/local/bin/codex-remote 2>/dev/null || true
+    sudo cp "$INSTALL_DIR/bin/codex-remote" /usr/local/bin/agy-remote 2>/dev/null || true
+fi
 
-[Service]
-Type=simple
-User=${CURRENT_USER}
-WorkingDirectory=${HOME}
-Environment=NODE_ENV=production
-Environment=PORT=8787
-Environment=BRIDGE_HOST=0.0.0.0
-Environment=REMOTE_TOKEN=codex-remote-token-2026
-Environment=CODEX_WORKDIR=${HOME}
-Environment=PATH=${PATH}:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin
-ExecStart=${NODE_BIN} ${INSTALL_DIR}/bridge/server.js
-Restart=always
-RestartSec=3
+# 6. Ensure PATH is updated in shell profile
+for profile in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+    if [ -f "$profile" ]; then
+        if ! grep -q ".local/bin" "$profile"; then
+            echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$profile"
+        fi
+    fi
+done
 
-[Install]
-WantedBy=multi-user.target
-EOF
+echo ""
+echo -e "\033[32m✔ Setup Completed Successfully!\033[0m"
+echo -e "\033[32m✔ Global CLI commands installed: \033[1;37mcodex-remote\033[0;32m and \033[1;37magy-remote\033[0m"
+echo ""
 
-# codex-tunnel.service
-sudo tee /etc/systemd/system/codex-tunnel.service > /dev/null <<EOF
-[Unit]
-Description=Cloudflare Tunnel for Codex Bridge
-After=network.target codex-bridge.service
-
-[Service]
-Type=simple
-User=${CURRENT_USER}
-ExecStart=${CLOUDFLARED_BIN} tunnel --url http://127.0.0.1:8787 --logfile ${INSTALL_DIR}/tunnel.log
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Setup global CLI command symlink
-chmod +x "${INSTALL_DIR}/bin/codex-remote.js"
-sudo ln -sf "${INSTALL_DIR}/bin/codex-remote.js" /usr/local/bin/codex-remote
-sudo ln -sf "${INSTALL_DIR}/bin/codex-remote.js" /usr/local/bin/agy-remote
-
-# Reload and start services
-sudo systemctl daemon-reload
-sudo systemctl enable codex-bridge codex-tunnel > /dev/null 2>&1
-sudo systemctl restart codex-bridge codex-tunnel
-
-echo -e "${GREEN}✓ Background service aktif dan berjalan!${RESET}"
-
-# 6. Generate QR Code
-echo -e "${YELLOW}[5/5] Membuka Cloudflare Tunnel & membuat QR Code...${RESET}"
-sleep 4
-
-node "${INSTALL_DIR}/bin/codex-remote.js" pair
+# 7. Start Bridge & Generate QR Code Pairing
+echo -e "\033[34m▶ Starting Bridge Server and generating QR Pairing...\033[0m"
+"$INSTALL_DIR/bin/codex-remote" pair
