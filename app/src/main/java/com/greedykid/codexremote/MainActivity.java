@@ -5018,20 +5018,30 @@ public class MainActivity extends Activity {
         dialog.show();
     }
 
-    private LinearLayout createAttachmentOptionRow(String titleStr, String subStr) {
+    private LinearLayout createAttachmentOptionRow(int iconRes, String titleStr, String subStr) {
         LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
         row.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
         row.setPadding(dp(14), dp(10), dp(14), dp(10));
         row.setClickable(true);
         row.setFocusable(true);
 
+        ImageView ic = cIcon(iconRes, 22, Theme.ACCENT);
+        row.addView(ic);
+
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setPadding(dp(12), 0, 0, 0);
+
         TextView t = cText(titleStr, 14f, Theme.TEXT_MAIN, true, false);
-        row.addView(t);
+        textCol.addView(t);
 
         TextView s = cText(subStr, 11.5f, Theme.TEXT_MUTED, false, false);
         s.setPadding(0, dp(2), 0, 0);
-        row.addView(s);
+        textCol.addView(s);
+
+        row.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1));
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, 0, 0, dp(8));
