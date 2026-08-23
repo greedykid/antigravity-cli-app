@@ -52,6 +52,7 @@ import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MenuItem;
+import android.view.inputmethod.EditorInfo;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -110,29 +111,29 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     // Claude Dark Theme Palette (Exact Match to Official Claude App)
-    private static final int CLAUDE_BG = Color.rgb(24, 24, 23);               // #181817 Dark Obsidian BG
-    private static final int CLAUDE_SURFACE = Color.rgb(33, 32, 30);          // #21201E Dark Card Surface
-    private static final int CLAUDE_SURFACE_MUTED = Color.rgb(42, 41, 38);    // #2A2926 Dark Badge / Chip
-    private static final int CLAUDE_BORDER = Color.rgb(48, 46, 43);           // #302E2B Subtle Dark Border
-    private static final int CLAUDE_BORDER_DARK = Color.rgb(62, 60, 56);      // #3E3C38
-    private static final int CLAUDE_CODE_BG = Color.rgb(18, 18, 18);          // #121212 Dark Code Box
-
-    private static final int CLAUDE_TEXT_MAIN = Color.rgb(237, 236, 232);     // #EDECE8 Warm White
-    private static final int CLAUDE_TEXT_MUTED = Color.rgb(158, 157, 153);    // #9E9D99 Warm Slate Grey
-    private static final int CLAUDE_TEXT_LIGHT = Color.rgb(112, 111, 108);    // #706F6C Deep Slate
-
-    private static final int CLAUDE_TERRACOTTA = Color.rgb(217, 107, 67);      // #D96B43 Claude Terracotta Orange
-    private static final int CLAUDE_TERRACOTTA_LIGHT = Color.rgb(56, 36, 29); // #38241D Dark Peach Tint
-    private static final int CLAUDE_GREEN = Color.rgb(76, 175, 80);            // #4CAF50 Emerald Green
-    private static final int CLAUDE_GREEN_BG = Color.rgb(27, 48, 30);          // #1B301E Dark Mint
-    private static final int CLAUDE_AMBER = Color.rgb(245, 158, 11);           // #F59E0B Amber
-    private static final int CLAUDE_AMBER_BG = Color.rgb(51, 38, 15);          // #33260F Dark Amber
-    private static final int CLAUDE_RED = Color.rgb(239, 68, 68);              // #EF4444 Red
-    private static final int CLAUDE_BLUE = Color.rgb(59, 130, 246);            // #3B82F6 Active Blue Dot
+    // Palette lives in Theme.java; these aliases keep call sites unchanged.
+    private static final int CLAUDE_BG = Theme.BG;
+    private static final int CLAUDE_SURFACE = Theme.SURFACE;
+    private static final int CLAUDE_SURFACE_MUTED = Theme.SURFACE_MUTED;
+    private static final int CLAUDE_BORDER = Theme.BORDER;
+    private static final int CLAUDE_BORDER_DARK = Theme.BORDER_DARK;
+    private static final int CLAUDE_CODE_BG = Theme.CODE_BG;
+    private static final int CLAUDE_TEXT_MAIN = Theme.TEXT_MAIN;
+    private static final int CLAUDE_TEXT_MUTED = Theme.TEXT_MUTED;
+    private static final int CLAUDE_TEXT_LIGHT = Theme.TEXT_LIGHT;
+    private static final int CLAUDE_TERRACOTTA = Theme.TERRACOTTA;
+    private static final int CLAUDE_TERRACOTTA_LIGHT = Theme.TERRACOTTA_LIGHT;
+    private static final int CLAUDE_GREEN = Theme.GREEN;
+    private static final int CLAUDE_GREEN_BG = Theme.GREEN_BG;
+    private static final int CLAUDE_AMBER = Theme.AMBER;
+    private static final int CLAUDE_AMBER_BG = Theme.AMBER_BG;
+    private static final int CLAUDE_RED = Theme.RED;
+    private static final int CLAUDE_BLUE = Theme.BLUE;
 
     private static final int REQ_PICK_FILES = 1001;
     private static final int REQ_VOICE_SPEECH = 1002;
     private static final int REQ_CAMERA_PERMISSION = 2001;
+    private static final int REQ_NOTIFICATION_PERMISSION = 2004;
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -191,6 +192,8 @@ public class MainActivity extends Activity {
     private FrameLayout btnScrollToBottom;
     private LinearLayout emptyMascotView;
     private ObjectAnimator mascotFloatAnimator;
+    private MarkdownRenderer markdownRenderer;
+    private BridgeClient bridge;
     private EditText promptInput;
     private FrameLayout btnSend;
     private ImageView btnAttach;
@@ -238,7 +241,9 @@ public class MainActivity extends Activity {
         public void run() {
             if (currentScreen == 1 && (isLiveTaskRunning || isAutoRefreshActive)) {
                 syncLiveExecution();
-                int delay = isLiveTaskRunning ? 1000 : 3000;
+                // SSE drives the fast path; this is only a fallback for when
+                // the stream is down, so it no longer polls every second.
+                int delay = isLiveTaskRunning ? 5000 : 12000;
                 mainHandler.postDelayed(this, delay);
             }
         }
@@ -250,10 +255,20 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(CLAUDE_BG);
         getWindow().setNavigationBarColor(CLAUDE_BG);
         prefs = getSharedPreferences("connection", MODE_PRIVATE);
+        bridge = new BridgeClient(prefs);
         currentEngine = prefs.getString("engine", "antigravity");
         currentModel = prefs.getString(modelPrefKey(currentEngine), defaultModelForEngine(currentEngine));
         currentServerHostname = prefs.getString("device_name", "Server Remote");
         buildClaudeUiWithSidebar();
+        requestNotificationPermission();
+        LiveEventBus.register(liveEventListener);
+        startLiveEvents();
+    }
+
+    @Override
+    protected void onDestroy() {
+        LiveEventBus.unregister(liveEventListener);
+        super.onDestroy();
     }
 
     @Override
@@ -474,6 +489,21 @@ public class MainActivity extends Activity {
             pasteFromClipboard();
         });
 
+        addSidebarMenuItem(body, R.drawable.ic_search, "Cari Sesi", null, -1, false, () -> {
+            closeSidebar();
+            showSearchPanel();
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_folder, "File Workspace", null, -1, false, () -> {
+            closeSidebar();
+            showFileBrowser(".");
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_source_branch, "Git", null, -1, false, () -> {
+            closeSidebar();
+            showGitPanel();
+        });
+
         addSidebarMenuItem(body, R.drawable.ic_settings, "Pengaturan", null, 2, false, () -> {
             closeSidebar();
             showScreen(2);
@@ -504,6 +534,16 @@ public class MainActivity extends Activity {
         statusCol.addView(sidebarDeviceHost);
         statusRow.addView(statusCol, new LinearLayout.LayoutParams(0, -2, 1));
         body.addView(statusRow, new LinearLayout.LayoutParams(-1, -2));
+
+        addSidebarMenuItem(body, R.drawable.ic_laptop, "Ganti Server", null, -1, false, () -> {
+            closeSidebar();
+            showServerSwitcher();
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_security, "Mode Eksekusi", null, -1, false, () -> {
+            closeSidebar();
+            showSandboxPicker();
+        });
 
         addSidebarMenuItem(body, R.drawable.ic_refresh, "Test Ping & Health", null, -1, false, this::checkHealth);
         addSidebarMenuItem(body, R.drawable.ic_stop, "Hentikan Proses CLI", null, -1, false, () -> {
@@ -2767,6 +2807,9 @@ public class MainActivity extends Activity {
         addDropdownItem(popup, 4, "Interrupt / Stop Task", R.drawable.ic_stop, CLAUDE_RED);
         addDropdownItem(popup, 5, "Refresh Transcript", R.drawable.ic_refresh, CLAUDE_TEXT_MAIN);
         addDropdownItem(popup, 6, "Clear to New Session", R.drawable.ic_add, CLAUDE_TERRACOTTA);
+        addDropdownItem(popup, 7, "Cari Sesi", R.drawable.ic_search, CLAUDE_TEXT_MAIN);
+        addDropdownItem(popup, 8, "File Workspace", R.drawable.ic_folder, CLAUDE_TEXT_MAIN);
+        addDropdownItem(popup, 9, "Git", R.drawable.ic_source_branch, CLAUDE_TEXT_MAIN);
         forceShowPopupIcons(popup);
 
         popup.setOnMenuItemClickListener(item -> {
@@ -2777,6 +2820,9 @@ public class MainActivity extends Activity {
             else if (id == 4) stopRunningCliProcess();
             else if (id == 5) fetchActiveSessionTurns(true);
             else if (id == 6) startNewSession();
+            else if (id == 7) showSearchPanel();
+            else if (id == 8) showFileBrowser(".");
+            else if (id == 9) showGitPanel();
             return true;
         });
         popup.show();
@@ -3159,8 +3205,10 @@ public class MainActivity extends Activity {
 
         currentEngine = engine != null ? engine.trim() : "antigravity";
         currentModel = prefs.getString(modelPrefKey(currentEngine), defaultModelForEngine(currentEngine));
+        saveServerProfile(currentServerHostname, cleanUrl, token != null ? token.trim() : "");
         updateRepoTag();
         refreshSettingsValues();
+        restartLiveEvents();
         startNewSession();
         Toast.makeText(this, "Berhasil terhubung ke Server!", Toast.LENGTH_LONG).show();
         checkHealth();
@@ -4072,596 +4120,742 @@ public class MainActivity extends Activity {
         });
     }
 
-    // ============================================================
-    // MARKDOWN RENDERER (block-aware, Claude Code aesthetics)
-    // ============================================================
-
-    private static final Pattern MD_BULLET = Pattern.compile("^(\\s*)([-*+])\\s+(.*)$");
-    private static final Pattern MD_ORDERED = Pattern.compile("^(\\s*)(\\d{1,3})[.)]\\s+(.*)$");
-    private static final Pattern MD_RULE = Pattern.compile("^\\s*(-{3,}|\\*{3,}|_{3,})\\s*$");
-    private static final Pattern MD_INLINE_CODE = Pattern.compile("`([^`\n]+)`");
-    private static final Pattern MD_LINK = Pattern.compile("\\[([^\\]\n]*)\\]\\(([^)\\s]+)[^)]*\\)");
-    private static final Pattern MD_AUTOLINK = Pattern.compile("(?<![\\w@/.\"'(])(https?://[^\\s<>\\)\\]]+)");
-    private static final Pattern MD_BOLD = Pattern.compile("(\\*\\*|__)(?=\\S)(.+?)(?<=\\S)\\1");
-    private static final Pattern MD_ITALIC_STAR = Pattern.compile("(?<![\\*\\w])\\*(?=\\S)([^\\*\n]+?)(?<=\\S)\\*(?!\\*)");
-    private static final Pattern MD_ITALIC_US = Pattern.compile("(?<![\\w_])_(?=\\S)([^_\n]+?)(?<=\\S)_(?![\\w_])");
-    private static final Pattern MD_STRIKE = Pattern.compile("~~(?=\\S)([^~\n]+?)(?<=\\S)~~");
-
-    // Rounded "pill" background for inline `code`, drawn instead of a flat highlight.
-    private class CodePillSpan extends ReplacementSpan {
-        private final int pillBg;
-        private final int pillFg;
-
-        CodePillSpan(int pillBg, int pillFg) {
-            this.pillBg = pillBg;
-            this.pillFg = pillFg;
-        }
-
-        private Paint textPaint(Paint base) {
-            Paint p = new Paint(base);
-            p.setTypeface(Typeface.MONOSPACE);
-            p.setTextSize(base.getTextSize() * 0.92f);
-            return p;
-        }
-
-        @Override
-        public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
-            return Math.round(textPaint(paint).measureText(text, start, end)) + dp(11);
-        }
-
-        @Override
-        public void draw(Canvas canvas, CharSequence text, int start, int end,
-                         float x, int top, int y, int bottom, Paint paint) {
-            Paint tp = textPaint(paint);
-            float w = tp.measureText(text, start, end) + dp(11);
-            Paint.FontMetrics fm = paint.getFontMetrics();
-            RectF r = new RectF(x, y + fm.ascent - dp(1f), x + w, y + fm.descent + dp(1f));
-            Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
-            bg.setColor(pillBg);
-            canvas.drawRoundRect(r, dp(5), dp(5), bg);
-            tp.setColor(pillFg);
-            canvas.drawText(text, start, end, x + dp(5.5f), y, tp);
-        }
-    }
-
+    // Markdown rendering lives in MarkdownRenderer.java.
     private void renderMarkdownIntoContainer(LinearLayout container, String markdown, boolean isUser) {
-        if (markdown == null || markdown.isEmpty()) return;
-
-        String[] sections = markdown.split("```");
-        for (int s = 0; s < sections.length; s++) {
-            if (s % 2 == 1) {
-                renderFencedCodeBlock(container, sections[s]);
-            } else {
-                renderTextSection(container, sections[s]);
-            }
-        }
+        if (markdownRenderer == null) markdownRenderer = new MarkdownRenderer(this);
+        markdownRenderer.render(container, markdown, isUser);
     }
 
-    private void renderTextSection(LinearLayout container, String text) {
-        String[] lines = text.split("\n", -1);
+    // ============================================================
+    // FILE BROWSER
+    // ============================================================
+    private void showFileBrowser(final String startPath) {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "File Workspace", true);
 
-        ArrayList<String> tableBuffer = new ArrayList<>();
-        ArrayList<String> quoteBuffer = new ArrayList<>();
-        ArrayList<String[]> listBuffer = new ArrayList<>();   // {depth, marker, content}
-        SpannableStringBuilder paragraph = new SpannableStringBuilder();
+        final TextView pathLabel = cText(startPath == null ? "." : startPath, 12f, CLAUDE_TEXT_MUTED, false, false);
+        pathLabel.setSingleLine(true);
+        pathLabel.setEllipsize(TextUtils.TruncateAt.START);
+        root.addView(pathLabel);
 
-        for (String line : lines) {
-            String trimmed = line.trim();
+        final ScrollView scroll = new ScrollView(this);
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(list);
+        LinearLayout.LayoutParams lpScroll = new LinearLayout.LayoutParams(-1, dp(420));
+        lpScroll.setMargins(0, dp(10), 0, 0);
+        root.addView(scroll, lpScroll);
 
-            boolean isTable = trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.length() > 1;
-            boolean isQuote = trimmed.startsWith(">");
-            Matcher bullet = MD_BULLET.matcher(line);
-            Matcher ordered = MD_ORDERED.matcher(line);
-            boolean isBullet = !isTable && bullet.matches();
-            boolean isOrdered = !isTable && !isBullet && ordered.matches();
-            boolean isRule = MD_RULE.matcher(line).matches();
-            boolean isHeading = trimmed.startsWith("#") && trimmed.matches("^#{1,6}\\s+.*$");
+        loadFileList(startPath == null ? "." : startPath, list, pathLabel, dialog);
 
-            // Any non-matching line closes the open block of a different kind.
-            if (!isTable && !tableBuffer.isEmpty()) {
-                renderMarkdownTable(container, new ArrayList<>(tableBuffer));
-                tableBuffer.clear();
-            }
-            if (!isQuote && !quoteBuffer.isEmpty()) {
-                addQuoteBlock(container, quoteBuffer);
-                quoteBuffer.clear();
-            }
-            if (!isBullet && !isOrdered && !listBuffer.isEmpty()) {
-                addListBlock(container, listBuffer);
-                listBuffer.clear();
-            }
-
-            if (isTable) {
-                paragraph = flushParagraph(container, paragraph);
-                tableBuffer.add(trimmed);
-            } else if (isRule) {
-                paragraph = flushParagraph(container, paragraph);
-                addRuleBlock(container);
-            } else if (isHeading) {
-                paragraph = flushParagraph(container, paragraph);
-                addHeadingBlock(container, trimmed);
-            } else if (isQuote) {
-                paragraph = flushParagraph(container, paragraph);
-                quoteBuffer.add(trimmed.substring(1).trim());
-            } else if (isBullet || isOrdered) {
-                paragraph = flushParagraph(container, paragraph);
-                String indent = isBullet ? bullet.group(1) : ordered.group(1);
-                String marker = isBullet ? "\u2022" : (ordered.group(2) + ".");
-                String content = isBullet ? bullet.group(3) : ordered.group(3);
-                int depth = Math.min(3, indent.replace("\t", "  ").length() / 2);
-                listBuffer.add(new String[]{ String.valueOf(depth), marker, content });
-            } else if (trimmed.isEmpty()) {
-                paragraph = flushParagraph(container, paragraph);
-            } else {
-                if (paragraph.length() > 0) paragraph.append("\n");
-                paragraph.append(parseInlineMarkdownLine(line));
-            }
-        }
-
-        if (!tableBuffer.isEmpty()) renderMarkdownTable(container, tableBuffer);
-        if (!quoteBuffer.isEmpty()) addQuoteBlock(container, quoteBuffer);
-        if (!listBuffer.isEmpty()) addListBlock(container, listBuffer);
-        flushParagraph(container, paragraph);
+        dialog.setContentView(root);
+        dialog.show();
     }
 
-    // ---------- block builders ----------
+    private void loadFileList(final String path, final LinearLayout list, final TextView pathLabel, final Dialog dialog) {
+        list.removeAllViews();
+        list.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
 
-    private void renderFencedCodeBlock(LinearLayout container, String block) {
-        String lang = "";
-        String codeContent = block;
-        int firstLf = block.indexOf("\n");
-        if (firstLf >= 0 && firstLf < 25 && !block.substring(0, firstLf).trim().contains(" ")) {
-            lang = block.substring(0, firstLf).trim().toUpperCase(Locale.ROOT);
-            codeContent = block.substring(firstLf + 1);
-        }
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/files?path=" + BridgeClient.encode(path));
+                mainHandler.post(() -> {
+                    list.removeAllViews();
+                    if (!json.optBoolean("ok", false)) {
+                        list.addView(cText(json.optString("error", "Gagal memuat"), 13f, CLAUDE_RED, false, false));
+                        return;
+                    }
+                    pathLabel.setText("/" + json.optString("path", "."));
 
-        LinearLayout codeBox = new LinearLayout(this);
-        codeBox.setOrientation(LinearLayout.VERTICAL);
-        codeBox.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
-        codeBox.setClipToOutline(true);
+                    final String parent = json.isNull("parent") ? null : json.optString("parent", null);
+                    if (parent != null) {
+                        list.addView(buildFileRow("..", "dir", 0, () ->
+                                loadFileList(parent, list, pathLabel, dialog)));
+                    }
 
-        LinearLayout codeHeader = new LinearLayout(this);
-        codeHeader.setOrientation(LinearLayout.HORIZONTAL);
-        codeHeader.setGravity(Gravity.CENTER_VERTICAL);
-        codeHeader.setPadding(dp(12), dp(8), dp(8), dp(8));
-
-        TextView langTag = cText(lang.isEmpty() ? "CODE" : lang, 10.5f, CLAUDE_TERRACOTTA, true, false);
-        langTag.setLetterSpacing(0.12f);
-        langTag.setBackground(cBox(CLAUDE_TERRACOTTA_LIGHT, 0, 0, 6));
-        langTag.setPadding(dp(7), dp(3), dp(7), dp(3));
-        LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(-2, -2);
-        codeHeader.addView(langTag, tagLp);
-
-        codeHeader.addView(new View(this), new LinearLayout.LayoutParams(0, dp(1), 1));
-
-        LinearLayout copyCodeBtn = new LinearLayout(this);
-        copyCodeBtn.setOrientation(LinearLayout.HORIZONTAL);
-        copyCodeBtn.setGravity(Gravity.CENTER_VERTICAL);
-        copyCodeBtn.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER_DARK, 1, 8));
-        copyCodeBtn.setPadding(dp(9), dp(5), dp(9), dp(5));
-        copyCodeBtn.addView(cIcon(R.drawable.ic_content_paste, 12, CLAUDE_TEXT_MUTED));
-        copyCodeBtn.addView(cText("  Copy", 10.5f, CLAUDE_TEXT_MUTED, true, false));
-        codeHeader.addView(copyCodeBtn);
-        codeBox.addView(codeHeader);
-
-        View headerRule = new View(this);
-        headerRule.setBackgroundColor(CLAUDE_BORDER);
-        codeBox.addView(headerRule, new LinearLayout.LayoutParams(-1, dp(1)));
-
-        // Long lines scroll sideways instead of wrapping into unreadable soup.
-        final String code = codeContent.replaceAll("\\s+$", "");
-        HorizontalScrollView codeScroll = new HorizontalScrollView(this);
-        codeScroll.setHorizontalScrollBarEnabled(false);
-        codeScroll.setPadding(dp(12), dp(10), dp(12), dp(12));
-        codeScroll.setClipToPadding(false);
-
-        TextView codeView = new TextView(this);
-        codeView.setText(code);
-        codeView.setTextSize(12.5f);
-        codeView.setTextColor(Color.rgb(240, 240, 245));
-        codeView.setTypeface(Typeface.MONOSPACE);
-        codeView.setTextIsSelectable(true);
-        codeView.setLineSpacing(0, 1.2f);
-        codeView.setHorizontallyScrolling(true);
-        codeScroll.addView(codeView, new FrameLayout.LayoutParams(-2, -2));
-        codeBox.addView(codeScroll, new LinearLayout.LayoutParams(-1, -2));
-
-        final String copyCode = code.trim();
-        copyCodeBtn.setOnClickListener(v -> {
-            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            cm.setPrimaryClip(ClipData.newPlainText("Code snippet", copyCode));
-            Toast.makeText(MainActivity.this, "Kode snippet disalin", Toast.LENGTH_SHORT).show();
+                    JSONArray entries = json.optJSONArray("entries");
+                    if (entries == null || entries.length() == 0) {
+                        list.addView(cText("Folder kosong", 13f, CLAUDE_TEXT_LIGHT, false, false));
+                        return;
+                    }
+                    for (int i = 0; i < entries.length(); i++) {
+                        JSONObject e = entries.optJSONObject(i);
+                        if (e == null) continue;
+                        final String name = e.optString("name");
+                        final String type = e.optString("type");
+                        final String child = ".".equals(path) ? name : path + "/" + name;
+                        list.addView(buildFileRow(name, type, e.optLong("size"), () -> {
+                            if ("dir".equals(type)) {
+                                loadFileList(child, list, pathLabel, dialog);
+                            } else {
+                                dialog.dismiss();
+                                showFileViewer(child);
+                            }
+                        }));
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    list.removeAllViews();
+                    list.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                });
+            }
         });
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(10), 0, dp(10));
-        container.addView(codeBox, lp);
     }
 
-    private void addHeadingBlock(LinearLayout container, String trimmed) {
-        int level = 0;
-        while (level < trimmed.length() && trimmed.charAt(level) == '#') level++;
-        String body = trimmed.substring(level).trim();
-        if (body.isEmpty()) return;
-        level = Math.min(6, Math.max(1, level));
-
-        float size;
-        int color = CLAUDE_TEXT_MAIN;
-        switch (level) {
-            case 1: size = 20f; break;
-            case 2: size = 17.5f; break;
-            case 3: size = 15.5f; break;
-            default:
-                size = 14.5f;
-                color = CLAUDE_TEXT_MUTED;
-                break;
-        }
-
-        TextView h = new TextView(this);
-        h.setText(parseInlineMarkdownLine(body));
-        h.setTextSize(size);
-        h.setTextColor(color);
-        h.setTypeface(level <= 2 ? Typeface.SERIF : Typeface.SANS_SERIF, Typeface.BOLD);
-        h.setLineSpacing(0, 1.15f);
-        h.setTextIsSelectable(true);
-        if (level >= 4) h.setLetterSpacing(0.04f);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(level <= 2 ? 16 : 12), 0, dp(level <= 2 ? 6 : 4));
-        container.addView(h, lp);
-
-        // H1/H2 get a hairline rule, which is what separates sections at a glance.
-        if (level <= 2) {
-            View rule = new View(this);
-            rule.setBackgroundColor(CLAUDE_BORDER);
-            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, dp(1));
-            rlp.setMargins(0, 0, 0, dp(8));
-            container.addView(rule, rlp);
-        }
-    }
-
-    private void addRuleBlock(LinearLayout container) {
-        View divider = new View(this);
-        divider.setBackgroundColor(CLAUDE_BORDER);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(1));
-        lp.setMargins(dp(4), dp(14), dp(4), dp(14));
-        container.addView(divider, lp);
-    }
-
-    private void addQuoteBlock(LinearLayout container, ArrayList<String> quoteLines) {
-        SpannableStringBuilder ssb = new SpannableStringBuilder();
-        for (String q : quoteLines) {
-            if (q.isEmpty()) continue;
-            if (ssb.length() > 0) ssb.append("\n");
-            ssb.append(parseInlineMarkdownLine(q));
-        }
-        if (ssb.length() == 0) return;
-
+    private LinearLayout buildFileRow(String name, String type, long size, final Runnable onClick) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setBackground(cBox(CLAUDE_SURFACE, 0, 0, 10));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10), dp(11), dp(10), dp(11));
+        row.setBackground(cBox(Color.TRANSPARENT, 0, 0, 12));
 
-        View bar = new View(this);
-        bar.setBackgroundColor(CLAUDE_TERRACOTTA);
-        row.addView(bar, new LinearLayout.LayoutParams(dp(3), -1));
+        boolean isDir = "dir".equals(type);
+        row.addView(cIcon(isDir ? R.drawable.ic_folder : R.drawable.ic_description, 20,
+                isDir ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
 
-        TextView body = new TextView(this);
-        body.setText(ssb);
-        body.setTextSize(14f);
-        body.setTextColor(CLAUDE_TEXT_MUTED);
-        body.setTypeface(Typeface.SERIF, Typeface.ITALIC);
-        body.setLineSpacing(0, 1.3f);
-        body.setPadding(dp(12), dp(10), dp(12), dp(10));
-        applyTextInteractions(body, ssb);
-        row.addView(body, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView label = cText(name, 14.5f, CLAUDE_TEXT_MAIN, isDir, false);
+        label.setPadding(dp(12), 0, dp(8), 0);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(8), 0, dp(8));
-        container.addView(row, lp);
-    }
-
-    private void addListBlock(LinearLayout container, ArrayList<String[]> items) {
-        LinearLayout list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-
-        for (String[] item : items) {
-            int depth = Integer.parseInt(item[0]);
-            String marker = item[1];
-            String content = item[2];
-
-            boolean checked = false;
-            boolean isTask = false;
-            if (content.startsWith("[x] ") || content.startsWith("[X] ")) {
-                isTask = true;
-                checked = true;
-                content = content.substring(4);
-            } else if (content.startsWith("[ ] ")) {
-                isTask = true;
-                content = content.substring(4);
-            }
-
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setPadding(dp(2 + depth * 16), dp(3), 0, dp(3));
-
-            // Hanging indent: marker in a fixed gutter so wrapped text lines up.
-            TextView markerView = new TextView(this);
-            if (isTask) {
-                markerView.setText(checked ? "\u2611" : "\u2610");
-                markerView.setTextColor(checked ? CLAUDE_GREEN : CLAUDE_TEXT_LIGHT);
-                markerView.setTextSize(14.5f);
-            } else {
-                markerView.setText(depth == 0 ? marker : (marker.equals("\u2022") ? "\u25E6" : marker));
-                markerView.setTextColor(CLAUDE_TERRACOTTA);
-                markerView.setTextSize(marker.equals("\u2022") ? 15f : 13.5f);
-                markerView.setTypeface(Typeface.SANS_SERIF, Typeface.BOLD);
-            }
-            markerView.setGravity(Gravity.START);
-            markerView.setPadding(0, dp(1), dp(8), 0);
-            markerView.setMinWidth(dp(marker.length() > 2 ? 26 : 18));
-            row.addView(markerView, new LinearLayout.LayoutParams(-2, -2));
-
-            SpannableStringBuilder span = parseInlineMarkdownLine(content);
-            TextView body = new TextView(this);
-            body.setText(span);
-            body.setTextSize(14.5f);
-            body.setTextColor(checked ? CLAUDE_TEXT_MUTED : CLAUDE_TEXT_MAIN);
-            body.setLineSpacing(0, 1.28f);
-            applyTextInteractions(body, span);
-            row.addView(body, new LinearLayout.LayoutParams(0, -2, 1));
-
-            list.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        if (!isDir && size > 0) {
+            row.addView(cText(humanSize(size), 11.5f, CLAUDE_TEXT_LIGHT, false, false));
         }
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(4), 0, dp(6));
-        container.addView(list, lp);
+        row.setOnClickListener(v -> onClick.run());
+        return row;
     }
 
-    private SpannableStringBuilder flushParagraph(LinearLayout container, SpannableStringBuilder ssb) {
-        flushTextBlockToContainer(container, ssb);
-        return new SpannableStringBuilder();
+    private String humanSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format(Locale.US, "%.1f KB", bytes / 1024f);
+        return String.format(Locale.US, "%.1f MB", bytes / (1024f * 1024f));
     }
 
-    private void flushTextBlockToContainer(LinearLayout container, SpannableStringBuilder ssb) {
-        if (ssb == null || ssb.length() == 0) return;
-        TextView p = new TextView(this);
-        p.setText(ssb);
-        p.setTextSize(14.5f);
-        p.setTextColor(CLAUDE_TEXT_MAIN);
-        p.setLineSpacing(0, 1.35f);
-        applyTextInteractions(p, ssb);
+    private void showFileViewer(final String path) {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, path.substring(path.lastIndexOf('/') + 1), true);
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(3), 0, dp(5));
-        container.addView(p, lp);
+        TextView pathLabel = cText("/" + path, 11.5f, CLAUDE_TEXT_MUTED, false, false);
+        pathLabel.setSingleLine(true);
+        pathLabel.setEllipsize(TextUtils.TruncateAt.START);
+        root.addView(pathLabel);
+
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(430));
+        lp.setMargins(0, dp(10), 0, 0);
+        root.addView(scroll, lp);
+
+        body.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
+
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/files/read?path=" + BridgeClient.encode(path));
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    if (!json.optBoolean("ok", false)) {
+                        body.addView(cText(json.optString("error", "Gagal membaca"), 13f, CLAUDE_RED, false, false));
+                        return;
+                    }
+                    if (json.optBoolean("binary", false)) {
+                        body.addView(cText("File biner (" + humanSize(json.optLong("size")) + ") tidak ditampilkan.",
+                                13f, CLAUDE_TEXT_MUTED, false, false));
+                        return;
+                    }
+                    String lang = json.optString("language", "");
+                    String content = json.optString("content", "");
+                    // Reuse the markdown code-block styling by fencing the content.
+                    renderMarkdownIntoContainer(body, "```" + lang + "\n" + content + "\n```", false);
+                    if (json.optBoolean("truncated", false)) {
+                        body.addView(cText("… dipotong di 512 KB", 12f, CLAUDE_AMBER, false, false));
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                });
+            }
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
-    // Links need LinkMovementMethod, which cannot coexist with text selection —
-    // so link-bearing blocks fall back to long-press-to-copy.
-    private void applyTextInteractions(TextView tv, SpannableStringBuilder ssb) {
-        boolean hasLink = ssb.getSpans(0, ssb.length(), ClickableSpan.class).length > 0;
-        if (hasLink) {
-            tv.setMovementMethod(LinkMovementMethod.getInstance());
-        } else {
-            tv.setTextIsSelectable(true);
-        }
-        final String rawText = ssb.toString();
-        tv.setOnLongClickListener(v -> {
-            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            cm.setPrimaryClip(ClipData.newPlainText("Chat text", rawText));
-            Toast.makeText(MainActivity.this, "Teks disalin ke clipboard", Toast.LENGTH_SHORT).show();
-            return true;
+    // ============================================================
+    // GIT PANEL
+    // ============================================================
+    private void showGitPanel() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Git", true);
+
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, dp(440)));
+
+        body.addView(cText("Memuat status...", 13f, CLAUDE_TEXT_MUTED, false, false));
+        loadGitStatus(body, dialog);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void loadGitStatus(final LinearLayout body, final Dialog dialog) {
+        String repoPath = prefs.getString("git_repo_path", "");
+        final String query = repoPath.isEmpty() ? "" : "?path=" + BridgeClient.encode(repoPath);
+
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/git/status" + query);
+                mainHandler.post(() -> renderGitStatus(body, dialog, json));
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                });
+            }
         });
     }
 
-    // ---------- inline parsing ----------
+    private void renderGitStatus(final LinearLayout body, final Dialog dialog, JSONObject json) {
+        body.removeAllViews();
 
-    private boolean overlapsCodePill(SpannableStringBuilder ssb, int start, int end) {
-        return ssb.getSpans(start, end, CodePillSpan.class).length > 0;
-    }
-
-    private SpannableStringBuilder parseInlineMarkdownLine(String rawLine) {
-        SpannableStringBuilder ssb = new SpannableStringBuilder(rawLine == null ? "" : rawLine);
-        if (ssb.length() == 0) return ssb;
-
-        // 1. Inline code first — its contents are literal and must survive later passes.
-        try {
-            Matcher m = MD_INLINE_CODE.matcher(ssb);
-            int from = 0;
-            while (from < ssb.length() && m.find(from)) {
-                int start = m.start();
-                String inner = m.group(1);
-                ssb.replace(start, m.end(), inner);
-                ssb.setSpan(new CodePillSpan(CLAUDE_SURFACE_MUTED, CLAUDE_TERRACOTTA),
-                        start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                from = start + inner.length();
-                m = MD_INLINE_CODE.matcher(ssb);
-            }
-        } catch (Throwable ignored) {}
-
-        // 2. Markdown links [label](url)
-        try {
-            Matcher m = MD_LINK.matcher(ssb);
-            int from = 0;
-            while (from < ssb.length() && m.find(from)) {
-                int start = m.start();
-                if (overlapsCodePill(ssb, start, m.end())) { from = m.end(); m = MD_LINK.matcher(ssb); continue; }
-                String label = m.group(1);
-                final String url = m.group(2);
-                if (label == null || label.isEmpty()) label = url;
-                ssb.replace(start, m.end(), label);
-                applyLinkSpan(ssb, start, start + label.length(), url);
-                from = start + label.length();
-                m = MD_LINK.matcher(ssb);
-            }
-        } catch (Throwable ignored) {}
-
-        // 3. Bare URLs left over
-        try {
-            Matcher m = MD_AUTOLINK.matcher(ssb);
-            int from = 0;
-            while (from < ssb.length() && m.find(from)) {
-                int start = m.start(1);
-                int end = m.end(1);
-                if (!overlapsCodePill(ssb, start, end)
-                        && ssb.getSpans(start, end, ClickableSpan.class).length == 0) {
-                    applyLinkSpan(ssb, start, end, m.group(1));
-                }
-                from = end;
-            }
-        } catch (Throwable ignored) {}
-
-        applyDelimiterStyle(ssb, MD_BOLD, 2, new StyleSpan(Typeface.BOLD));
-        applyDelimiterStyle(ssb, MD_ITALIC_STAR, 1, new StyleSpan(Typeface.ITALIC));
-        applyDelimiterStyle(ssb, MD_ITALIC_US, 1, new StyleSpan(Typeface.ITALIC));
-        applyDelimiterStyle(ssb, MD_STRIKE, 1, new StrikethroughSpan());
-
-        return ssb;
-    }
-
-    private void applyLinkSpan(SpannableStringBuilder ssb, int start, int end, final String url) {
-        ssb.setSpan(new ClickableSpan() {
-            @Override
-            public void onClick(View widget) {
-                try {
-                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-                } catch (Throwable t) {
-                    Toast.makeText(MainActivity.this, "Tidak bisa membuka tautan", Toast.LENGTH_SHORT).show();
-                }
-            }
-        }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        ssb.setSpan(new ForegroundColorSpan(CLAUDE_TERRACOTTA), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        ssb.setSpan(new UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-    }
-
-    // `groupIndex` marks which capture group holds the styled text; delimiters are stripped.
-    private void applyDelimiterStyle(SpannableStringBuilder ssb, Pattern pattern, int markerLen, Object protoSpan) {
-        try {
-            Matcher m = pattern.matcher(ssb);
-            int from = 0;
-            while (from < ssb.length() && m.find(from)) {
-                int start = m.start();
-                int end = m.end();
-                if (overlapsCodePill(ssb, start, end)) { from = end; m = pattern.matcher(ssb); continue; }
-                String inner = m.group(m.groupCount());
-                ssb.replace(start, end, inner);
-                ssb.setSpan(cloneSpan(protoSpan), start, start + inner.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                from = start + inner.length();
-                m = pattern.matcher(ssb);
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    private Object cloneSpan(Object proto) {
-        if (proto instanceof StyleSpan) return new StyleSpan(((StyleSpan) proto).getStyle());
-        if (proto instanceof StrikethroughSpan) return new StrikethroughSpan();
-        return proto;
-    }
-
-    // ---------- tables ----------
-
-    private void renderMarkdownTable(LinearLayout container, ArrayList<String> tableLines) {
-        if (tableLines.size() < 2) return;
-
-        String[] headers = splitTableRow(tableLines.get(0));
-        int colCount = headers.length;
-        if (colCount == 0) return;
-
-        // Column alignment comes from the separator row (:---, :---:, ---:).
-        int[] align = new int[colCount];
-        for (int i = 0; i < colCount; i++) align[i] = Gravity.START;
-        int bodyStart = 1;
-        if (tableLines.size() > 1 && isTableSeparator(tableLines.get(1))) {
-            String[] spec = splitTableRow(tableLines.get(1));
-            for (int c = 0; c < colCount && c < spec.length; c++) {
-                String sp = spec[c];
-                boolean left = sp.startsWith(":");
-                boolean right = sp.endsWith(":");
-                align[c] = (left && right) ? Gravity.CENTER_HORIZONTAL : (right ? Gravity.END : Gravity.START);
-            }
-            bodyStart = 2;
+        if (!json.optBoolean("ok", false)) {
+            body.addView(cText(json.optString("error", "Bukan repository git"), 13.5f, CLAUDE_TEXT_MUTED, false, false));
+            TextView hint = cText("Set folder repo di Pengaturan → Git repo path.", 12.5f, CLAUDE_TEXT_LIGHT, false, false);
+            hint.setPadding(0, dp(8), 0, 0);
+            body.addView(hint);
+            return;
         }
 
+        // Branch summary
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 12));
+        head.setPadding(dp(12), dp(10), dp(12), dp(10));
+        head.addView(cIcon(R.drawable.ic_code, 16, CLAUDE_TERRACOTTA));
+        head.addView(cText("  " + json.optString("branch", "?"), 14f, CLAUDE_TEXT_MAIN, true, false),
+                new LinearLayout.LayoutParams(0, -2, 1));
+
+        int ahead = json.optInt("ahead", 0);
+        int behind = json.optInt("behind", 0);
+        head.addView(cText((ahead > 0 ? "↑" + ahead + "  " : "") + (behind > 0 ? "↓" + behind : ""),
+                12.5f, CLAUDE_AMBER, true, false));
+        body.addView(head);
+
+        // Changed files
+        JSONArray files = json.optJSONArray("files");
+        final boolean clean = json.optBoolean("clean", true);
+        TextView sectionFiles = cText(clean ? "Tidak ada perubahan" : "Perubahan (" + (files == null ? 0 : files.length()) + ")",
+                12.5f, CLAUDE_TEXT_MUTED, false, false);
+        sectionFiles.setPadding(0, dp(16), 0, dp(6));
+        body.addView(sectionFiles);
+
+        if (files != null) {
+            for (int i = 0; i < files.length(); i++) {
+                JSONObject f = files.optJSONObject(i);
+                if (f == null) continue;
+                final String filePath = f.optString("path");
+                String code = (f.optString("index", " ") + f.optString("worktree", " ")).trim();
+
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(4), dp(8), dp(4), dp(8));
+
+                TextView badge = cText(code.isEmpty() ? "M" : code, 11f, gitStatusColor(code), true, false);
+                badge.setMinWidth(dp(26));
+                row.addView(badge);
+
+                TextView name = cText(filePath, 13.5f, CLAUDE_TEXT_MAIN, false, false);
+                name.setSingleLine(true);
+                name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+                name.setPadding(dp(8), 0, 0, 0);
+                row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+
+                row.setOnClickListener(v -> showGitDiff(filePath));
+                body.addView(row);
+            }
+        }
+
+        // Commit box
+        if (!clean) {
+            final EditText message = new EditText(this);
+            message.setHint("Pesan commit");
+            message.setTextSize(14f);
+            message.setTextColor(CLAUDE_TEXT_MAIN);
+            message.setHintTextColor(CLAUDE_TEXT_LIGHT);
+            message.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 12));
+            message.setPadding(dp(12), dp(12), dp(12), dp(12));
+            LinearLayout.LayoutParams lpMsg = new LinearLayout.LayoutParams(-1, -2);
+            lpMsg.setMargins(0, dp(14), 0, dp(10));
+            body.addView(message, lpMsg);
+
+            LinearLayout actions = new LinearLayout(this);
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+            actions.addView(buildGitButton("Commit", CLAUDE_TERRACOTTA, () -> {
+                String text = message.getText().toString().trim();
+                if (text.isEmpty()) {
+                    Toast.makeText(this, "Pesan commit kosong", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                runGitAction("/api/git/commit", text, body, dialog);
+            }), new LinearLayout.LayoutParams(0, -2, 1));
+            body.addView(actions);
+        }
+
+        LinearLayout pushRow = new LinearLayout(this);
+        pushRow.setOrientation(LinearLayout.HORIZONTAL);
+        pushRow.setPadding(0, dp(10), 0, 0);
+        pushRow.addView(buildGitButton("Push", CLAUDE_SURFACE_MUTED, () ->
+                runGitAction("/api/git/push", null, body, dialog)), new LinearLayout.LayoutParams(0, -2, 1));
+        body.addView(pushRow);
+
+        // Recent commits
+        JSONArray commits = json.optJSONArray("commits");
+        if (commits != null && commits.length() > 0) {
+            TextView sectionLog = cText("Commit terakhir", 12.5f, CLAUDE_TEXT_MUTED, false, false);
+            sectionLog.setPadding(0, dp(18), 0, dp(6));
+            body.addView(sectionLog);
+
+            for (int i = 0; i < commits.length(); i++) {
+                JSONObject c = commits.optJSONObject(i);
+                if (c == null) continue;
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setPadding(0, dp(6), 0, dp(6));
+
+                TextView subject = cText(c.optString("subject", ""), 13.5f, CLAUDE_TEXT_MAIN, false, false);
+                subject.setSingleLine(true);
+                subject.setEllipsize(TextUtils.TruncateAt.END);
+                row.addView(subject);
+                row.addView(cText(c.optString("hash", "") + " · " + c.optString("when", ""),
+                        11.5f, CLAUDE_TEXT_LIGHT, false, false));
+                body.addView(row);
+            }
+        }
+    }
+
+    private int gitStatusColor(String code) {
+        if (code.startsWith("?")) return CLAUDE_BLUE;
+        if (code.contains("D")) return CLAUDE_RED;
+        if (code.contains("A")) return CLAUDE_GREEN;
+        return CLAUDE_AMBER;
+    }
+
+    private TextView buildGitButton(String label, int color, final Runnable action) {
+        TextView btn = cText(label, 14f, color == CLAUDE_TERRACOTTA ? Color.WHITE : CLAUDE_TEXT_MAIN, true, false);
+        btn.setGravity(Gravity.CENTER);
+        btn.setPadding(dp(16), dp(12), dp(16), dp(12));
+        btn.setBackground(cBox(color, CLAUDE_BORDER, color == CLAUDE_TERRACOTTA ? 0 : 1, 12));
+        btn.setOnClickListener(v -> action.run());
+        return btn;
+    }
+
+    private void runGitAction(final String apiPath, final String message, final LinearLayout body, final Dialog dialog) {
+        executor.execute(() -> {
+            try {
+                JSONObject payload = new JSONObject();
+                String repoPath = prefs.getString("git_repo_path", "");
+                if (!repoPath.isEmpty()) payload.put("path", repoPath);
+                if (message != null) payload.put("message", message);
+
+                JSONObject result = bridge.post(apiPath, payload, 90000);
+                mainHandler.post(() -> {
+                    boolean ok = result.optBoolean("ok", false);
+                    Toast.makeText(MainActivity.this,
+                            ok ? "Berhasil" : result.optString("error", "Gagal"),
+                            Toast.LENGTH_SHORT).show();
+                    if (ok) loadGitStatus(body, dialog);
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void showGitDiff(final String filePath) {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Diff", true);
+        root.addView(cText(filePath, 11.5f, CLAUDE_TEXT_MUTED, false, false));
+
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(430));
+        lp.setMargins(0, dp(10), 0, 0);
+        root.addView(scroll, lp);
+        body.addView(cText("Memuat...", 13f, CLAUDE_TEXT_MUTED, false, false));
+
+        String repoPath = prefs.getString("git_repo_path", "");
+        final String query = "?file=" + BridgeClient.encode(filePath)
+                + (repoPath.isEmpty() ? "" : "&path=" + BridgeClient.encode(repoPath));
+
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/git/diff" + query);
+                final String diff = json.optString("diff", "");
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    if (diff.trim().isEmpty()) {
+                        body.addView(cText("Tidak ada perubahan pada file ini.", 13f, CLAUDE_TEXT_MUTED, false, false));
+                    } else {
+                        renderDiffLines(body, diff);
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                });
+            }
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    // Colour-coded diff: green additions, red removals, muted hunk headers.
+    private void renderDiffLines(LinearLayout body, String diff) {
         HorizontalScrollView hScroll = new HorizontalScrollView(this);
         hScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setBackground(cBox(CLAUDE_CODE_BG, CLAUDE_BORDER, 1, 12));
+        column.setPadding(dp(12), dp(10), dp(12), dp(10));
 
-        LinearLayout tableLayout = new LinearLayout(this);
-        tableLayout.setOrientation(LinearLayout.VERTICAL);
-        tableLayout.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 10));
-        tableLayout.setClipToOutline(true);
-
-        LinearLayout headerRow = new LinearLayout(this);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setBackgroundColor(CLAUDE_SURFACE_MUTED);
-        for (int c = 0; c < colCount; c++) {
-            TextView cell = cText(headers[c].toUpperCase(Locale.ROOT), 11f, CLAUDE_TEXT_MUTED, true, false);
-            cell.setLetterSpacing(0.07f);
-            cell.setGravity(align[c]);
-            cell.setPadding(dp(14), dp(11), dp(14), dp(11));
-            cell.setMinWidth(dp(88));
-            headerRow.addView(cell, new LinearLayout.LayoutParams(-2, -2));
-        }
-        tableLayout.addView(headerRow);
-
-        View headRule = new View(this);
-        headRule.setBackgroundColor(CLAUDE_BORDER_DARK);
-        tableLayout.addView(headRule, new LinearLayout.LayoutParams(-1, dp(1)));
-
-        int printed = 0;
-        for (int r = bodyStart; r < tableLines.size(); r++) {
-            String rowLine = tableLines.get(r);
-            if (isTableSeparator(rowLine)) continue;
-
-            String[] cells = splitTableRow(rowLine);
-            if (printed > 0) {
-                View div = new View(this);
-                div.setBackgroundColor(CLAUDE_BORDER);
-                tableLayout.addView(div, new LinearLayout.LayoutParams(-1, dp(1)));
+        for (String line : diff.split("\n")) {
+            int color = CLAUDE_TEXT_MUTED;
+            int background = Color.TRANSPARENT;
+            if (line.startsWith("+++") || line.startsWith("---")) {
+                color = CLAUDE_TEXT_LIGHT;
+            } else if (line.startsWith("@@")) {
+                color = CLAUDE_BLUE;
+            } else if (line.startsWith("+")) {
+                color = CLAUDE_GREEN;
+                background = CLAUDE_GREEN_BG;
+            } else if (line.startsWith("-")) {
+                color = CLAUDE_RED;
+                background = Color.rgb(48, 24, 24);
+            } else {
+                color = CLAUDE_TEXT_MUTED;
             }
 
-            LinearLayout dataRow = new LinearLayout(this);
-            dataRow.setOrientation(LinearLayout.HORIZONTAL);
-            dataRow.setBackgroundColor(printed % 2 == 0 ? CLAUDE_SURFACE : CLAUDE_BG);
+            TextView tv = new TextView(this);
+            tv.setText(line.isEmpty() ? " " : line);
+            tv.setTextSize(11.5f);
+            tv.setTextColor(color);
+            tv.setTypeface(Typeface.MONOSPACE);
+            tv.setSingleLine(true);
+            if (background != Color.TRANSPARENT) tv.setBackgroundColor(background);
+            tv.setPadding(dp(4), dp(1), dp(8), dp(1));
+            column.addView(tv);
+        }
 
-            for (int c = 0; c < colCount; c++) {
-                String val = c < cells.length ? cells[c] : "";
-                SpannableStringBuilder span = parseInlineMarkdownLine(val);
-                TextView cell = new TextView(this);
-                cell.setText(span);
-                cell.setTextSize(13f);
-                cell.setTextColor(CLAUDE_TEXT_MAIN);
-                cell.setLineSpacing(0, 1.2f);
-                cell.setGravity(align[c]);
-                cell.setPadding(dp(14), dp(10), dp(14), dp(10));
-                cell.setMinWidth(dp(88));
-                dataRow.addView(cell, new LinearLayout.LayoutParams(-2, -2));
+        hScroll.addView(column);
+        body.addView(hScroll, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    // ============================================================
+    // TRANSCRIPT SEARCH
+    // ============================================================
+    private void showSearchPanel() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Cari Sesi", true);
+
+        final EditText input = new EditText(this);
+        input.setHint("Kata kunci di judul atau transkrip");
+        input.setTextSize(14.5f);
+        input.setTextColor(CLAUDE_TEXT_MAIN);
+        input.setHintTextColor(CLAUDE_TEXT_LIGHT);
+        input.setSingleLine(true);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        input.setBackground(cBox(CLAUDE_BG, CLAUDE_BORDER, 1, 14));
+        input.setPadding(dp(14), dp(12), dp(14), dp(12));
+        root.addView(input, new LinearLayout.LayoutParams(-1, -2));
+
+        final LinearLayout results = new LinearLayout(this);
+        results.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(results);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(400));
+        lp.setMargins(0, dp(12), 0, 0);
+        root.addView(scroll, lp);
+
+        input.setOnEditorActionListener((v, actionId, event) -> {
+            runTranscriptSearch(input.getText().toString().trim(), results, dialog);
+            return true;
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void runTranscriptSearch(final String query, final LinearLayout results, final Dialog dialog) {
+        if (query.isEmpty()) return;
+        results.removeAllViews();
+        results.addView(cText("Mencari...", 13f, CLAUDE_TEXT_MUTED, false, false));
+
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/search?q=" + BridgeClient.encode(query), 30000);
+                mainHandler.post(() -> {
+                    results.removeAllViews();
+                    JSONArray items = json.optJSONArray("results");
+                    if (items == null || items.length() == 0) {
+                        results.addView(cText("Tidak ada hasil untuk \"" + query + "\"", 13.5f, CLAUDE_TEXT_MUTED, false, false));
+                        return;
+                    }
+                    for (int i = 0; i < items.length(); i++) {
+                        JSONObject r = items.optJSONObject(i);
+                        if (r == null) continue;
+                        final String convId = r.optString("conversationId");
+                        final String title = r.optString("title", "Sesi");
+
+                        LinearLayout card = new LinearLayout(this);
+                        card.setOrientation(LinearLayout.VERTICAL);
+                        card.setBackground(cBox(CLAUDE_SURFACE_MUTED, CLAUDE_BORDER, 1, 14));
+                        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+                        TextView t = cText(title, 14f, CLAUDE_TEXT_MAIN, true, false);
+                        t.setSingleLine(true);
+                        t.setEllipsize(TextUtils.TruncateAt.END);
+                        card.addView(t);
+
+                        TextView snippet = cText(r.optString("snippet", ""), 12.5f, CLAUDE_TEXT_MUTED, false, false);
+                        snippet.setMaxLines(2);
+                        snippet.setEllipsize(TextUtils.TruncateAt.END);
+                        snippet.setPadding(0, dp(4), 0, 0);
+                        card.addView(snippet);
+
+                        card.addView(cText(r.optString("engine", "") + " · " + r.optString("matchIn", ""),
+                                11f, CLAUDE_TEXT_LIGHT, false, false));
+
+                        card.setOnClickListener(v -> {
+                            dialog.dismiss();
+                            navigatedFromHub = true;
+                            openSpecificSession(convId, title);
+                        });
+
+                        LinearLayout.LayoutParams lpCard = new LinearLayout.LayoutParams(-1, -2);
+                        lpCard.setMargins(0, 0, 0, dp(10));
+                        results.addView(card, lpCard);
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    results.removeAllViews();
+                    results.addView(cText("Gagal: " + ex.getMessage(), 13f, CLAUDE_RED, false, false));
+                });
             }
-            tableLayout.addView(dataRow);
-            printed++;
+        });
+    }
+
+    // ============================================================
+    // SERVER SWITCHER (multi VPS)
+    // ============================================================
+    private JSONArray loadSavedServers() {
+        try {
+            return new JSONArray(prefs.getString("servers", "[]"));
+        } catch (Exception e) {
+            return new JSONArray();
+        }
+    }
+
+    private void saveServerProfile(String name, String url, String token) {
+        try {
+            JSONArray list = loadSavedServers();
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject s = list.optJSONObject(i);
+                if (s != null && url.equals(s.optString("url"))) {
+                    s.put("name", name);
+                    s.put("token", token);
+                    prefs.edit().putString("servers", list.toString()).apply();
+                    return;
+                }
+            }
+            list.put(new JSONObject().put("name", name).put("url", url).put("token", token));
+            prefs.edit().putString("servers", list.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    private void showServerSwitcher() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Server Tersimpan", true);
+
+        JSONArray servers = loadSavedServers();
+        final String activeUrl = prefs.getString("url", "");
+
+        if (servers.length() == 0) {
+            root.addView(cText("Belum ada server tersimpan. Pairing lewat QR akan menyimpannya otomatis.",
+                    13.5f, CLAUDE_TEXT_MUTED, false, false));
         }
 
-        hScroll.addView(tableLayout);
-        LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
-        lpH.setMargins(0, dp(10), 0, dp(12));
-        container.addView(hScroll, lpH);
-    }
+        for (int i = 0; i < servers.length(); i++) {
+            JSONObject s = servers.optJSONObject(i);
+            if (s == null) continue;
+            final String url = s.optString("url");
+            final String token = s.optString("token");
+            final String name = s.optString("name", "Server");
+            final boolean isActive = url.equals(activeUrl);
 
-    private boolean isTableSeparator(String row) {
-        String stripped = row.replace("|", "").replace("-", "").replace(":", "").replace(" ", "");
-        return stripped.isEmpty() && row.contains("-");
-    }
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setGravity(Gravity.CENTER_VERTICAL);
+            card.setBackground(cBox(CLAUDE_SURFACE_MUTED, isActive ? CLAUDE_TERRACOTTA : CLAUDE_BORDER, 1, 14));
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-    private String[] splitTableRow(String row) {
-        String trimmed = row.trim();
-        if (trimmed.startsWith("|")) trimmed = trimmed.substring(1);
-        if (trimmed.endsWith("|")) trimmed = trimmed.substring(0, trimmed.length() - 1);
-        String[] parts = trimmed.split("\\|", -1);
-        for (int i = 0; i < parts.length; i++) {
-            parts[i] = parts[i].trim();
+            card.addView(cIcon(R.drawable.ic_laptop, 18, isActive ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MUTED));
+
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setPadding(dp(12), 0, dp(8), 0);
+            col.addView(cText(name, 14f, CLAUDE_TEXT_MAIN, true, false));
+            TextView urlView = cText(url, 11.5f, CLAUDE_TEXT_LIGHT, false, false);
+            urlView.setSingleLine(true);
+            urlView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            col.addView(urlView);
+            card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+
+            if (isActive) card.addView(cIcon(R.drawable.ic_check, 18, CLAUDE_TERRACOTTA));
+
+            card.setOnClickListener(v -> {
+                prefs.edit().putString("url", url).putString("token", token).apply();
+                dialog.dismiss();
+                Toast.makeText(this, "Beralih ke " + name, Toast.LENGTH_SHORT).show();
+                restartLiveEvents();
+                startNewSession();
+                showScreen(0);
+            });
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.setMargins(0, dp(8), 0, 0);
+            root.addView(card, lp);
         }
-        return parts;
+
+        dialog.setContentView(root);
+        dialog.show();
     }
+
+    // ============================================================
+    // SANDBOX MODE (server-side execution policy)
+    // ============================================================
+    private void showSandboxPicker() {
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Mode Eksekusi", true);
+        root.addView(cText("Menentukan seberapa bebas CLI boleh mengubah sistem di server.",
+                12.5f, CLAUDE_TEXT_MUTED, false, false));
+
+        final String[] keys = {"full", "workspace", "readonly"};
+        final String[] labels = {"Akses penuh", "Tulis di workspace", "Hanya baca"};
+        final String[] notes = {
+                "Tanpa sandbox. Paling cepat, paling berisiko.",
+                "Boleh menulis di workdir saja.",
+                "Tidak boleh mengubah file apa pun."
+        };
+
+        final String current = prefs.getString("sandbox_mode", "full");
+
+        for (int i = 0; i < keys.length; i++) {
+            final String key = keys[i];
+            boolean selected = key.equals(current);
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setBackground(cBox(CLAUDE_SURFACE_MUTED, selected ? CLAUDE_TERRACOTTA : CLAUDE_BORDER, 1, 14));
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            card.addView(cText((selected ? "✓  " : "") + labels[i], 14.5f,
+                    selected ? CLAUDE_TERRACOTTA : CLAUDE_TEXT_MAIN, true, false));
+            card.addView(cText(notes[i], 12.5f, CLAUDE_TEXT_MUTED, false, false));
+
+            card.setOnClickListener(v -> {
+                dialog.dismiss();
+                applySandboxMode(key);
+            });
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.setMargins(0, dp(10), 0, 0);
+            root.addView(card, lp);
+        }
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void applySandboxMode(final String mode) {
+        executor.execute(() -> {
+            try {
+                JSONObject result = bridge.post("/api/settings", new JSONObject().put("sandboxMode", mode));
+                mainHandler.post(() -> {
+                    if (result.optBoolean("ok", false)) {
+                        prefs.edit().putString("sandbox_mode", mode).apply();
+                        refreshSettingsValues();
+                        Toast.makeText(this, "Mode eksekusi: " + mode, Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "Server menolak perubahan", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(this, "Gagal: " + ex.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    // ============================================================
+    // LIVE EVENTS (SSE) WIRING
+    // ============================================================
+    private void restartLiveEvents() {
+        stopLiveEvents();
+        startLiveEvents();
+    }
+
+    private void startLiveEvents() {
+        if (!bridge.isPaired()) return;
+        try {
+            Intent intent = new Intent(this, LiveEventService.class);
+            intent.setAction(LiveEventService.ACTION_START);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
+            else startService(intent);
+        } catch (Throwable ignored) {}
+    }
+
+    private void stopLiveEvents() {
+        try {
+            Intent intent = new Intent(this, LiveEventService.class);
+            intent.setAction(LiveEventService.ACTION_STOP);
+            startService(intent);
+        } catch (Throwable ignored) {}
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATION_PERMISSION);
+            }
+        }
+    }
+
+    // Events arrive on the SSE thread; everything below hops to the UI thread.
+    private final LiveEventBus.Listener liveEventListener = (name, data) -> mainHandler.post(() -> {
+        if ("task.started".equals(name)) {
+            isLiveTaskRunning = true;
+        } else if ("task.finished".equals(name)) {
+            isLiveTaskRunning = false;
+            if (currentScreen == 1) fetchActiveSessionTurns(true);
+        } else if ("cli.event".equals(name) || "cli.output".equals(name)) {
+            // A step landed: pull the transcript once instead of polling blindly.
+            if (currentScreen == 1) syncLiveExecution();
+        }
+    });
 
     // ============================================================
     // GENERAL SETTINGS & INTERRUPT
