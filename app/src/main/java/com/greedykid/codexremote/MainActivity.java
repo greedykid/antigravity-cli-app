@@ -3453,6 +3453,30 @@ public class MainActivity extends Activity {
         renderMarkdownIntoContainer(container, remainingText.trim(), isUser);
     }
 
+    private void showFullscreenImageDialog(final String imgPath) {
+        if (imgPath == null || imgPath.isEmpty()) return;
+        final Dialog dialog = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF000000);
+
+        final ImageView iv = new ImageView(this);
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        root.addView(iv, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+
+        loadImageIntoView(imgPath, iv);
+
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 24, 48, Color.WHITE);
+        FrameLayout.LayoutParams lpClose = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.END);
+        lpClose.setMargins(0, dp(28), dp(16), 0);
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        root.addView(closeBtn, lpClose);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
     private void loadImageIntoView(String filePathOrUrl, ImageView imageView) {
         String key = filePathOrUrl;
         if (imageCache.containsKey(key)) {
