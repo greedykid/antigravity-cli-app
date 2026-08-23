@@ -16,8 +16,10 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Shader;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Color;
@@ -129,6 +131,8 @@ public class MainActivity extends Activity {
     private boolean isSyncScheduled = false;
 
 
+    private static Bitmap cachedGithubAvatar = null;
+    private static final String GITHUB_AVATAR_URL = "https://github.com/greedykid.png";
     private static final String CHANNEL_TASK_NOTIFICATIONS = "channel_ai_task_alerts";
     private HorizontalScrollView quickActionScroll;
     private HorizontalScrollView slashSuggestionsScroll;
@@ -1663,7 +1667,7 @@ public class MainActivity extends Activity {
         updateSidebarActiveState();
     }
 
-    // Circular initials badge, e.g. "equinox@..." -> "EQ".
+    // Circular avatar badge with direct GitHub profile picture loader & fallback
     private FrameLayout buildAvatarBadge(String email) {
         FrameLayout frame = new FrameLayout(this);
         GradientDrawable circle = new GradientDrawable();
@@ -1676,7 +1680,102 @@ public class MainActivity extends Activity {
         TextView tv = cText(initials.toUpperCase(Locale.ROOT), 13.5f, Theme.ON_ACCENT, true, false);
         tv.setGravity(Gravity.CENTER);
         frame.addView(tv, new FrameLayout.LayoutParams(-1, -1));
+
+        ImageView iv = new ImageView(this);
+        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        iv.setVisibility(View.GONE);
+        frame.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+
+        loadGithubAvatar(iv, tv);
         return frame;
+    }
+
+    private Bitmap getCircularBitmap(Bitmap bitmap) {
+        if (bitmap == null) return null;
+        int size = Math.min(bitmap.getWidth(), bitmap.getHeight());
+        Bitmap output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(output);
+        Paint paint = new Paint();
+        paint.setAntiAlias(true);
+        BitmapShader shader = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+        paint.setShader(shader);
+        float r = size / 2f;
+        canvas.drawCircle(r, r, r, paint);
+        return output;
+    }
+
+    private void loadGithubAvatar(final ImageView imageView, final View fallbackView) {
+        if (cachedGithubAvatar != null) {
+            imageView.setImageBitmap(cachedGithubAvatar);
+            imageView.setVisibility(View.VISIBLE);
+            if (fallbackView != null) fallbackView.setVisibility(View.GONE);
+            return;
+        }
+
+        executor.execute(() -> {
+            try {
+                File cacheFile = new File(getCacheDir(), "github_avatar.png");
+                if (cacheFile.exists()) {
+                    Bitmap diskBitmap = BitmapFactory.decodeFile(cacheFile.getAbsolutePath());
+                    if (diskBitmap != null) {
+                        final Bitmap circular = getCircularBitmap(diskBitmap);
+                        cachedGithubAvatar = circular;
+                        mainHandler.post(() -> {
+                            imageView.setImageBitmap(circular);
+                            imageView.setVisibility(View.VISIBLE);
+                            if (fallbackView != null) fallbackView.setVisibility(View.GONE);
+                        });
+                        return;
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            try {
+                URL url = new URL(GITHUB_AVATAR_URL);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(10000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent", "CodexRemote-App");
+
+                int code = conn.getResponseCode();
+                if (code == 301 || code == 302 || code == 307 || code == 308) {
+                    String redirectUrl = conn.getHeaderField("Location");
+                    if (redirectUrl != null) {
+                        conn.disconnect();
+                        url = new URL(redirectUrl);
+                        conn = (HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(10000);
+                        conn.setReadTimeout(10000);
+                        conn.setRequestProperty("User-Agent", "CodexRemote-App");
+                    }
+                }
+
+                InputStream in = conn.getInputStream();
+                Bitmap rawBitmap = BitmapFactory.decodeStream(in);
+                in.close();
+                conn.disconnect();
+
+                if (rawBitmap != null) {
+                    final Bitmap circular = getCircularBitmap(rawBitmap);
+                    cachedGithubAvatar = circular;
+
+                    try {
+                        File cacheFile = new File(getCacheDir(), "github_avatar.png");
+                        FileOutputStream fos = new FileOutputStream(cacheFile);
+                        rawBitmap.compress(Bitmap.CompressFormat.PNG, 95, fos);
+                        fos.flush();
+                        fos.close();
+                    } catch (Exception ignored) {}
+
+                    mainHandler.post(() -> {
+                        imageView.setImageBitmap(circular);
+                        imageView.setVisibility(View.VISIBLE);
+                        if (fallbackView != null) fallbackView.setVisibility(View.GONE);
+                    });
+                }
+            } catch (Exception ignored) {}
+        });
     }
 
     private String shortUserName(String email) {
