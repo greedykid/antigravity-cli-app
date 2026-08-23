@@ -2804,7 +2804,9 @@ public class MainActivity extends Activity {
         isLiveTaskRunning = true;
 
         String displayText = (fileHeaders.length() > 0 ? fileHeaders.toString() : "") + text;
-        renderUserMessageBlock(displayText, new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
+        pendingOptimisticUserPrompt = displayText;
+        pendingOptimisticUserTime = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date());
+        renderUserMessageBlock(pendingOptimisticUserPrompt, pendingOptimisticUserTime);
         promptInput.setText("");
 
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
@@ -2970,6 +2972,18 @@ public class MainActivity extends Activity {
 
                 ArrayList<JSONObject> pendingTools = new ArrayList<>();
                 ArrayList<JSONObject> allSessionTools = new ArrayList<>();
+                boolean foundOptimisticInTranscript = false;
+
+                // Find last assistant index
+                int lastAssistantIdx = -1;
+                for (int i = turns.length() - 1; i >= 0; i--) {
+                    JSONObject t = turns.getJSONObject(i);
+                    String r = t.optString("role", "");
+                    if (!"tool".equalsIgnoreCase(r) && !"thinking".equalsIgnoreCase(r) && !"user".equalsIgnoreCase(r)) {
+                        lastAssistantIdx = i;
+                        break;
+                    }
+                }
 
                 for (int i = 0; i < turns.length(); i++) {
                     JSONObject turn = turns.getJSONObject(i);
@@ -2985,14 +2999,30 @@ public class MainActivity extends Activity {
                             renderInlineStepPill(new ArrayList<>(pendingTools), false);
                             pendingTools.clear();
                         }
+                        if (pendingOptimisticUserPrompt != null && (content.contains(pendingOptimisticUserPrompt) || pendingOptimisticUserPrompt.contains(content))) {
+                            foundOptimisticInTranscript = true;
+                        }
                         renderUserMessageBlock(content, time);
                     } else {
                         if (!pendingTools.isEmpty()) {
                             renderInlineStepPill(new ArrayList<>(pendingTools), false);
                             pendingTools.clear();
                         }
-                        renderAssistantMessageBlock(content, time);
+                        renderAssistantMessageBlock(content, time, (i == lastAssistantIdx));
                     }
+                }
+
+                if (foundOptimisticInTranscript) {
+                    pendingOptimisticUserPrompt = null;
+                }
+
+                // If live task is running and user prompt is not yet in disk transcript, render user prompt first!
+                if (isLiveTaskRunning && pendingOptimisticUserPrompt != null && !foundOptimisticInTranscript) {
+                    if (!pendingTools.isEmpty()) {
+                        renderInlineStepPill(new ArrayList<>(pendingTools), false);
+                        pendingTools.clear();
+                    }
+                    renderUserMessageBlock(pendingOptimisticUserPrompt, pendingOptimisticUserTime);
                 }
 
                 if (!pendingTools.isEmpty()) {
@@ -3252,7 +3282,7 @@ public class MainActivity extends Activity {
         chatMessagesList.addView(pillRow, lp);
     }
 
-    private void renderAssistantMessageBlock(String content, String time) {
+    private void renderAssistantMessageBlock(String content, String time, boolean isLastMessage) {
         if (content == null || content.trim().isEmpty()) return;
 
         showEmptyMascotState(false);
@@ -3262,6 +3292,42 @@ public class MainActivity extends Activity {
         container.setPadding(0, dp(2), 0, dp(4));
 
         renderMarkdownIntoContainer(container, content.trim(), false);
+
+        // Sleek Copy Button for Assistant Output
+        if (isLastMessage) {
+            LinearLayout copyBar = new LinearLayout(this);
+            copyBar.setOrientation(LinearLayout.HORIZONTAL);
+            copyBar.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            copyBar.setPadding(0, dp(8), 0, dp(4));
+
+            final LinearLayout copyBtn = new LinearLayout(this);
+            copyBtn.setOrientation(LinearLayout.HORIZONTAL);
+            copyBtn.setGravity(Gravity.CENTER_VERTICAL);
+            copyBtn.setBackground(cBox(CLAUDE_SURFACE, CLAUDE_BORDER, 1, 14));
+            copyBtn.setPadding(dp(10), dp(5), dp(12), dp(5));
+
+            ImageView copyIcon = cIcon(R.drawable.ic_content_copy, 14, CLAUDE_TEXT_MUTED);
+            copyBtn.addView(copyIcon);
+
+            final TextView copyLabel = cText(" Salin", 12f, CLAUDE_TEXT_MUTED, true, false);
+            copyBtn.addView(copyLabel);
+
+            final String fullTextToCopy = cleanMarkdownForCopy(content.trim());
+            copyBtn.setOnClickListener(v -> {
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(ClipData.newPlainText("Assistant Response", fullTextToCopy));
+                Toast.makeText(MainActivity.this, "Jawaban disalin ke clipboard", Toast.LENGTH_SHORT).show();
+                copyLabel.setText(" Tersalin ✓");
+                copyLabel.setTextColor(CLAUDE_GREEN);
+                mainHandler.postDelayed(() -> {
+                    copyLabel.setText(" Salin");
+                    copyLabel.setTextColor(CLAUDE_TEXT_MUTED);
+                }, 2000);
+            });
+
+            copyBar.addView(copyBtn);
+            container.addView(copyBar);
+        }
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(4), 0, dp(8));
