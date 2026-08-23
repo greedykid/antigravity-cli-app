@@ -1356,7 +1356,7 @@ public class MainActivity extends Activity {
         addSettingsRowItem(g2, R.drawable.ic_analytics, "Penggunaan", null, () -> showUsageStatsBottomSheet(), false);
         list.addView(g2);
 
-        // Group 3: Kemampuan, Konektor, Izin
+        // Group 3: Engine, Konektor, keamanan & proyek
         LinearLayout g3 = createSettingsGroupContainer();
         settingsCapabilitiesSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_swap, "Engine",
                 engineLabel(currentEngine), () -> showEngineSwitcher(), true);
@@ -2904,11 +2904,6 @@ public class MainActivity extends Activity {
         }
         dialog.setContentView(root);
         dialog.show();
-    }
-
-    // Kept for existing call sites; the picker is the real entry point now.
-    private void toggleEngine() {
-        showEngineSwitcher();
     }
 
     // ============================================================

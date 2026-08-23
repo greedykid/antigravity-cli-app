@@ -60,13 +60,20 @@ public class LiveEventService extends Service {
         // — an exception thrown on the looper that no try/catch of ours can see.
         // Satisfying the contract first, before deciding what to do, makes that
         // impossible even when a stop and a start race each other.
-        startForeground(NOTIFY_ONGOING, buildOngoingNotification("Memantau sesi CLI"));
+        try {
+            startForeground(NOTIFY_ONGOING, buildOngoingNotification("Memantau sesi CLI"));
+        } catch (Throwable t) {
+            // Android 12+ refuses a foreground start from the background. Stream
+            // anyway while the app is alive rather than taking the process down.
+        }
 
         String action = intent == null ? null : intent.getAction();
 
         if (ACTION_STOP.equals(action)) {
             stopStreaming();
-            stopForeground(true);
+            try {
+                stopForeground(true);
+            } catch (Throwable ignored) {}
             stopSelf();
             return START_NOT_STICKY;
         }
