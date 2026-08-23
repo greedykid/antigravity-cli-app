@@ -62,9 +62,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -x
-          find . -name "*.apk"
-          APK_PATH=$(find . -name "*.apk" | head -n 1)
-          echo "Uploading $APK_PATH to GitHub Releases..."
-          gh release upload latest "$APK_PATH" --clobber --repo ${{ github.repository }} || true
-          gh release upload v0.3.0 "$APK_PATH" --clobber --repo ${{ github.repository }} || true
-          gh release view latest --repo ${{ github.repository }}
+          find app/build -name "*.apk"
+          APK_PATH=$(find app/build -name "*.apk" | head -n 1)
+          echo "Found APK at $APK_PATH"
+          cp "$APK_PATH" ./app-release-v0.3.0.apk
+          gh release upload latest ./app-release-v0.3.0.apk "$APK_PATH" --clobber --repo ${{ github.repository }} || true
+          gh release upload v0.3.0 ./app-release-v0.3.0.apk "$APK_PATH" --clobber --repo ${{ github.repository }} || true
