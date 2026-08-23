@@ -615,12 +615,8 @@ function runCodex(prompt, conversationId, model, job) {
       for (const line of text.split("\n")) {
         try {
           const event = JSON.parse(line);
-          if (event.type === "thread.started" && event.thread_id) activeCodexSessionId = event.thread_id;
-          if (event.type === "session_meta" && event.payload && event.payload.session_id) activeCodexSessionId = event.payload.session_id;
-          // Record it on the job right away so the client can tell its own
-          // brand-new session apart from whatever else ran on this machine.
-          if (job && activeCodexSessionId && !job.conversationId) {
-            jobs.update(job.id, { conversationId: activeCodexSessionId });
+          if (event.type === "thread.started" && event.thread_id) {
+            activeCodexSessionId = event.thread_id;
           }
           events.broadcast("cli.event", {
             jobId: job ? job.id : null,
@@ -631,22 +627,28 @@ function runCodex(prompt, conversationId, model, job) {
         } catch (e) {}
       }
     });
-    child.stderr.on("data", chunk => { error += chunk.toString(); });
+    child.stderr.on("data", chunk => {
+      lastActivity = Date.now();
+      error += chunk.toString();
+    });
 
     const timeoutMs = settings.taskTimeoutMs();
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`Codex CLI timed out after ${Math.round(timeoutMs / 60000)} minutes`));
-    }, timeoutMs);
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivity > timeoutMs) {
+        clearInterval(timer);
+        child.kill("SIGTERM");
+        reject(new Error(`Codex CLI timed out after ${Math.round(timeoutMs / 60000)} minutes of inactivity`));
+      }
+    }, 10000);
 
     child.on("error", err => {
-      clearTimeout(timer);
+      clearInterval(timer);
       try { if (fs.existsSync(tmpOutputFile)) fs.unlinkSync(tmpOutputFile); } catch(e) {}
       reject(err);
     });
 
     child.on("close", code => {
-      clearTimeout(timer);
+      clearInterval(timer);
       let assistantMsg = "";
       try {
         if (fs.existsSync(tmpOutputFile)) {
@@ -706,7 +708,9 @@ function runAgy(prompt, conversationId, resume = false, model, job) {
     });
     let output = "";
     let error = "";
+    let lastActivity = Date.now();
     child.stdout.on("data", chunk => {
+      lastActivity = Date.now();
       const text = chunk.toString();
       output += text;
       events.broadcast("cli.output", {
@@ -716,15 +720,26 @@ function runAgy(prompt, conversationId, resume = false, model, job) {
         chunk: text
       });
     });
-    child.stderr.on("data", chunk => { error += chunk.toString(); });
+    child.stderr.on("data", chunk => {
+      lastActivity = Date.now();
+      error += chunk.toString();
+    });
+
     const timeoutMs = settings.taskTimeoutMs();
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`Antigravity CLI timed out after ${Math.round(timeoutMs / 60000)} minutes`));
-    }, timeoutMs);
-    child.on("error", err => { clearTimeout(timer); reject(err); });
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivity > timeoutMs) {
+        clearInterval(timer);
+        child.kill("SIGTERM");
+        reject(new Error(`Antigravity CLI timed out after ${Math.round(timeoutMs / 60000)} minutes of inactivity`));
+      }
+    }, 10000);
+
+    child.on("error", err => {
+      clearInterval(timer);
+      reject(err);
+    });
     child.on("close", code => {
-      clearTimeout(timer);
+      clearInterval(timer);
       if (code === 0) resolve(output.trim());
       else reject(new Error((error || output || `Antigravity CLI exited with code ${code}`).trim()));
     });

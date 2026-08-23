@@ -491,7 +491,20 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 24));
-        root.setPadding(dp(20), dp(14), dp(20), dp(16));
+        root.setPadding(dp(20), dp(10), dp(20), dp(16));
+
+        // Drag Handle Pill
+        LinearLayout dragArea = new LinearLayout(this);
+        dragArea.setOrientation(LinearLayout.VERTICAL);
+        dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
+        dragArea.setPadding(0, dp(2), 0, dp(10));
+
+        View dragHandle = new View(this);
+        dragHandle.setBackground(cBox(Theme.BORDER_DARK, 0, 0, 3));
+        dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
+        root.addView(dragArea);
+
+        attachBottomSheetDragGestures(dialog, dragArea, root, null, null);
 
         // Header
         LinearLayout header = new LinearLayout(this);
@@ -634,7 +647,20 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 24));
-        root.setPadding(dp(20), dp(14), dp(20), dp(16));
+        root.setPadding(dp(20), dp(10), dp(20), dp(16));
+
+        // Drag Handle Pill
+        LinearLayout dragArea = new LinearLayout(this);
+        dragArea.setOrientation(LinearLayout.VERTICAL);
+        dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
+        dragArea.setPadding(0, dp(2), 0, dp(10));
+
+        View dragHandle = new View(this);
+        dragHandle.setBackground(cBox(Theme.BORDER_DARK, 0, 0, 3));
+        dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
+        root.addView(dragArea);
+
+        attachBottomSheetDragGestures(dialog, dragArea, root, null, null);
 
         // Header
         LinearLayout header = new LinearLayout(this);
@@ -927,7 +953,7 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(cBox(Color.parseColor("#0d1117"), Theme.BORDER, 1, 24));
-        root.setPadding(dp(18), dp(12), dp(18), dp(14));
+        root.setPadding(dp(18), dp(10), dp(18), dp(14));
         root.setClickable(true);
 
         FrameLayout.LayoutParams lpRoot = new FrameLayout.LayoutParams(
@@ -937,6 +963,19 @@ public class MainActivity extends Activity {
         );
         lpRoot.topMargin = (int) (dm.heightPixels * 0.15f);
         wrapper.addView(root, lpRoot);
+
+        // Drag Handle Pill
+        LinearLayout dragArea = new LinearLayout(this);
+        dragArea.setOrientation(LinearLayout.VERTICAL);
+        dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
+        dragArea.setPadding(0, dp(2), 0, dp(8));
+
+        View dragHandle = new View(this);
+        dragHandle.setBackground(cBox(Theme.BORDER_DARK, 0, 0, 3));
+        dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
+        root.addView(dragArea);
+
+        attachBottomSheetDragGestures(dialog, dragArea, root, null, null);
 
         // Header
         LinearLayout header = new LinearLayout(this);
@@ -2723,6 +2762,76 @@ public class MainActivity extends Activity {
         return dialog;
     }
 
+    private void attachBottomSheetDragGestures(final Dialog dialog, final View dragArea, final View rootContainer, final Runnable onExpandUp, final Runnable onShrinkDown) {
+        if (dragArea == null || rootContainer == null || dialog == null) return;
+        dragArea.setClickable(true);
+        dragArea.setOnTouchListener(new View.OnTouchListener() {
+            private float startRawY = 0f;
+            private long startTime = 0;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startRawY = event.getRawY();
+                        startTime = System.currentTimeMillis();
+                        return true;
+
+                    case MotionEvent.ACTION_MOVE:
+                        float deltaY = event.getRawY() - startRawY;
+                        if (deltaY > 0) {
+                            rootContainer.setTranslationY(deltaY);
+                        } else {
+                            rootContainer.setTranslationY(deltaY * 0.3f);
+                        }
+                        return true;
+
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        float totalDeltaY = event.getRawY() - startRawY;
+                        long elapsed = Math.max(1, System.currentTimeMillis() - startTime);
+                        float velocityY = (totalDeltaY / elapsed) * 1000f;
+
+                        // Quick Swipe DOWN -> Dismiss or Shrink
+                        if (totalDeltaY > dp(65) || (velocityY > 600 && totalDeltaY > dp(20))) {
+                            if (onShrinkDown != null) {
+                                onShrinkDown.run();
+                            } else {
+                                rootContainer.animate()
+                                        .translationY(rootContainer.getHeight() > 0 ? rootContainer.getHeight() : dp(500))
+                                        .alpha(0.2f)
+                                        .setDuration(180)
+                                        .withEndAction(() -> {
+                                            try { dialog.dismiss(); } catch (Exception ignored) {}
+                                        })
+                                        .start();
+                            }
+                        }
+                        // Quick Swipe UP -> Expand
+                        else if (totalDeltaY < -dp(45) || (velocityY < -600 && totalDeltaY < -dp(15))) {
+                            rootContainer.animate()
+                                    .translationY(0f)
+                                    .setDuration(160)
+                                    .start();
+                            if (onExpandUp != null) {
+                                onExpandUp.run();
+                            }
+                        }
+                        // Settle back to 0
+                        else {
+                            rootContainer.animate()
+                                    .translationY(0f)
+                                    .alpha(1f)
+                                    .setDuration(180)
+                                    .start();
+                        }
+                        return true;
+                }
+                return false;
+            }
+        });
+    }
+
     private LinearLayout createBottomSheetRoot(Dialog dialog, String title, boolean showClose) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -2739,6 +2848,8 @@ public class MainActivity extends Activity {
         dragHandle.setBackground(cBox(Theme.BORDER_DARK, 0, 0, 3));
         dragArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(44), dp(5)));
         root.addView(dragArea);
+
+        attachBottomSheetDragGestures(dialog, dragArea, root, null, null);
 
         // Header Title Row
         if (title != null) {
@@ -3529,14 +3640,47 @@ public class MainActivity extends Activity {
             window.setAttributes(wlp);
         }
 
-        fullscreenBtn.setOnClickListener(v -> {
-            isFullscreen[0] = !isFullscreen[0];
+        final Runnable expandAction = () -> {
+            isFullscreen[0] = true;
             if (window != null) {
                 WindowManager.LayoutParams lp = window.getAttributes();
-                lp.height = isFullscreen[0] ? fullHeight : peekHeight;
+                lp.height = fullHeight;
                 window.setAttributes(lp);
             }
-            fullscreenBtn.setImageResource(isFullscreen[0] ? R.drawable.ic_fullscreen_exit : R.drawable.ic_fullscreen);
+            fullscreenBtn.setImageResource(R.drawable.ic_fullscreen_exit);
+            modalRoot.animate().translationY(0f).alpha(1f).setDuration(160).start();
+        };
+
+        final Runnable shrinkOrCloseAction = () -> {
+            if (isFullscreen[0]) {
+                isFullscreen[0] = false;
+                if (window != null) {
+                    WindowManager.LayoutParams lp = window.getAttributes();
+                    lp.height = peekHeight;
+                    window.setAttributes(lp);
+                }
+                fullscreenBtn.setImageResource(R.drawable.ic_fullscreen);
+                modalRoot.animate().translationY(0f).alpha(1f).setDuration(160).start();
+            } else {
+                modalRoot.animate()
+                        .translationY(modalRoot.getHeight() > 0 ? modalRoot.getHeight() : dp(500))
+                        .alpha(0.2f)
+                        .setDuration(180)
+                        .withEndAction(() -> {
+                            try { dialog.dismiss(); } catch (Exception ignored) {}
+                        })
+                        .start();
+            }
+        };
+
+        attachBottomSheetDragGestures(dialog, dragArea, modalRoot, expandAction, shrinkOrCloseAction);
+
+        fullscreenBtn.setOnClickListener(v -> {
+            if (isFullscreen[0]) {
+                shrinkOrCloseAction.run();
+            } else {
+                expandAction.run();
+            }
         });
 
         dialog.show();
@@ -5295,12 +5439,18 @@ public class MainActivity extends Activity {
         root.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 24));
         root.setPadding(dp(20), dp(18), dp(20), dp(20));
 
+        // Drag Handle Pill
+        LinearLayout dragArea = new LinearLayout(this);
+        dragArea.setOrientation(LinearLayout.VERTICAL);
+        dragArea.setGravity(Gravity.CENTER_HORIZONTAL);
+        dragArea.setPadding(0, dp(2), 0, dp(12));
+
         View pill = new View(this);
-        pill.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 3));
-        LinearLayout.LayoutParams lpPill = new LinearLayout.LayoutParams(dp(40), dp(5));
-        lpPill.gravity = Gravity.CENTER_HORIZONTAL;
-        lpPill.setMargins(0, 0, 0, dp(14));
-        root.addView(pill, lpPill);
+        pill.setBackground(cBox(Theme.BORDER_DARK, 0, 0, 3));
+        dragArea.addView(pill, new LinearLayout.LayoutParams(dp(44), dp(5)));
+        root.addView(dragArea);
+
+        attachBottomSheetDragGestures(dialog, dragArea, root, null, null);
 
         TextView title = cText("Lampirkan File & Gambar", 16f, Theme.TEXT_MAIN, true, false);
         root.addView(title);
@@ -5804,14 +5954,14 @@ public class MainActivity extends Activity {
             try {
                 if (targetConvId != null && !targetConvId.isEmpty()) {
                     JSONObject json = bridge.get(
-                            "/api/session/transcript?id=" + BridgeClient.encode(targetConvId), 8000);
+                            "/api/session/transcript?id=" + BridgeClient.encode(targetConvId), 25000);
                     mainHandler.post(() -> applySyncedTranscript(epoch, targetConvId, json));
                     return;
                 }
 
                 // A new session: only our own job can tell us which conversation
                 // this turned into.
-                JSONObject status = bridge.get("/api/jobs/" + BridgeClient.encode(jobId), 8000);
+                JSONObject status = bridge.get("/api/jobs/" + BridgeClient.encode(jobId), 25000);
                 JSONObject job = status.optJSONObject("job");
                 final String discovered = job == null ? "" : job.optString("conversationId", "");
                 if (discovered.isEmpty()) {
@@ -5820,7 +5970,7 @@ public class MainActivity extends Activity {
                 }
 
                 JSONObject json = bridge.get(
-                        "/api/session/transcript?id=" + BridgeClient.encode(discovered), 8000);
+                        "/api/session/transcript?id=" + BridgeClient.encode(discovered), 25000);
                 mainHandler.post(() -> {
                     if (epoch != sessionEpoch) return;
                     adoptConversationId(discovered);

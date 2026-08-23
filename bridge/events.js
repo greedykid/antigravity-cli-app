@@ -19,10 +19,10 @@ function addClient(req, res) {
 
   res.write(`event: hello\ndata: ${JSON.stringify({ clientId: client.id })}\n\n`);
 
-  // Proxies drop idle connections; a comment line every 25s keeps it warm.
+  // Proxies drop idle connections; a comment line every 15s keeps it warm.
   const heartbeat = setInterval(() => {
     try { res.write(": ping\n\n"); } catch (e) { cleanup(); }
-  }, 25000);
+  }, 15000);
 
   function cleanup() {
     clearInterval(heartbeat);
