@@ -1031,6 +1031,44 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // POST /api/terminal/exec
+  if (req.method === "POST" && pathname === "/api/terminal/exec") {
+    let raw = "";
+    req.on("data", chunk => {
+      raw += chunk;
+      if (raw.length > 1024 * 1024) req.destroy();
+    });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const cmd = typeof payload.command === "string" ? payload.command.trim() : "";
+        if (!cmd) return send(res, 400, { error: "command is required" });
+        const execCwd = payload.cwd ? files.safeResolve(WORKDIR, payload.cwd) : WORKDIR;
+        
+        audit("terminal.exec", { command: cmd.slice(0, 100), cwd: execCwd });
+        
+        const child_process = require("child_process");
+        child_process.exec(cmd, {
+          cwd: execCwd || WORKDIR,
+          timeout: 30000,
+          maxBuffer: 2 * 1024 * 1024,
+          env: Object.assign({}, process.env, { PATH: (process.env.PATH || "") + ":/home/ubuntu/.local/bin:/usr/local/bin" })
+        }, (error, stdout, stderr) => {
+          send(res, 200, {
+            ok: !error,
+            command: cmd,
+            output: (stdout || "") + (stderr || ""),
+            exitCode: error ? (error.code || 1) : 0,
+            error: error ? error.message : null
+          });
+        });
+      } catch (err) {
+        send(res, 400, { error: err.message });
+      }
+    });
+    return;
+  }
+
   // GET /api/session/export?id=...  -> Markdown transcript
   if (req.method === "GET" && pathname === "/api/session/export") {
     const convId = parsedUrl.query.id;

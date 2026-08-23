@@ -125,6 +125,11 @@ public class MainActivity extends Activity {
 
     private static final String CHANNEL_TASK_NOTIFICATIONS = "channel_ai_task_alerts";
     private HorizontalScrollView quickActionScroll;
+    private HorizontalScrollView slashSuggestionsScroll;
+    private LinearLayout slashSuggestionsRow;
+    private String hubSearchQuery = "";
+    private JSONArray cachedHubSessionsRaw = null;
+
     private LinearLayout quickActionRow;
     private static final int REQ_CAMERA_CAPTURE = 1004;
     private Uri cameraCaptureUri;
@@ -345,6 +350,493 @@ public class MainActivity extends Activity {
                 if (currentScreen == 1) syncLiveExecution();
             }, 600);
         }
+    }
+
+
+    // ============================================================
+    // FEATURE A: SLASH COMMANDS AUTOCOMPLETE POPUP ( / )
+    // ============================================================
+    private static class SlashCmd {
+        String cmd;
+        String desc;
+        String prompt;
+        SlashCmd(String c, String d, String p) { this.cmd = c; this.desc = d; this.prompt = p; }
+    }
+
+    private static final SlashCmd[] SLASH_COMMANDS = new SlashCmd[]{
+        new SlashCmd("/diff", "Tampilkan git diff perubahan terbaru", "Tampilkan git diff dari perubahan terbaru di repository ini."),
+        new SlashCmd("/test", "Jalankan automated test suite", "Jalankan semua test suite di project dan laporkan hasilnya."),
+        new SlashCmd("/commit", "Buat commit git otomatis", "Buat commit git dengan deskripsi ringkas dan rapi untuk perubahan saat ini."),
+        new SlashCmd("/review", "Review kode & analisis kualitas", "Tolong review kode terbaru di workspace ini, periksa potensi bug, performa, dan keamanan."),
+        new SlashCmd("/explain", "Jelaskan alur arsitektur kode", "Jelaskan arsitektur dan alur kerja utama dari codebase project ini secara ringkas."),
+        new SlashCmd("/status", "Cek status repository git", "Periksa git status dan rangkum file apa saja yang diubah atau belum di-stage."),
+        new SlashCmd("/fix", "Perbaiki bug atau error kode", "Tolong perbaiki bug atau error berikut pada project ini: ")
+    };
+
+    private View buildSlashCommandsPopup() {
+        slashSuggestionsScroll = new HorizontalScrollView(this);
+        slashSuggestionsScroll.setHorizontalScrollBarEnabled(false);
+        slashSuggestionsScroll.setVisibility(View.GONE);
+        slashSuggestionsScroll.setPadding(0, 0, 0, dp(6));
+
+        slashSuggestionsRow = new LinearLayout(this);
+        slashSuggestionsRow.setOrientation(LinearLayout.HORIZONTAL);
+        slashSuggestionsRow.setGravity(Gravity.CENTER_VERTICAL);
+        slashSuggestionsScroll.addView(slashSuggestionsRow, new ViewGroup.LayoutParams(-2, -2));
+        return slashSuggestionsScroll;
+    }
+
+    private void updateSlashCommandsSuggestions(String text) {
+        if (slashSuggestionsScroll == null || slashSuggestionsRow == null) return;
+        if (!text.startsWith("/")) {
+            slashSuggestionsScroll.setVisibility(View.GONE);
+            return;
+        }
+
+        String filter = text.toLowerCase().trim();
+        slashSuggestionsRow.removeAllViews();
+        int matchCount = 0;
+
+        for (final SlashCmd sc : SLASH_COMMANDS) {
+            if (sc.cmd.toLowerCase().startsWith(filter) || filter.equals("/")) {
+                matchCount++;
+                LinearLayout chip = new LinearLayout(this);
+                chip.setOrientation(LinearLayout.HORIZONTAL);
+                chip.setGravity(Gravity.CENTER_VERTICAL);
+                chip.setBackground(cBox(Theme.SURFACE, Theme.ACCENT, 1, 14));
+                chip.setPadding(dp(12), dp(6), dp(12), dp(6));
+                chip.setClickable(true);
+                chip.setFocusable(true);
+
+                TextView cmdTv = cText(sc.cmd, 12.5f, Theme.ACCENT, true, false);
+                cmdTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                chip.addView(cmdTv);
+
+                TextView descTv = cText(" • " + sc.desc, 11.5f, Theme.TEXT_MUTED, false, false);
+                chip.addView(descTv);
+
+                chip.setOnClickListener(v -> {
+                    vibrateTick();
+                    promptInput.setText(sc.prompt);
+                    promptInput.requestFocus();
+                    promptInput.setSelection(promptInput.getText().length());
+                    slashSuggestionsScroll.setVisibility(View.GONE);
+                });
+
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                lp.setMargins(0, 0, dp(6), 0);
+                slashSuggestionsRow.addView(chip, lp);
+            }
+        }
+
+        slashSuggestionsScroll.setVisibility(matchCount > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    // ============================================================
+    // FEATURE B: PIN & UNPIN SESSION MANAGEMENT
+    // ============================================================
+    private Set<String> getPinnedSessionIds() {
+        return new HashSet<>(prefs.getStringSet("pinned_sessions_ids", new HashSet<>()));
+    }
+
+    private void togglePinSession(String convId) {
+        if (convId == null || convId.isEmpty()) return;
+        Set<String> pinned = getPinnedSessionIds();
+        boolean isPinned = pinned.contains(convId);
+        if (isPinned) {
+            pinned.remove(convId);
+            Toast.makeText(this, "Sesi batal disematkan", Toast.LENGTH_SHORT).show();
+        } else {
+            pinned.add(convId);
+            Toast.makeText(this, "📌 Sesi disematkan ke paling atas", Toast.LENGTH_SHORT).show();
+        }
+        prefs.edit().putStringSet("pinned_sessions_ids", pinned).apply();
+        fetchHubSessions();
+    }
+
+    // ============================================================
+    // FEATURE C: WORKSPACE FILE EXPLORER & CODE VIEWER
+    // ============================================================
+    private void openFileExplorerModal(final String dirPath) {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+        }
+
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        final int fullHeight = (int) (dm.heightPixels * 0.88f);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 24));
+        root.setPadding(dp(20), dp(14), dp(20), dp(16));
+
+        // Header
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView folderIc = cIcon(R.drawable.ic_folder, 22, Theme.ACCENT);
+        header.addView(folderIc);
+
+        TextView title = cText("  File Explorer", 17f, Theme.TEXT_MAIN, true, false);
+        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 20, 36, Theme.TEXT_MAIN);
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        header.addView(closeBtn);
+        root.addView(header);
+
+        // Path bar
+        final TextView pathView = cText("/" + (dirPath.equals(".") ? "" : dirPath), 12f, Theme.TEXT_MUTED, false, false);
+        pathView.setTypeface(Typeface.MONOSPACE);
+        pathView.setPadding(0, dp(4), 0, dp(10));
+        root.addView(pathView);
+
+        final ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(list);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        final ProgressBar pb = new ProgressBar(this);
+        root.addView(pb, new LinearLayout.LayoutParams(-2, -2, Gravity.CENTER));
+
+        dialog.setContentView(root);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, fullHeight);
+            dialog.getWindow().setGravity(Gravity.BOTTOM);
+        }
+        dialog.show();
+
+        executor.execute(() -> {
+            try {
+                JSONObject res = bridge.get("/api/files?path=" + BridgeClient.encode(dirPath), 10000);
+                mainHandler.post(() -> {
+                    pb.setVisibility(View.GONE);
+                    if (!res.optBoolean("ok", true) && res.has("error")) {
+                        list.addView(cText("Error: " + res.optString("error"), 13f, Theme.RED, false, false));
+                        return;
+                    }
+                    final String parent = res.optString("parent", null);
+                    if (parent != null && !parent.isEmpty()) {
+                        LinearLayout upRow = createFileRow("📁 .. (Kembali ke folder atas)", true, 0);
+                        upRow.setOnClickListener(v -> {
+                            dialog.dismiss();
+                            openFileExplorerModal(parent);
+                        });
+                        list.addView(upRow);
+                    }
+
+                    JSONArray entries = res.optJSONArray("entries");
+                    if (entries == null || entries.length() == 0) {
+                        list.addView(cText("Folder kosong", 13f, Theme.TEXT_MUTED, false, false));
+                        return;
+                    }
+
+                    for (int i = 0; i < entries.length(); i++) {
+                        JSONObject ent = entries.optJSONObject(i);
+                        if (ent == null) continue;
+                        final String name = ent.optString("name", "");
+                        final String type = ent.optString("type", "file");
+                        final long size = ent.optLong("size", 0);
+                        final boolean isDir = "dir".equalsIgnoreCase(type);
+                        final String relativeTarget = (dirPath.equals(".") ? "" : dirPath + "/") + name;
+
+                        LinearLayout row = createFileRow((isDir ? "📁 " : "📄 ") + name, isDir, size);
+                        row.setOnClickListener(v -> {
+                            if (isDir) {
+                                dialog.dismiss();
+                                openFileExplorerModal(relativeTarget);
+                            } else {
+                                openCodeViewerModal(relativeTarget);
+                            }
+                        });
+                        list.addView(row);
+                    }
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    pb.setVisibility(View.GONE);
+                    list.addView(cText("Gagal membaca folder: " + e.getMessage(), 13f, Theme.RED, false, false));
+                });
+            }
+        });
+    }
+
+    private LinearLayout createFileRow(String label, boolean isDir, long sizeBytes) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 12));
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setClickable(true);
+        row.setFocusable(true);
+
+        TextView t = cText(label, 13.5f, isDir ? Theme.ACCENT : Theme.TEXT_MAIN, isDir, false);
+        t.setTypeface(Typeface.MONOSPACE);
+        row.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+
+        if (!isDir && sizeBytes > 0) {
+            String szStr = sizeBytes > 1024 ? (sizeBytes / 1024) + " KB" : sizeBytes + " B";
+            TextView s = cText(szStr, 11.5f, Theme.TEXT_MUTED, false, false);
+            row.addView(s);
+        }
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(6));
+        row.setLayoutParams(lp);
+        return row;
+    }
+
+    private void openCodeViewerModal(final String filePath) {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+        }
+
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        final int fullHeight = (int) (dm.heightPixels * 0.90f);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 24));
+        root.setPadding(dp(20), dp(14), dp(20), dp(16));
+
+        // Header
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = cText(new File(filePath).getName(), 16f, Theme.TEXT_MAIN, true, false);
+        title.setTypeface(Typeface.MONOSPACE);
+        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView btnInsert = cText("Masukkan ke Chat 💬", 12f, Theme.ACCENT, true, false);
+        btnInsert.setBackground(cBox(Theme.ACCENT_SOFT, 0, 0, 10));
+        btnInsert.setPadding(dp(8), dp(4), dp(8), dp(4));
+        btnInsert.setClickable(true);
+        header.addView(btnInsert);
+
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 20, 36, Theme.TEXT_MAIN);
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        header.addView(closeBtn);
+        root.addView(header);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        HorizontalScrollView hScroll = new HorizontalScrollView(this);
+
+        final TextView codeView = cText("Memuat file...", 12.5f, Theme.TEXT_MAIN, false, false);
+        codeView.setTypeface(Typeface.MONOSPACE);
+        codeView.setTextIsSelectable(true);
+        codeView.setPadding(dp(12), dp(12), dp(12), dp(12));
+        codeView.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+
+        hScroll.addView(codeView);
+        scroll.addView(hScroll);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        dialog.setContentView(root);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, fullHeight);
+            dialog.getWindow().setGravity(Gravity.BOTTOM);
+        }
+        dialog.show();
+
+        executor.execute(() -> {
+            try {
+                JSONObject res = bridge.get("/api/files/read?path=" + BridgeClient.encode(filePath), 10000);
+                final String fileContent = res.optString("content", "");
+                mainHandler.post(() -> {
+                    codeView.setText(fileContent.isEmpty() ? "(File kosong atau biner)" : fileContent);
+                    btnInsert.setOnClickListener(v -> {
+                        dialog.dismiss();
+                        promptInput.append("\n[File: " + filePath + "]\n");
+                        promptInput.requestFocus();
+                        Toast.makeText(MainActivity.this, "File dimasukkan ke composer", Toast.LENGTH_SHORT).show();
+                    });
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> codeView.setText("Gagal membaca file: " + e.getMessage()));
+            }
+        });
+    }
+
+    // ============================================================
+    // FEATURE D: INTERACTIVE QUICK TERMINAL MODAL
+    // ============================================================
+    private void openQuickTerminalModal() {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+        }
+
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        final int fullHeight = (int) (dm.heightPixels * 0.90f);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(cBox(Color.parseColor("#0d1117"), Theme.BORDER, 1, 24));
+        root.setPadding(dp(18), dp(12), dp(18), dp(16));
+
+        // Header
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView termIc = cIcon(R.drawable.ic_code, 22, Theme.GREEN);
+        header.addView(termIc);
+
+        TextView title = cText("  Quick Terminal (PTY)", 16f, Theme.TEXT_MAIN, true, false);
+        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView clearBtn = cText("Clear", 12f, Theme.TEXT_MUTED, true, false);
+        clearBtn.setPadding(dp(8), dp(4), dp(8), dp(4));
+        header.addView(clearBtn);
+
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 20, 36, Theme.TEXT_MAIN);
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        header.addView(closeBtn);
+        root.addView(header);
+
+        // Preset commands chips
+        HorizontalScrollView chipScroll = new HorizontalScrollView(this);
+        chipScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout chipRow = new LinearLayout(this);
+        chipRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        final String[] PRESETS = new String[]{"git status", "git diff", "git log -n 5", "ls -la", "npm test", "docker ps", "free -m"};
+
+        // Output Console
+        final ScrollView outScroll = new ScrollView(this);
+        outScroll.setFillViewport(true);
+        final TextView outView = cText("$ Antigravity Terminal Ready.\nKetik perintah bash di bawah:\n", 12f, Color.parseColor("#c9d1d9"), false, false);
+        outView.setTypeface(Typeface.MONOSPACE);
+        outView.setTextIsSelectable(true);
+        outView.setPadding(dp(10), dp(10), dp(10), dp(10));
+        outScroll.addView(outView);
+        root.addView(outScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        clearBtn.setOnClickListener(v -> outView.setText("$ Terminal cleared.\n"));
+
+        // Input row
+        LinearLayout inputRow = new LinearLayout(this);
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
+        inputRow.setPadding(0, dp(8), 0, 0);
+
+        final EditText cmdInput = new EditText(this);
+        cmdInput.setHint("Ketik perintah bash (cth: git status)...");
+        cmdInput.setHintTextColor(Theme.TEXT_LIGHT);
+        cmdInput.setTextColor(Theme.TEXT_MAIN);
+        cmdInput.setTextSize(13.5f);
+        cmdInput.setTypeface(Typeface.MONOSPACE);
+        cmdInput.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+        cmdInput.setPadding(dp(12), dp(8), dp(12), dp(8));
+        inputRow.addView(cmdInput, new LinearLayout.LayoutParams(0, dp(44), 1));
+
+        final TextView btnExec = cText(" Run 🚀", 13f, Theme.ON_ACCENT, true, false);
+        btnExec.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
+        btnExec.setPadding(dp(14), dp(10), dp(14), dp(10));
+        btnExec.setClickable(true);
+
+        final Runnable execAction = () -> {
+            final String cmd = cmdInput.getText().toString().trim();
+            if (cmd.isEmpty()) return;
+            cmdInput.setText("");
+            outView.append("\n$ " + cmd + "\n[Menjalankan...]\n");
+            outScroll.post(() -> outScroll.fullScroll(View.FOCUS_DOWN));
+
+            executor.execute(() -> {
+                try {
+                    JSONObject req = new JSONObject();
+                    req.put("command", cmd);
+                    JSONObject res = executePost(prefs.getString("url", "").replace("/api/chat", "/api/terminal/exec"),
+                            prefs.getString("token", ""), req);
+                    final String output = res.optString("output", "");
+                    mainHandler.post(() -> {
+                        outView.append(output.isEmpty() ? "(Selesai tanpa output)\n" : output + "\n");
+                        outScroll.post(() -> outScroll.fullScroll(View.FOCUS_DOWN));
+                    });
+                } catch (Exception e) {
+                    mainHandler.post(() -> {
+                        outView.append("Error: " + e.getMessage() + "\n");
+                        outScroll.post(() -> outScroll.fullScroll(View.FOCUS_DOWN));
+                    });
+                }
+            });
+        };
+
+        btnExec.setOnClickListener(v -> execAction.run());
+        inputRow.addView(btnExec, new LinearLayout.LayoutParams(-2, dp(44)));
+        root.addView(inputRow);
+
+        for (final String pr : PRESETS) {
+            TextView pChip = cText(pr, 11.5f, Theme.ACCENT, true, false);
+            pChip.setTypeface(Typeface.MONOSPACE);
+            pChip.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+            pChip.setPadding(dp(8), dp(4), dp(8), dp(4));
+            pChip.setClickable(true);
+            pChip.setOnClickListener(v -> {
+                cmdInput.setText(pr);
+                execAction.run();
+            });
+            LinearLayout.LayoutParams lpPr = new LinearLayout.LayoutParams(-2, -2);
+            lpPr.setMargins(0, dp(6), dp(6), dp(6));
+            chipRow.addView(pChip, lpPr);
+        }
+        chipScroll.addView(chipRow);
+        root.addView(chipScroll, 1);
+
+        dialog.setContentView(root);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, fullHeight);
+            dialog.getWindow().setGravity(Gravity.BOTTOM);
+        }
+        dialog.show();
+    }
+
+
+    private void showSessionOptionsDialog(final String convId, final String title) {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 20));
+        root.setPadding(dp(20), dp(16), dp(20), dp(16));
+
+        TextView t = cText(title, 15f, Theme.TEXT_MAIN, true, false);
+        root.addView(t);
+
+        boolean isPinned = getPinnedSessionIds().contains(convId);
+        LinearLayout optPin = createAttachmentOptionRow(isPinned ? "❌  Batal Sematkan Sesi" : "📌  Sematkan Sesi ke Paling Atas", "Tetap berada di bagian atas daftar");
+        optPin.setOnClickListener(v -> {
+            dialog.dismiss();
+            togglePinSession(convId);
+        });
+        root.addView(optPin);
+
+        LinearLayout optRename = createAttachmentOptionRow("✏️  Ubah Nama Sesi", "Ganti judul sesi ini");
+        optRename.setOnClickListener(v -> {
+            dialog.dismiss();
+            showRenameSessionDialog(convId, title);
+        });
+        root.addView(optRename);
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     // Multi-File Attachment Model
@@ -1127,6 +1619,39 @@ public class MainActivity extends Activity {
         hubLoadingProgress = new ProgressBar(this);
         hubLoadingProgress.setVisibility(View.GONE);
         scrollBody.addView(hubLoadingProgress, new LinearLayout.LayoutParams(dp(28), dp(28)));
+
+        // Search Sessions Bar
+        LinearLayout searchCard = new LinearLayout(this);
+        searchCard.setOrientation(LinearLayout.HORIZONTAL);
+        searchCard.setGravity(Gravity.CENTER_VERTICAL);
+        searchCard.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+        searchCard.setPadding(dp(12), dp(8), dp(12), dp(8));
+
+        ImageView searchIc = cIcon(R.drawable.ic_search, 18, Theme.TEXT_MUTED);
+        searchCard.addView(searchIc);
+
+        EditText searchEt = new EditText(this);
+        searchEt.setHint("Cari riwayat sesi...");
+        searchEt.setHintTextColor(Theme.TEXT_LIGHT);
+        searchEt.setTextColor(Theme.TEXT_MAIN);
+        searchEt.setTextSize(13.5f);
+        searchEt.setBackgroundColor(Color.TRANSPARENT);
+        searchEt.setPadding(dp(8), 0, dp(8), 0);
+        searchEt.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                hubSearchQuery = s.toString().trim().toLowerCase();
+                if (cachedHubSessionsRaw != null) {
+                    renderHubSessionGroups(cachedHubSessionsRaw);
+                }
+            }
+            @Override public void afterTextChanged(Editable s) {}
+        });
+        searchCard.addView(searchEt, new LinearLayout.LayoutParams(0, -2, 1));
+
+        LinearLayout.LayoutParams lpSearch = new LinearLayout.LayoutParams(-1, -2);
+        lpSearch.setMargins(0, dp(6), 0, dp(12));
+        scrollBody.addView(searchCard, lpSearch);
 
         // Time-grouped sessions container
         hubSessionGroupsContainer = new LinearLayout(this);
@@ -3116,6 +3641,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lpAtt = new LinearLayout.LayoutParams(-1, -2);
         lpAtt.setMargins(0, 0, 0, dp(8));
         floatingWrapper.addView(attachmentScrollContainer, lpAtt);
+        floatingWrapper.addView(buildSlashCommandsPopup());
         floatingWrapper.addView(buildQuickActionToolbar());
 
         LinearLayout composerCard = new LinearLayout(this);
@@ -3135,6 +3661,13 @@ public class MainActivity extends Activity {
         promptInput.setBackgroundColor(Color.TRANSPARENT);
         promptInput.setMaxLines(6);
         promptInput.setPadding(0, 0, 0, dp(8));
+        promptInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                updateSlashCommandsSuggestions(s.toString());
+            }
+            @Override public void afterTextChanged(Editable s) {}
+        });
         composerCard.addView(promptInput);
 
         // Action Toolbar
@@ -3809,6 +4342,16 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             root.setElevation(dp(18));
         }
+
+        // 0. File Explorer & Quick Terminal
+        addCustomPopupItem(root, "File Explorer", R.drawable.ic_folder, Theme.ACCENT, () -> {
+            popupWindow.dismiss();
+            openFileExplorerModal(".");
+        });
+        addCustomPopupItem(root, "Quick Terminal (PTY)", R.drawable.ic_code, Theme.GREEN, () -> {
+            popupWindow.dismiss();
+            openQuickTerminalModal();
+        });
 
         // 1. Ubah Nama Sesi
         addCustomPopupItem(root, "Ubah Nama Sesi", R.drawable.ic_edit, Theme.TEXT_MAIN, () -> {

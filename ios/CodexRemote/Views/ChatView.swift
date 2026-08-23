@@ -233,6 +233,41 @@ struct ChatView: View {
                 .clipShape(Capsule())
                 .overlay(Capsule().stroke(palette.border, lineWidth: 1))
         }
+    private var slashCommandsView: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                slashChip("/diff", title: "Git Diff", insert: "Tampilkan git diff dari perubahan terbaru di repository ini.")
+                slashChip("/test", title: "Run Tests", insert: "Jalankan semua test suite di project dan laporkan hasilnya.")
+                slashChip("/commit", title: "Git Commit", insert: "Buat commit git dengan deskripsi ringkas dan rapi untuk perubahan saat ini.")
+                slashChip("/review", title: "Code Review", insert: "Tolong review kode terbaru di workspace ini, periksa potensi bug, performa, dan keamanan.")
+                slashChip("/explain", title: "Jelaskan Alur", insert: "Jelaskan arsitektur dan alur kerja utama dari codebase project ini secara ringkas.")
+                slashChip("/status", title: "Git Status", insert: "Periksa git status dan rangkum file apa saja yang diubah atau belum di-stage.")
+                slashChip("/fix", title: "Perbaiki Error", insert: "Tolong perbaiki bug atau error berikut pada project ini: ")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func slashChip(_ cmd: String, title: String, insert: String) -> some View {
+        Button {
+            draft = insert
+            inputFocused = true
+        } label: {
+            HStack(spacing: 4) {
+                Text(cmd)
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundColor(palette.accent)
+                Text("• \(title)")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(palette.textMuted)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(palette.surface)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(palette.accent, lineWidth: 1))
+        }
         .buttonStyle(.plain)
     }
 
@@ -285,6 +320,9 @@ struct ChatView: View {
             }
 
             attachmentTray
+            if draft.hasPrefix("/") {
+                slashCommandsView
+            }
             quickToolbar
 
             HStack(alignment: .bottom, spacing: 8) {
