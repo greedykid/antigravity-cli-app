@@ -215,6 +215,13 @@ public class MainActivity extends Activity {
 
     // Active Session State
     private String activeConversationId = null;
+    private String activeJobId = null;
+    /**
+     * Bumped whenever the open conversation changes. An in-flight request
+     * carries the epoch it started under; if it comes back after the user moved
+     * on, its data belongs to a session that is no longer on screen.
+     */
+    private int sessionEpoch = 0;
     private String activeSessionTitle = "New session";
     private String currentEngine = "antigravity";
     private String currentModel = "";
@@ -798,7 +805,7 @@ public class MainActivity extends Activity {
             updateRepoTag();
             updateChatNavIcon();
             if (activeConversationId != null || isLiveTaskRunning) {
-                fetchActiveSessionTurns(true);
+                fetchActiveSessionTurns(false);
                 startAutoRefresh();
             } else {
                 stopAutoRefresh();
@@ -1208,6 +1215,8 @@ public class MainActivity extends Activity {
     }
 
     private void openSpecificSession(String convId, String title) {
+        sessionEpoch++;
+        activeJobId = null;
         activeConversationId = convId;
         activeSessionTitle = title != null && !title.isEmpty() ? title : "Session";
 
@@ -1282,6 +1291,8 @@ public class MainActivity extends Activity {
     }
 
     private void startNewSession() {
+        sessionEpoch++;
+        activeJobId = null;
         activeConversationId = null;
         activeSessionTitle = "New session";
         lastLoadedSessionId = null;
@@ -3896,6 +3907,7 @@ public class MainActivity extends Activity {
         startAutoRefresh();
 
         final String promptToSend = text;
+        final int sendEpoch = sessionEpoch;
 
         executor.execute(() -> {
             try {
@@ -3923,18 +3935,25 @@ public class MainActivity extends Activity {
 
                 JSONObject accepted = executePost(endpoint, prefs.getString("token", ""), req);
                 final String jobId = accepted.optString("jobId", "");
+                // Tag the run as ours so live syncing can tell it apart from
+                // anything else happening on the server.
+                if (!jobId.isEmpty()) mainHandler.post(() -> activeJobId = jobId);
 
                 JSONObject res = jobId.isEmpty()
                         ? accepted                       // server predates jobs: it already ran
                         : awaitJobResult(jobId);
 
-                String activeId = res.optString("conversationId", activeConversationId);
-                if (activeId != null && !activeId.isEmpty()) {
-                    activeConversationId = activeId;
+                final String activeId = res.optString("conversationId", "");
+                if (!activeId.isEmpty()) {
+                    mainHandler.post(() -> {
+                        if (sendEpoch == sessionEpoch) adoptConversationId(activeId);
+                    });
                 }
 
                 final JSONObject finalRes = res;
+                final int epochAtSend = sendEpoch;
                 mainHandler.post(() -> {
+                    activeJobId = null;
                     isLiveTaskRunning = false;
                     btnSend.setTag(null);
                     btnSend.setEnabled(true);
@@ -3944,6 +3963,9 @@ public class MainActivity extends Activity {
                     if (!error.isEmpty()) {
                         Toast.makeText(MainActivity.this, error, Toast.LENGTH_LONG).show();
                     }
+                    // The user may have opened another session while this ran;
+                    // painting the result now would swap the transcript underneath them.
+                    if (epochAtSend != sessionEpoch) return;
                     renderActiveSessionTurns(activeConversationId, finalRes, false);
                 });
             } catch (Exception e) {
@@ -4005,54 +4027,69 @@ public class MainActivity extends Activity {
     }
 
     private void syncLiveExecution() {
-        String endpoint = prefs.getString("url", "").trim();
-        if (endpoint.isEmpty()) {
+        if (!bridge.isPaired()) {
+            mainHandler.post(this::hideSessionLoading);
+            return;
+        }
+
+        final String targetConvId = activeConversationId;
+        final String jobId = activeJobId;
+        final int epoch = sessionEpoch;
+
+        // With no conversation and no job of our own there is nothing to sync.
+        // This used to fall back to /api/session/live, which reports whatever
+        // ran most recently on the server — so a brand-new chat would adopt and
+        // display a stranger's transcript for a moment.
+        if ((targetConvId == null || targetConvId.isEmpty()) && (jobId == null || jobId.isEmpty())) {
             mainHandler.post(this::hideSessionLoading);
             return;
         }
 
         executor.execute(() -> {
             try {
-                String targetConvId = activeConversationId;
-                String queryUrl;
                 if (targetConvId != null && !targetConvId.isEmpty()) {
-                    queryUrl = endpoint.replace("/api/chat", "/api/session/transcript?id=" + Uri.encode(targetConvId));
-                } else {
-                    queryUrl = endpoint.replace("/api/chat", "/api/session/live");
+                    JSONObject json = bridge.get(
+                            "/api/session/transcript?id=" + BridgeClient.encode(targetConvId), 8000);
+                    mainHandler.post(() -> applySyncedTranscript(epoch, targetConvId, json));
+                    return;
                 }
 
-                HttpURLConnection c = (HttpURLConnection) new URL(queryUrl).openConnection();
-                c.setRequestMethod("GET");
-                c.setConnectTimeout(5000);
-                c.setReadTimeout(5000);
-                String token = prefs.getString("token", "");
-                if (!token.isEmpty()) {
-                    c.setRequestProperty("Authorization", "Bearer " + token);
-                }
-
-                int code = c.getResponseCode();
-                if (code == 200) {
-                    BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
-                    StringBuilder b = new StringBuilder();
-                    String line;
-                    while ((line = r.readLine()) != null) b.append(line);
-                    JSONObject json = new JSONObject(b.toString());
-
-                    mainHandler.post(() -> {
-                        hideSessionLoading();
-                        String newId = json.optString("conversationId", "");
-                        if (activeConversationId == null && !newId.isEmpty()) {
-                            activeConversationId = newId;
-                        }
-                        renderActiveSessionTurns(activeConversationId, json, false);
-                    });
-                } else {
+                // A new session: only our own job can tell us which conversation
+                // this turned into.
+                JSONObject status = bridge.get("/api/jobs/" + BridgeClient.encode(jobId), 8000);
+                JSONObject job = status.optJSONObject("job");
+                final String discovered = job == null ? "" : job.optString("conversationId", "");
+                if (discovered.isEmpty()) {
                     mainHandler.post(this::hideSessionLoading);
+                    return;
                 }
+
+                JSONObject json = bridge.get(
+                        "/api/session/transcript?id=" + BridgeClient.encode(discovered), 8000);
+                mainHandler.post(() -> {
+                    if (epoch != sessionEpoch) return;
+                    adoptConversationId(discovered);
+                    applySyncedTranscript(epoch, discovered, json);
+                });
             } catch (Exception ignored) {
                 mainHandler.post(this::hideSessionLoading);
             }
         });
+    }
+
+    /** Drops a response that arrived after the user moved to another session. */
+    private void applySyncedTranscript(int epoch, String convId, JSONObject json) {
+        hideSessionLoading();
+        if (epoch != sessionEpoch) return;
+        if (convId != null && activeConversationId != null && !convId.equals(activeConversationId)) return;
+        renderActiveSessionTurns(convId, json, false);
+    }
+
+    private void adoptConversationId(String convId) {
+        if (convId == null || convId.isEmpty()) return;
+        if (activeConversationId != null && !activeConversationId.isEmpty()) return;
+        activeConversationId = convId;
+        prefs.edit().putString("last_conversation_id", convId).apply();
     }
 
     private JSONObject executePost(String endpoint, String token, JSONObject req) throws Exception {
@@ -4939,13 +4976,28 @@ public class MainActivity extends Activity {
 
     // Events arrive on the SSE thread; everything below hops to the UI thread.
     private final LiveEventBus.Listener liveEventListener = (name, data) -> mainHandler.post(() -> {
+        // Another device, or a task started from the terminal, can be running on
+        // the same server. Only react to the job this screen started, otherwise
+        // its transcript replaces the one the user is looking at.
+        String eventJobId = data == null ? "" : data.optString("jobId", "");
+        boolean isOurs = activeJobId != null && activeJobId.equals(eventJobId);
+
         if ("task.started".equals(name)) {
-            isLiveTaskRunning = true;
-        } else if ("task.finished".equals(name)) {
+            if (isOurs) isLiveTaskRunning = true;
+            return;
+        }
+
+        if ("task.finished".equals(name)) {
+            if (!isOurs) return;
             isLiveTaskRunning = false;
-            if (currentScreen == 1) fetchActiveSessionTurns(true);
-        } else if ("cli.event".equals(name) || "cli.output".equals(name)) {
-            // A step landed: pull the transcript once instead of polling blindly.
+            if (currentScreen == 1) syncLiveExecution();
+            return;
+        }
+
+        if ("cli.event".equals(name) || "cli.output".equals(name)) {
+            if (!isOurs) return;
+            // Our job just revealed which conversation it created.
+            adoptConversationId(data.optString("conversationId", ""));
             if (currentScreen == 1) syncLiveExecution();
         }
     });

@@ -43,6 +43,16 @@ function finish(id, patch) {
   return job;
 }
 
+// Lets the runner record the conversation id the moment the CLI reveals it,
+// instead of only at the end. Clients waiting on a brand-new session need it
+// to know which transcript is theirs.
+function update(id, patch) {
+  const job = jobs.get(id);
+  if (!job) return null;
+  Object.assign(job, patch);
+  return job;
+}
+
 function get(id) {
   return jobs.get(id) || null;
 }
@@ -85,4 +95,4 @@ function reset() {
   jobs.clear();
 }
 
-module.exports = { create, finish, get, list, running, summary, reset, MAX_KEPT };
+module.exports = { create, update, finish, get, list, running, summary, reset, MAX_KEPT };

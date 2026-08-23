@@ -493,7 +493,7 @@ function getTranscript(convId, limit = 1000) {
 // -------------------------------------------------------------
 // CLI PROCESS EXECUTORS
 // -------------------------------------------------------------
-function runCodex(prompt, conversationId, model) {
+function runCodex(prompt, conversationId, model, job) {
   return new Promise((resolve, reject) => {
     const tmpOutputFile = path.join(os.tmpdir(), `codex_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.txt`);
     const args = ["exec", "--json"];
@@ -524,7 +524,17 @@ function runCodex(prompt, conversationId, model) {
           const event = JSON.parse(line);
           if (event.type === "thread.started" && event.thread_id) activeCodexSessionId = event.thread_id;
           if (event.type === "session_meta" && event.payload && event.payload.session_id) activeCodexSessionId = event.payload.session_id;
-          events.broadcast("cli.event", { engine: "codex", conversationId: activeCodexSessionId, event });
+          // Record it on the job right away so the client can tell its own
+          // brand-new session apart from whatever else ran on this machine.
+          if (job && activeCodexSessionId && !job.conversationId) {
+            jobs.update(job.id, { conversationId: activeCodexSessionId });
+          }
+          events.broadcast("cli.event", {
+            jobId: job ? job.id : null,
+            engine: "codex",
+            conversationId: activeCodexSessionId,
+            event
+          });
         } catch (e) {}
       }
     });
@@ -581,7 +591,7 @@ function runCodex(prompt, conversationId, model) {
   });
 }
 
-function runAgy(prompt, conversationId, resume = false, model) {
+function runAgy(prompt, conversationId, resume = false, model, job) {
   return new Promise((resolve, reject) => {
     const extraPath = ":/home/ubuntu/.local/bin:/usr/local/bin";
     const env = Object.assign({}, process.env, {
@@ -606,7 +616,12 @@ function runAgy(prompt, conversationId, resume = false, model) {
     child.stdout.on("data", chunk => {
       const text = chunk.toString();
       output += text;
-      events.broadcast("cli.output", { engine: "antigravity", conversationId, chunk: text });
+      events.broadcast("cli.output", {
+        jobId: job ? job.id : null,
+        engine: "antigravity",
+        conversationId,
+        chunk: text
+      });
     });
     child.stderr.on("data", chunk => { error += chunk.toString(); });
     const timeoutMs = settings.taskTimeoutMs();
@@ -729,7 +744,7 @@ async function runChatJob(job, payload) {
     let updatedTurns = [];
 
     if (engine === "codex") {
-      const result = await runCodex(prompt, conversationId, model);
+      const result = await runCodex(prompt, conversationId, model, job);
       responseText = result.response;
       activeConvId = result.sessionId || conversationId;
 
@@ -749,7 +764,7 @@ async function runChatJob(job, payload) {
       }
     } else {
       const isNewSession = !conversationId;
-      responseText = await runAgy(prompt, conversationId, resume, model);
+      responseText = await runAgy(prompt, conversationId, resume, model, job);
 
       const sData = getSessions();
       if (isNewSession) {
