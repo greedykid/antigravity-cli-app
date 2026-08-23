@@ -17,6 +17,23 @@ Antigravity Remote adalah aplikasi Android native yang memungkinkan Anda mengont
 * **🔀 Dual Engine Gateway:** Beralih antara engine **Google Antigravity CLI** dan **OpenAI Codex CLI** dengan 1 ketukan.
 * **📊 Rich Markdown & Native Tables:** Dukungan format Markdown lengkap dengan tabel horizontal scrollable dan tombol salin kode cepat.
 * **🎙️ Voice Dictation & File Upload:** Dukungan input suara (Speech-to-Text) dan upload file / gambar langsung ke server.
+* **🔔 Notifikasi Task Selesai:** Kirim prompt panjang, kunci layar — HP memberi tahu saat task selesai atau gagal lewat koneksi SSE latar belakang.
+* **📁 File Browser Workspace:** Telusuri dan baca file di workdir server langsung dari HP, lengkap dengan syntax highlight.
+* **🔀 Panel Git:** Lihat branch, file berubah, diff berwarna, lalu commit dan push tanpa membuka terminal.
+* **🔎 Pencarian Sesi:** Cari kata kunci di judul maupun isi transkrip semua sesi.
+* **🖥️ Multi-Server:** Simpan beberapa VPS dan beralih dengan satu ketukan.
+* **🛡️ Mode Eksekusi:** Pilih sandbox CLI di server — akses penuh, tulis-di-workspace, atau hanya-baca.
+
+---
+
+## 🔐 Keamanan
+
+Bridge server menjalankan perintah CLI sebagai user Anda, jadi aksesnya diperlakukan sebagai kredensial penuh ke server.
+
+* **Token unik per instalasi.** Dibuat otomatis saat server pertama kali jalan dan disimpan di `~/.codex-remote/token` (mode `0600`). Tidak ada lagi token bawaan di repo. Server **menolak start** kalau token masih nilai default lama.
+* **Hanya loopback.** Server bind ke `127.0.0.1` secara bawaan; satu-satunya pintu masuk adalah Cloudflare Tunnel. Ubah lewat `BRIDGE_HOST` kalau memang perlu.
+* **Ganti token kapan saja:** `codex-remote rotate` — server direstart dan QR pairing baru ditampilkan.
+* **Batasi kemampuan CLI** lewat menu *Mode Eksekusi* di aplikasi (`full` / `workspace` / `readonly`).
 
 ---
 
@@ -40,6 +57,7 @@ Ketik perintah ini di terminal Anda kapan saja:
 * `codex-remote status` : Memeriksa status aktif server & tunnel.
 * `codex-remote logs` : Membuka live monitor logs server.
 * `codex-remote restart` : Merestart server bridge dan tunnel.
+* `codex-remote rotate` : Membuat token baru (perlu pairing ulang dari HP).
 
 ---
 
@@ -130,3 +148,30 @@ Aplikasi menggunakan pipeline otomatis **GitHub Actions**:
 * Seluruh komunikasi diamankan menggunakan **Bearer Token Authentication** dan koneksi **HTTPS/TLS**.
 * Bridge Server berjalan di mesin pribadi Anda tanpa server perantara pihak ketiga.
 * Token rahasia disimpan secara lokal dan aman di `SharedPreferences` perangkat Android Anda.
+
+
+---
+
+## 🌐 API Bridge
+
+Semua endpoint (kecuali `/health`) butuh header `Authorization: Bearer <token>`.
+
+| Method | Endpoint | Kegunaan |
+|---|---|---|
+| GET | `/health` | Status server, daftar engine dan fitur |
+| GET | `/api/events` | Stream Server-Sent Events (`task.started`, `cli.event`, `task.finished`) |
+| POST | `/api/chat` | Kirim prompt; `conversationId` melanjutkan sesi lama |
+| GET | `/api/sessions` | Daftar sesi Antigravity + Codex |
+| GET | `/api/session/transcript?id=` | Transkrip satu sesi |
+| GET | `/api/search?q=` | Cari di judul dan isi transkrip |
+| GET | `/api/files?path=` | Daftar isi folder (dikunci di dalam workdir) |
+| GET | `/api/files/read?path=` | Baca file (maks 512 KB, deteksi biner) |
+| GET | `/api/git/status`, `/api/git/diff` | Status dan diff repo |
+| POST | `/api/git/commit`, `/api/git/push` | Commit dan push |
+| GET/POST | `/api/settings` | Mode sandbox dan preferensi notifikasi |
+| POST | `/api/session/control` | Interrupt task yang sedang jalan |
+| POST | `/api/upload` | Upload file / gambar |
+
+### Tunnel dengan URL tetap
+
+URL `trycloudflare.com` berubah tiap restart. Untuk URL permanen, simpan token Cloudflare Named Tunnel di `~/.codex-remote/tunnel-token` — `bin/tunnel-run.sh` otomatis memakainya dan pairing tidak perlu diulang lagi.
