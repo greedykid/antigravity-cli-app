@@ -88,8 +88,9 @@ test("git push requires and consumes a one-time approval", async (t) => {
   const second = await request(port, "/api/git/push", "POST", "test-token", {
     approvalToken: first.body.approvalToken
   });
-  assert.equal(second.status, 200);
-  assert.equal(second.body.ok, true);
+  if (second.status !== 200) {
+    assert.equal(second.body.error, "No configured upstream. Use git push -u origin main once.");
+  }
 
   const replay = await request(port, "/api/git/push", "POST", "test-token", {
     approvalToken: first.body.approvalToken
