@@ -1,5 +1,5 @@
 const http = require("http");
-const { spawn, execSync } = require("child_process");
+const { spawn, spawnSync, execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -17,6 +17,70 @@ const quota = require("./quota");
 const codexConfig = require("./codexconfig");
 const providerModels = require("./models");
 const archive = require("./archive");
+const WRITE_BLOCKED_MESSAGE = "Endpoint ini dinonaktifkan oleh mode Hanya Baca";
+
+function isWriteBlocked(pathname) {
+  if (settings.load().sandboxMode !== "readonly") return false;
+  return pathname === "/api/files/write" ||
+    pathname === "/api/upload" ||
+    pathname === "/api/uploads/cleanup" ||
+    pathname.startsWith("/api/git/") ||
+    pathname.startsWith("/api/codex/") ||
+    pathname === "/api/chat" ||
+    pathname === "/api/projects" ||
+    pathname === "/api/settings";
+}
+
+function commandVersion(command, args) {
+  try {
+    const result = spawnSync(command, args, { encoding: "utf8", timeout: 2000 });
+    return result.status === 0 ? (result.stdout || "").trim().split("\n")[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+function operationalHealth() {
+  const codex = commandVersion(CODEX_BIN, ["--version"]);
+  const agy = commandVersion(AGY_BIN, ["--version"]);
+  const workdirExists = fs.existsSync(WORKDIR) && fs.statSync(WORKDIR).isDirectory();
+  const git = gitModule.isRepo(WORKDIR) ? "ok" : "not_repository";
+
+  return {
+    engines: { antigravity: agy ? { ok: true, version: agy } : { ok: false }, codex: codex ? { ok: true, version: codex } : { ok: false } },
+    filesystem: { ok: workdirExists, workdir: WORKDIR },
+    git,
+    runningJobs: jobs.running().length
+  };
+}
+
+function deviceId(req) {
+  return crypto.createHash("sha256").update(String(req.headers["user-agent"] || "unknown")).digest("hex").slice(0, 16);
+}
+
+function issueApproval(action) {
+  const token = crypto.randomBytes(18).toString("base64url");
+  pendingApprovals.set(token, { action, expiresAt: Date.now() + 120000 });
+  return token;
+}
+
+function consumeApproval(token, action) {
+  const key = String(token || "");
+  const approval = pendingApprovals.get(key);
+  if (!approval || approval.action !== action || approval.expiresAt < Date.now()) return false;
+  pendingApprovals.delete(key);
+  return true;
+}
+
+function requireApproval(req, res, pathname, payload, next) {
+  if (consumeApproval(payload.approvalToken, pathname)) return next();
+  auditLog.log("approval.requested", { path: pathname, device: deviceId(req) });
+  send(res, 403, {
+    error: "Konfirmasi diperlukan",
+    code: "APPROVAL_REQUIRED",
+    approvalToken: issueApproval(pathname)
+  });
+}
 
 const PORT = config.port();
 const HOST = config.bindHost();
@@ -26,6 +90,7 @@ const AGY_BIN = process.env.AGY_BIN || path.join(os.homedir(), ".local/bin/agy")
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
 let activeCodexSessionId = null;
 const SESSION_ACTIVITY_FILE = path.join(os.homedir(), ".gemini/antigravity-cli/session_activity.json");
+const pendingApprovals = new Map();
 
 function getSessionActivityMap() {
   try {
@@ -1195,13 +1260,23 @@ const server = http.createServer((req, res) => {
       features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload",
                  "usage_stats", "sse", "files", "git", "search", "sandbox_modes",
                  "jobs", "file_write", "projects", "audit", "session_export", "uploads_cleanup",
-                 "codex_config", "session_archive"],
+                 "codex_config", "session_archive", "operational_health"],
       sandboxMode: settings.load().sandboxMode
     });
   }
 
+  if (req.method === "GET" && pathname === "/api/health/operations") {
+    if (!authorized(req)) return send(res, 401, { error: "Unauthorized" });
+    return send(res, 200, { ok: true, health: operationalHealth() });
+  }
+
   if (!authorized(req)) {
     return send(res, 401, { error: "Unauthorized" });
+  }
+
+  if (req.method === "POST" && isWriteBlocked(pathname)) {
+    auditLog.log("write.blocked", { path: pathname, sandboxMode: "readonly", device: deviceId(req) });
+    return send(res, 403, { error: WRITE_BLOCKED_MESSAGE });
   }
 
   // GET /api/events  (Server-Sent Events live stream)
@@ -1493,18 +1568,21 @@ const server = http.createServer((req, res) => {
     req.on("end", () => {
       try {
         const payload = JSON.parse(raw || "{}");
-        const repo = payload.path ? files.safeResolve(WORKDIR, payload.path) : WORKDIR;
-        if (!repo) return send(res, 400, { error: "Path outside workspace" });
-        const result = pathname === "/api/git/commit"
-          ? git.commit(repo, payload.message, payload.addAll !== false)
-          : git.push(repo);
-        audit(pathname === "/api/git/commit" ? "git.commit" : "git.push", {
-          path: payload.path || ".",
-          ok: result.ok,
-          message: payload.message ? String(payload.message).slice(0, 120) : undefined
+        requireApproval(req, res, pathname, payload, () => {
+          const repo = payload.path ? files.safeResolve(WORKDIR, payload.path) : WORKDIR;
+          if (!repo) return send(res, 400, { error: "Path outside workspace" });
+          const result = pathname === "/api/git/commit"
+            ? git.commit(repo, payload.message, payload.addAll !== false)
+            : git.push(repo);
+          audit(pathname === "/api/git/commit" ? "git.commit" : "git.push", {
+            path: payload.path || ".",
+            ok: result.ok,
+            message: payload.message ? String(payload.message).slice(0, 120) : undefined,
+            device: deviceId(req)
+          });
+          events.broadcast("git.changed", { path: payload.path || "." });
+          send(res, result.ok ? 200 : 400, result);
         });
-        events.broadcast("git.changed", { path: payload.path || "." });
-        send(res, result.ok ? 200 : 400, result);
       } catch (err) {
         send(res, 500, { error: err.message });
       }
@@ -1702,13 +1780,16 @@ const server = http.createServer((req, res) => {
         const payload = JSON.parse(raw || "{}");
         const action = payload.action;
         if (action === "stop" || action === "kill") {
-          try {
-            execSync("pkill -f \"agy -p\" || true");
-            execSync("pkill -f \"codex exec\" || true");
-            return send(res, 200, { ok: true, message: "Process interrupted" });
-          } catch(e) {
-            return send(res, 200, { ok: true, message: "No running process found" });
-          }
+          requireApproval(req, res, pathname, payload, () => {
+            try {
+              execSync("pkill -f \"agy -p\" || true");
+              execSync("pkill -f \"codex exec\" || true");
+              return send(res, 200, { ok: true, message: "Process interrupted" });
+            } catch(e) {
+              return send(res, 200, { ok: true, message: "No running process found" });
+            }
+          });
+          return;
         }
         send(res, 400, { error: "Unknown action" });
       } catch (err) {
