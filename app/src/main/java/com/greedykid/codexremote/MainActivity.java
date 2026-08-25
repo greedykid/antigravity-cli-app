@@ -263,7 +263,7 @@ public class MainActivity extends FragmentActivity {
         } catch (Exception ignored) {}
     }
 
-    private NotificationManager notificationHelper;
+    private TaskNotificationManager notificationHelper;
 
 
     private void renderRetryFailedMessageBlock(final String failedText, final String errorReason) {
@@ -1272,7 +1272,7 @@ public class MainActivity extends FragmentActivity {
         consumePendingEngineNotice();
         syncCodexProviderInfo();
         requestNotificationPermission();
-        notificationHelper = new NotificationManager(this);
+        notificationHelper = new TaskNotificationManager(this);
         notificationHelper.createTaskChannel();
         LiveEventBus.register(liveEventListener);
         startLiveEvents();

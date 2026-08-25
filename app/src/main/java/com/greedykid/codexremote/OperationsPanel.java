@@ -2,6 +2,7 @@ package com.greedykid.codexremote;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.view.Window;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -131,7 +132,7 @@ final class OperationsPanel {
     private final java.util.Map<Dialog, LinearLayout> bodies = new java.util.HashMap<>();
     private Dialog createSheet(String titleText) {
         Dialog dialog = new Dialog(act);
-        dialog.requestWindowFeature(Dialog.FEATURE_NO_TITLE);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.getWindow().setBackgroundDrawable(
                 new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
         LinearLayout root = new LinearLayout(act);

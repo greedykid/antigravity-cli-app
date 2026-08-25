@@ -8,7 +8,7 @@ import android.content.Intent;
 import android.os.Build;
 
 /** Centralises task notification channel and smart alert formatting. */
-final class NotificationManager {
+final class TaskNotificationManager {
     static final String CHANNEL_TASK_ALERTS = "channel_ai_task_alerts";
     private static final int NOTIFY_RESULT_ID = 8821;
 
@@ -24,7 +24,7 @@ final class NotificationManager {
                 (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
         NotificationChannel ch = new NotificationChannel(
-                CHANNEL_TASK_ALERTS, "Task Alerts", AndroidNotificationManager.IMPORTANCE_HIGH);
+                CHANNEL_TASK_ALERTS, "Task Alerts", android.app.NotificationManager.IMPORTANCE_HIGH);
         ch.setDescription("Memberi tahu saat tugas AI selesai di background");
         ch.enableLights(true);
         ch.enableVibration(true);
