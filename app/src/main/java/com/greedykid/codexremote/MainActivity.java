@@ -1500,22 +1500,16 @@ public class MainActivity extends FragmentActivity {
 
         int sidePad = dp(18);
 
-        // 1. Brand wordmark + quick settings
+        // 1. Brand wordmark (Header)
         LinearLayout brandRow = new LinearLayout(this);
         brandRow.setOrientation(LinearLayout.HORIZONTAL);
         brandRow.setGravity(Gravity.CENTER_VERTICAL);
-        brandRow.setPadding(sidePad + dp(6), dp(6), sidePad, dp(18));
+        brandRow.setPadding(sidePad + dp(6), dp(6), sidePad, dp(14));
 
-        // "Antigravity CLI Remote" does not fit on one line at the old 30sp, so
-        // the header wraps to two lines at a size that still reads as a title.
         TextView wordmark = cText(Theme.sidebarTitle(), 23, Theme.TEXT_MAIN, false, true);
         wordmark.setMaxLines(2);
         wordmark.setLineSpacing(0, 1.05f);
         brandRow.addView(wordmark, new LinearLayout.LayoutParams(0, -2, 1));
-
-        ImageView brandGear = cIconButton(R.drawable.ic_settings, 20, 38, Theme.TEXT_MUTED);
-        brandGear.setOnClickListener(v -> { closeSidebar(); showScreen(2); });
-        brandRow.addView(brandGear);
         sidebar.addView(brandRow);
 
         // 2. Scrollable navigation body
@@ -1526,17 +1520,13 @@ public class MainActivity extends FragmentActivity {
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(dp(10), 0, dp(10), dp(10));
 
+        // Section: Utama
         addSidebarMenuItem(body, R.drawable.ic_add, "Chat baru", null, -1, true, () -> {
             closeSidebar();
             startNewSession();
         });
 
-        addSidebarMenuItem(body, R.drawable.ic_chat, "Obrolan", null, 1, false, () -> {
-            closeSidebar();
-            openLatestConversation();
-        });
-
-        addSidebarMenuItem(body, R.drawable.ic_code, "Kode", null, 0, false, () -> {
+        addSidebarMenuItem(body, R.drawable.ic_code, "Riwayat Sesi", null, 0, false, () -> {
             closeSidebar();
             showScreen(0);
         });
@@ -1546,30 +1536,19 @@ public class MainActivity extends FragmentActivity {
             showScreen(3);
         });
 
-        addSidebarMenuItem(body, R.drawable.ic_swap, "Engine",
+        addSidebarMenuItem(body, R.drawable.ic_swap, "Ganti Engine",
                 engineShortLabel(currentEngine), -1, false, () -> {
                     closeSidebar();
                     showEngineSwitcher();
                 });
 
-        addSidebarMenuItem(body, R.drawable.ic_qr_code, "Scan QR Pairing", null, -1, false, () -> {
-            closeSidebar();
-            startQrScanner();
-        });
-
-        addSidebarMenuItem(body, R.drawable.ic_content_paste, "Paste Pairing", null, -1, false, () -> {
-            closeSidebar();
-            pasteFromClipboard();
-        });
+        // Section: Alat & Workspace
+        addSidebarDivider(body);
+        addSidebarSectionHeader(body, "Alat & Workspace");
 
         addSidebarMenuItem(body, R.drawable.ic_search, "Cari Sesi", null, -1, false, () -> {
             closeSidebar();
             showSearchPanel();
-        });
-
-        addSidebarMenuItem(body, R.drawable.ic_edit, "Prompt Library", null, -1, false, () -> {
-            closeSidebar();
-            showPromptLibrary();
         });
 
         addSidebarMenuItem(body, R.drawable.ic_folder, "File Workspace", null, -1, false, () -> {
@@ -1582,34 +1561,19 @@ public class MainActivity extends FragmentActivity {
             showGitPanel();
         });
 
+        addSidebarMenuItem(body, R.drawable.ic_edit, "Prompt Library", null, -1, false, () -> {
+            closeSidebar();
+            showPromptLibrary();
+        });
+
         addSidebarMenuItem(body, R.drawable.ic_folder, "Proyek", null, -1, false, () -> {
             closeSidebar();
             showProjectPicker();
         });
 
-        addSidebarMenuItem(body, R.drawable.ic_settings, "Pengaturan", null, 2, false, () -> {
-            closeSidebar();
-            showScreen(2);
-        });
-
-        addSidebarMenuItem(body, R.drawable.ic_security, "Audit Aktivitas", null, -1, false, () -> {
-            closeSidebar();
-            showAuditActivity();
-        });
-
-        addSidebarMenuItem(body, R.drawable.ic_android, "Perangkat", null, -1, false, () -> {
-            closeSidebar();
-            showDeviceManager();
-        });
-
-        addSidebarMenuItem(body, R.drawable.ic_analytics, "Server Ops", null, -1, false, () -> {
-            closeSidebar();
-            operationsPanel.show();
-        });
-
-        // 3. Gateway section (replaces the reference's "starred" block)
+        // Section: Koneksi & Gateway
         addSidebarDivider(body);
-        addSidebarSectionHeader(body, "Gateway");
+        addSidebarSectionHeader(body, "Koneksi & Gateway");
 
         LinearLayout statusRow = new LinearLayout(this);
         statusRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1633,9 +1597,28 @@ public class MainActivity extends FragmentActivity {
         statusRow.addView(statusCol, new LinearLayout.LayoutParams(0, -2, 1));
         body.addView(statusRow, new LinearLayout.LayoutParams(-1, -2));
 
+        addSidebarMenuItem(body, R.drawable.ic_qr_code, "Scan QR / Hubungkan", null, -1, false, () -> {
+            closeSidebar();
+            startQrScanner();
+        });
+
         addSidebarMenuItem(body, R.drawable.ic_laptop, "Ganti Server", null, -1, false, () -> {
             closeSidebar();
             showServerSwitcher();
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_analytics, "Server Operations", null, -1, false, () -> {
+            closeSidebar();
+            operationsPanel.show();
+        });
+
+        // Section: Sistem & Keamanan
+        addSidebarDivider(body);
+        addSidebarSectionHeader(body, "Sistem & Keamanan");
+
+        addSidebarMenuItem(body, R.drawable.ic_settings, "Pengaturan", null, 2, false, () -> {
+            closeSidebar();
+            showScreen(2);
         });
 
         addSidebarMenuItem(body, R.drawable.ic_security, "Mode Eksekusi", null, -1, false, () -> {
@@ -1643,18 +1626,17 @@ public class MainActivity extends FragmentActivity {
             showSandboxPicker();
         });
 
-        addSidebarMenuItem(body, R.drawable.ic_build, "Pemeliharaan", null, -1, false, () -> {
+        addSidebarMenuItem(body, R.drawable.ic_android, "Perangkat", null, -1, false, () -> {
             closeSidebar();
-            showMaintenanceSheet();
+            showDeviceManager();
         });
 
-        addSidebarMenuItem(body, R.drawable.ic_refresh, "Test Ping & Health", null, -1, false, this::checkHealth);
-        addSidebarMenuItem(body, R.drawable.ic_stop, "Hentikan Proses CLI", null, -1, false, () -> {
+        addSidebarMenuItem(body, R.drawable.ic_security, "Audit Aktivitas", null, -1, false, () -> {
             closeSidebar();
-            stopRunningCliProcess();
+            showAuditActivity();
         });
 
-        // 4. Recent sessions, filled in by fetchHubSessions()
+        // Section: Recent sessions
         addSidebarDivider(body);
         addSidebarSectionHeader(body, "Terbaru · " + engineShortLabel(currentEngine));
         sidebarRecentContainer = new LinearLayout(this);
