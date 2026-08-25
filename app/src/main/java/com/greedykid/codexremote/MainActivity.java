@@ -1232,6 +1232,7 @@ public class MainActivity extends FragmentActivity {
     private LinearLayout activeBottomSheetDetailView = null;
     private TextView activeBottomSheetSubtitle = null;
     private ArrayList<JSONObject> currentActiveSteps = new ArrayList<>();
+    private String lastRenderedModalSignature = "";
     private final CopyOnWriteArrayList<JSONObject> activeBackgroundTerminalTasks = new CopyOnWriteArrayList<>();
 
     private boolean isAutoRefreshActive = false;
@@ -4575,12 +4576,14 @@ public class MainActivity extends FragmentActivity {
 
         activeBottomSheetDialog = dialog;
         currentActiveSteps = items;
+        lastRenderedModalSignature = "";
 
         updateExecutionBottomModalContent(items, isCurrentlyWorking);
 
         dialog.setContentView(modalRoot);
         dialog.setOnDismissListener(d -> {
             activeBottomSheetDialog = null;
+            lastRenderedModalSignature = "";
             // Renders were suppressed while this was open; catch up now.
             if (currentScreen == 1) syncLiveExecution();
             activeBottomSheetMasterList = null;
@@ -4664,6 +4667,19 @@ public class MainActivity extends FragmentActivity {
         for (JSONObject it : items) {
             combinedList.add(it);
         }
+
+        StringBuilder sigBuilder = new StringBuilder();
+        sigBuilder.append(combinedList.size()).append('|').append(isActuallyRunning);
+        for (int i = 0; i < combinedList.size(); i++) {
+            JSONObject it = combinedList.get(i);
+            sigBuilder.append('|').append(it.optString("title", ""))
+                      .append(':').append(it.optString("status", ""));
+        }
+        String currentSig = sigBuilder.toString();
+        if (currentSig.equals(lastRenderedModalSignature) && activeBottomSheetMasterList.getChildCount() > 0) {
+            return;
+        }
+        lastRenderedModalSignature = currentSig;
 
         if (activeBottomSheetSubtitle != null) {
             int bgCount = activeBackgroundTerminalTasks.size();
@@ -7035,10 +7051,30 @@ public class MainActivity extends FragmentActivity {
         String displayText = (fileHeaders.length() > 0 ? fileHeaders.toString() : "") + text;
         pendingOptimisticUserPrompt = displayText;
         pendingOptimisticUserTime = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date());
+
+        if (liveStreamingBlockView != null) {
+            chatMessagesList.removeView(liveStreamingBlockView);
+            liveStreamingBlockView = null;
+        }
+        if (liveStepPillView != null) {
+            chatMessagesList.removeView(liveStepPillView);
+            liveStepPillView = null;
+        }
+
         renderUserMessageBlock(pendingOptimisticUserPrompt, pendingOptimisticUserTime);
         promptInput.setText("");
 
-        chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+        try {
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(promptInput.getWindowToken(), 0);
+            }
+        } catch (Exception ignored) {}
+
+        chatScroll.post(() -> {
+            chatScroll.smoothScrollTo(0, chatMessagesList.getHeight());
+            chatScroll.fullScroll(View.FOCUS_DOWN);
+        });
 
         startAutoRefresh();
 
