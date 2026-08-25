@@ -1,15 +1,36 @@
-// Job registry for CLI runs.
-//
-// /api/chat used to hold the HTTP response open for the entire run, so a task
-// could not outlive the request: the tunnel or a flaky phone connection would
-// drop it, and a hard 5-minute timeout killed whatever was still working.
-// A job keeps running on the server; the client subscribes over SSE and reads
-// the result whenever it comes back.
-
+const fs = require("fs");
+const path = require("path");
 const crypto = require("crypto");
+const config = require("./config");
 
+const JOBS_FILE = path.join(config.CONFIG_DIR, "jobs.json");
 const MAX_KEPT = 100;
 const jobs = new Map();
+
+function loadPersistedJobs() {
+  try {
+    if (fs.existsSync(JOBS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(JOBS_FILE, "utf8"));
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          if (item && item.id) {
+            jobs.set(item.id, item);
+          }
+        }
+      }
+    }
+  } catch (e) {}
+}
+
+function persistJobs() {
+  try {
+    fs.mkdirSync(config.CONFIG_DIR, { recursive: true, mode: 0o700 });
+    const arr = Array.from(jobs.values());
+    fs.writeFileSync(JOBS_FILE, JSON.stringify(arr), "utf8");
+  } catch (e) {}
+}
+
+loadPersistedJobs();
 
 function newId() {
   return crypto.randomBytes(9).toString("base64url");
@@ -32,6 +53,7 @@ function create(input) {
   };
   jobs.set(job.id, job);
   prune();
+  persistJobs();
   return job;
 }
 
@@ -40,16 +62,15 @@ function finish(id, patch) {
   if (!job) return null;
   Object.assign(job, patch, { finishedAt: Date.now() });
   if (job.state === "running") job.state = patch.error ? "failed" : "done";
+  persistJobs();
   return job;
 }
 
-// Lets the runner record the conversation id the moment the CLI reveals it,
-// instead of only at the end. Clients waiting on a brand-new session need it
-// to know which transcript is theirs.
 function update(id, patch) {
   const job = jobs.get(id);
   if (!job) return null;
   Object.assign(job, patch);
+  persistJobs();
   return job;
 }
 
@@ -89,10 +110,12 @@ function prune() {
     if (jobs.size <= MAX_KEPT) break;
     if (job.state !== "running") jobs.delete(job.id);
   }
+  persistJobs();
 }
 
 function reset() {
   jobs.clear();
+  persistJobs();
 }
 
 module.exports = { create, update, finish, get, list, running, summary, reset, MAX_KEPT };

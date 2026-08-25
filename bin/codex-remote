@@ -288,10 +288,19 @@ case "$1" in
         stop_all
         ;;
     restart)
-        stop_all
-        sleep 1
+        echo -e "\033[34m▶ Gracefully restarting Antigravity Remote Bridge...\033[0m"
+        if [ -f "$PID_FILE" ]; then
+            old_pid=$(cat "$PID_FILE" 2>/dev/null || true)
+            if [ -n "$old_pid" ]; then
+                kill "$old_pid" 2>/dev/null || true
+            fi
+            rm -f "$PID_FILE"
+        fi
+        sleep 0.5
         start_bridge
-        start_tunnel
+        if ! is_tunnel_running; then
+            start_tunnel
+        fi
         show_status
         ;;
     status)
