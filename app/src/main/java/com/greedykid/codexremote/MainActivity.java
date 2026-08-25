@@ -115,6 +115,7 @@ import java.util.TimeZone;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.Set;
@@ -1217,7 +1218,7 @@ public class MainActivity extends Activity {
     private TranscriptCache transcriptCache;
     private AlertDialog libraryDialog;
     private boolean isUnlocked = false;
-    private View lockOverlay;
+    private LinearLayout lockOverlay;
     private EditText promptInput;
     private FrameLayout btnSend;
     private ImageView btnAttach;
