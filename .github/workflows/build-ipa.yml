@@ -18,7 +18,7 @@ jobs:
     runs-on: macos-14
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Show toolchain
         run: xcodebuild -version && swift --version
@@ -91,14 +91,14 @@ jobs:
           echo "Built $(du -h CodexRemote.ipa | cut -f1) unsigned IPA"
 
       - name: Upload IPA
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: codex-remote-unsigned-ipa
           path: ios/build/CodexRemote.ipa
           if-no-files-found: error
 
       - name: Create Direct IPA Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: latest
@@ -113,4 +113,3 @@ jobs:
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
