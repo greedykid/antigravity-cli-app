@@ -220,4 +220,15 @@ public final class Theme {
         iv.setLayoutParams(new LinearLayout.LayoutParams(dp(ctx, sizeDp), dp(ctx, sizeDp)));
         return iv;
     }
+
+    public static ImageView iconButton(Context ctx, int resId, int sizeDp, int touchSizeDp, int tintColor) {
+        ImageView iv = new ImageView(ctx);
+        iv.setImageResource(resId);
+        iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        if (tintColor != 0) iv.setColorFilter(tintColor);
+        int pad = dp(ctx, Math.max(0, (touchSizeDp - sizeDp) / 2f));
+        iv.setPadding(pad, pad, pad, pad);
+        iv.setLayoutParams(new LinearLayout.LayoutParams(dp(ctx, touchSizeDp), dp(ctx, touchSizeDp)));
+        return iv;
+    }
 }
