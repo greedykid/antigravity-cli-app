@@ -14,6 +14,11 @@ function loadPersistedJobs() {
       if (Array.isArray(data)) {
         for (const item of data) {
           if (item && item.id) {
+            if (item.state === "running") {
+              item.state = "failed";
+              item.error = item.error || "Proses terhenti saat server dimuat ulang";
+              item.finishedAt = item.finishedAt || Date.now();
+            }
             jobs.set(item.id, item);
           }
         }
@@ -99,7 +104,10 @@ function summary(job) {
 }
 
 function running() {
-  return Array.from(jobs.values()).filter(j => j.state === "running").map(summary);
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  return Array.from(jobs.values())
+    .filter(j => j.state === "running" && j.createdAt > cutoff)
+    .map(summary);
 }
 
 // Keep the newest MAX_KEPT so a long-lived server does not grow unbounded.
@@ -115,7 +123,9 @@ function prune() {
 
 function reset() {
   jobs.clear();
-  persistJobs();
+  try {
+    if (fs.existsSync(JOBS_FILE)) fs.unlinkSync(JOBS_FILE);
+  } catch (e) {}
 }
 
 module.exports = { create, update, finish, get, list, running, summary, reset, MAX_KEPT };

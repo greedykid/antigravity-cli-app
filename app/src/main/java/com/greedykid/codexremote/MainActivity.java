@@ -1320,19 +1320,40 @@ public class MainActivity extends FragmentActivity {
                 JSONArray running = json.optJSONArray("running");
                 if (running == null || running.length() == 0) return;
                 JSONObject job = running.getJSONObject(running.length() - 1);
-                if (job.optLong("createdAt", 0) < System.currentTimeMillis() - 24L * 60L * 60L * 1000L) return;
+                if (job.optLong("createdAt", 0) < System.currentTimeMillis() - 15L * 60L * 1000L) return;
                 final String jobId = job.optString("id", "");
                 if (jobId.isEmpty()) return;
                 mainHandler.post(() -> {
                     activeJobId = jobId;
                     isLiveTaskRunning = true;
-                    btnSend.setEnabled(false);
+                    btnSend.setTag("busy");
+                    btnSend.setEnabled(true);
                     promptInput.setEnabled(false);
                     startAutoRefresh();
                     Toast.makeText(this, "Memulihkan task yang masih berjalan", Toast.LENGTH_SHORT).show();
                     restartLiveEvents();
                 });
+
+                JSONObject res = awaitJobResult(jobId);
+                mainHandler.post(() -> {
+                    activeJobId = null;
+                    isLiveTaskRunning = false;
+                    btnSend.setTag(null);
+                    btnSend.setEnabled(true);
+                    promptInput.setEnabled(true);
+                    stopAutoRefresh();
+                    if (res != null && activeConversationId != null && !activeConversationId.isEmpty()) {
+                        renderActiveSessionTurns(activeConversationId, res, false);
+                    }
+                });
             } catch (Exception ignored) {
+                mainHandler.post(() -> {
+                    activeJobId = null;
+                    isLiveTaskRunning = false;
+                    btnSend.setTag(null);
+                    btnSend.setEnabled(true);
+                    promptInput.setEnabled(true);
+                });
             }
         });
     }
@@ -2595,6 +2616,11 @@ public class MainActivity extends FragmentActivity {
             chatSessionLoadingView.setVisibility(View.VISIBLE);
             chatSessionLoadingView.setAlpha(1f);
         }
+        if (promptInput != null) promptInput.setEnabled(true);
+        if (btnSend != null) {
+            btnSend.setTag(null);
+            btnSend.setEnabled(true);
+        }
         mainHandler.postDelayed(this::hideSessionLoading, 4000);
         showScreen(1);
     }
@@ -2690,6 +2716,14 @@ public class MainActivity extends FragmentActivity {
         hideSessionLoading();
         if (chatMessagesList != null) chatMessagesList.removeAllViews();
         showEmptyMascotState(true);
+        if (promptInput != null) {
+            promptInput.setEnabled(true);
+            promptInput.setText("");
+        }
+        if (btnSend != null) {
+            btnSend.setTag(null);
+            btnSend.setEnabled(true);
+        }
         showScreen(1);
     }
 
@@ -6994,7 +7028,7 @@ public class MainActivity extends FragmentActivity {
         showEmptyMascotState(false);
 
         btnSend.setTag("busy");
-        btnSend.setEnabled(false);
+        btnSend.setEnabled(true);
         promptInput.setEnabled(false);
         isLiveTaskRunning = true;
 
