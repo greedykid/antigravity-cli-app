@@ -313,7 +313,7 @@ public class MainActivity extends FragmentActivity {
 
     private void scheduleThrottledSync() {
         long now = System.currentTimeMillis();
-        if (now - lastLiveSyncTimestamp > 600) {
+        if (now - lastLiveSyncTimestamp > 350) {
             lastLiveSyncTimestamp = now;
             if (currentScreen == 1) syncLiveExecution();
         } else if (!isSyncScheduled) {
@@ -322,7 +322,7 @@ public class MainActivity extends FragmentActivity {
                 isSyncScheduled = false;
                 lastLiveSyncTimestamp = System.currentTimeMillis();
                 if (currentScreen == 1) syncLiveExecution();
-            }, 600);
+            }, 350);
         }
     }
 
@@ -1176,6 +1176,13 @@ public class MainActivity extends FragmentActivity {
     private TextView modelTagLabel;
     private HorizontalScrollView attachmentScrollContainer;
     private LinearLayout attachmentChipsList;
+
+    // High-Performance Smooth Chat Rendering & Touch Scroll State
+    private boolean isUserTouchingScroll = false;
+    private long lastUserScrollInteractionTime = 0;
+    private String lastRenderedHistoricalSignature = "";
+    private View liveStreamingBlockView = null;
+    private View liveStepPillView = null;
 
     // Settings View Components
     private TextView settingsUserEmailText;
@@ -2560,6 +2567,9 @@ public class MainActivity extends FragmentActivity {
 
     private void openSpecificSession(String convId, String title) {
         lastRenderedSignature = "";
+        lastRenderedHistoricalSignature = "";
+        liveStreamingBlockView = null;
+        liveStepPillView = null;
         sessionEpoch++;
         activeJobId = null;
         activeConversationId = convId;
@@ -2663,6 +2673,9 @@ public class MainActivity extends FragmentActivity {
 
     private void startNewSession() {
         lastRenderedSignature = "";
+        lastRenderedHistoricalSignature = "";
+        liveStreamingBlockView = null;
+        liveStepPillView = null;
         sessionEpoch++;
         activeJobId = null;
         activeConversationId = null;
@@ -5039,6 +5052,17 @@ public class MainActivity extends FragmentActivity {
         chatScroll.setVerticalScrollBarEnabled(false);
         chatScroll.setClipToPadding(false);
         chatScroll.setPadding(0, 0, 0, dp(210));
+        chatScroll.setOnTouchListener((v, event) -> {
+            int action = event.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_DOWN || action == android.view.MotionEvent.ACTION_MOVE) {
+                isUserTouchingScroll = true;
+                lastUserScrollInteractionTime = System.currentTimeMillis();
+            } else if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
+                isUserTouchingScroll = false;
+                lastUserScrollInteractionTime = System.currentTimeMillis();
+            }
+            return false;
+        });
 
         chatMessagesList = new LinearLayout(this);
         chatMessagesList.setOrientation(LinearLayout.VERTICAL);
@@ -7314,19 +7338,15 @@ public class MainActivity extends FragmentActivity {
     }
 
     /**
-     * Cheap fingerprint of what a render would produce. Covers the turn count
-     * and the tail of the transcript, which is the only part that grows during
-     * a run, plus the live state that changes the rendering.
+     * Fingerprint of historical transcript turns. Does NOT include live streaming text,
+     * so streaming text updates can fast-path without rebuilding all prior chat views.
      */
-    private String transcriptSignature(String convId, JSONArray turns) {
+    private String transcriptHistoricalSignature(String convId, JSONArray turns) {
         StringBuilder sb = new StringBuilder();
-        sb.append(convId).append('|').append(turns.length()).append('|')
-          .append(isLiveTaskRunning).append('|')
-          .append(liveStreamingAssistantText == null ? 0 : liveStreamingAssistantText.length())
-          .append('|').append(pendingOptimisticUserPrompt == null ? 0 : pendingOptimisticUserPrompt.length());
+        sb.append(convId == null ? "" : convId).append('|').append(turns.length()).append('|')
+          .append(pendingOptimisticUserPrompt == null ? 0 : pendingOptimisticUserPrompt.length());
 
-        // Only the last few turns can change without the count changing.
-        for (int i = Math.max(0, turns.length() - 3); i < turns.length(); i++) {
+        for (int i = Math.max(0, turns.length() - 4); i < turns.length(); i++) {
             JSONObject turn = turns.optJSONObject(i);
             if (turn == null) continue;
             String content = turn.optString("content", "");
@@ -7395,31 +7415,10 @@ public class MainActivity extends FragmentActivity {
                     return;
                 }
 
-                // While a task runs the poll fires every 600ms, and the guard below
-                // is bypassed, so the entire transcript — every markdown block —
-                // was rebuilt on the main thread whether or not it had changed.
-                // That is what made taps feel delayed. A cheap signature skips
-                // the rebuild when the content is identical; the running spinner
-                // animates on its own and needs no repaint.
-                String signature = transcriptSignature(requestedConvId, turns);
-                if (signature.equals(lastRenderedSignature)) {
-                    return;
-                }
-
-                // Rebuilding the chat behind an open bottom sheet is invisible
-                // work that competes with the sheet for the main thread, which
-                // is exactly when taps felt sluggish. The signature is left
-                // untouched so the catch-up render happens on dismiss.
                 if (activeBottomSheetDialog != null && activeBottomSheetDialog.isShowing()) {
                     return;
                 }
 
-                // An empty transcript never repaints a chat that already has
-                // content. Two things produce one: a Codex rollout parsed while
-                // the CLI is still writing it, and a brand-new session whose
-                // transcript file lags behind the run. Either way, rebuilding
-                // from it wiped the message just sent and dropped the user back
-                // on the "new session" screen.
                 if (newTurnCount == 0 && chatMessagesList.getChildCount() > 0) {
                     return;
                 }
@@ -7427,96 +7426,123 @@ public class MainActivity extends FragmentActivity {
                 boolean isNearBottom = isScrollNearBottom();
                 boolean isInitialSessionLoad = requestedConvId != null && !requestedConvId.equals(lastLoadedSessionId);
 
-                lastRenderedSignature = signature;
+                String historySig = transcriptHistoricalSignature(requestedConvId, turns);
+                boolean historyMatches = historySig.equals(lastRenderedHistoricalSignature) && chatMessagesList.getChildCount() > 0 && !isInitialSessionLoad;
+
                 lastLoadedSessionId = requestedConvId;
                 lastLoadedTurnCount = newTurnCount;
                 lastRenderedWasRunning = isLiveTaskRunning;
 
-                chatMessagesList.removeAllViews();
-                // The empty state belongs to a session nothing has been sent in.
-                // Once a conversation exists, or a prompt is in flight, an empty
-                // transcript means "not written yet", not "nothing here".
-                showEmptyMascotState(turns.length() == 0
-                        && !isLiveTaskRunning
-                        && pendingOptimisticUserPrompt == null
-                        && (activeConversationId == null || activeConversationId.isEmpty()));
-
                 ArrayList<JSONObject> pendingTools = new ArrayList<>();
                 ArrayList<JSONObject> allSessionTools = new ArrayList<>();
-                boolean foundOptimisticInTranscript = false;
 
-                // Find last assistant index
-                int lastAssistantIdx = -1;
-                for (int i = turns.length() - 1; i >= 0; i--) {
-                    JSONObject t = turns.getJSONObject(i);
-                    String r = t.optString("role", "");
-                    if (!"tool".equalsIgnoreCase(r) && !"thinking".equalsIgnoreCase(r) && !"user".equalsIgnoreCase(r)) {
-                        lastAssistantIdx = i;
-                        break;
+                if (historyMatches) {
+                    // Fast-path: Historical messages have NOT changed.
+                    // Only update the live streaming bubble and running pill without re-parsing/re-inflating the entire chat!
+                    if (liveStreamingBlockView != null) {
+                        chatMessagesList.removeView(liveStreamingBlockView);
+                        liveStreamingBlockView = null;
                     }
-                }
+                    if (liveStepPillView != null) {
+                        chatMessagesList.removeView(liveStepPillView);
+                        liveStepPillView = null;
+                    }
 
-                for (int i = 0; i < turns.length(); i++) {
-                    JSONObject turn = turns.getJSONObject(i);
-                    String role = turn.optString("role", "info");
-                    String content = turn.optString("content", "");
-                    String time = turn.optString("time", "");
+                    if (isLiveTaskRunning && liveStreamingAssistantText != null && !liveStreamingAssistantText.trim().isEmpty()) {
+                        liveStreamingBlockView = renderAssistantMessageBlock(liveStreamingAssistantText + " ▊", "Mengetik...", true);
+                    }
 
-                    if ("tool".equalsIgnoreCase(role) || "thinking".equalsIgnoreCase(role)) {
-                        pendingTools.add(turn);
-                        allSessionTools.add(turn);
-                    } else if ("user".equalsIgnoreCase(role)) {
+                    if (isLiveTaskRunning && (liveStreamingAssistantText == null || liveStreamingAssistantText.trim().isEmpty())) {
+                        ArrayList<JSONObject> dummy = new ArrayList<>();
+                        JSONObject o = new JSONObject();
+                        o.put("role", "thinking");
+                        o.put("toolTitle", "Thinking");
+                        o.put("title", "Processing prompt...");
+                        o.put("command", "Planning response & executing engine");
+                        o.put("content", "Starting CLI process and planning response...");
+                        dummy.add(o);
+                        liveStepPillView = renderInlineStepPill(dummy, true);
+                        allSessionTools.addAll(dummy);
+                    }
+                } else {
+                    // Full Render: New messages received or session switched
+                    lastRenderedHistoricalSignature = historySig;
+                    liveStreamingBlockView = null;
+                    liveStepPillView = null;
+
+                    chatMessagesList.removeAllViews();
+                    showEmptyMascotState(turns.length() == 0
+                            && !isLiveTaskRunning
+                            && pendingOptimisticUserPrompt == null
+                            && (activeConversationId == null || activeConversationId.isEmpty()));
+
+                    boolean foundOptimisticInTranscript = false;
+                    int lastAssistantIdx = -1;
+                    for (int i = turns.length() - 1; i >= 0; i--) {
+                        JSONObject t = turns.getJSONObject(i);
+                        String r = t.optString("role", "");
+                        if (!"tool".equalsIgnoreCase(r) && !"thinking".equalsIgnoreCase(r) && !"user".equalsIgnoreCase(r)) {
+                            lastAssistantIdx = i;
+                            break;
+                        }
+                    }
+
+                    for (int i = 0; i < turns.length(); i++) {
+                        JSONObject turn = turns.getJSONObject(i);
+                        String role = turn.optString("role", "info");
+                        String content = turn.optString("content", "");
+                        String time = turn.optString("time", "");
+
+                        if ("tool".equalsIgnoreCase(role) || "thinking".equalsIgnoreCase(role)) {
+                            pendingTools.add(turn);
+                            allSessionTools.add(turn);
+                        } else if ("user".equalsIgnoreCase(role)) {
+                            if (!pendingTools.isEmpty()) {
+                                renderInlineStepPill(new ArrayList<>(pendingTools), false);
+                                pendingTools.clear();
+                            }
+                            if (matchesPendingPrompt(content)) {
+                                foundOptimisticInTranscript = true;
+                            }
+                            if (!content.trim().isEmpty()) {
+                                renderUserMessageBlock(content, time);
+                            }
+                        } else {
+                            if (!pendingTools.isEmpty()) {
+                                renderInlineStepPill(new ArrayList<>(pendingTools), false);
+                                pendingTools.clear();
+                            }
+                            if (!content.trim().isEmpty() || i == lastAssistantIdx) {
+                                renderAssistantMessageBlock(content, time, (i == lastAssistantIdx));
+                            }
+                        }
+                    }
+
+                    if (isLiveTaskRunning && pendingOptimisticUserPrompt != null && !foundOptimisticInTranscript) {
                         if (!pendingTools.isEmpty()) {
                             renderInlineStepPill(new ArrayList<>(pendingTools), false);
                             pendingTools.clear();
                         }
-                        if (matchesPendingPrompt(content)) {
-                            foundOptimisticInTranscript = true;
-                        }
-                        // A blank turn is never worth a bubble, and rendering one
-                        // here is what made the typed message appear to vanish.
-                        if (!content.trim().isEmpty()) {
-                            renderUserMessageBlock(content, time);
-                        }
-                    } else {
-                        if (!pendingTools.isEmpty()) {
-                            renderInlineStepPill(new ArrayList<>(pendingTools), false);
-                            pendingTools.clear();
-                        }
-                        if (!content.trim().isEmpty() || i == lastAssistantIdx) {
-                            renderAssistantMessageBlock(content, time, (i == lastAssistantIdx));
-                        }
+                        renderUserMessageBlock(pendingOptimisticUserPrompt, pendingOptimisticUserTime);
                     }
-                }
 
-                // Deliberately not cleared here. It used to be dropped the first
-                // time the transcript contained it, which left nothing to fall
-                // back on if a later poll returned a partial transcript. It is
-                // cleared when the task actually finishes.
-                if (isLiveTaskRunning && pendingOptimisticUserPrompt != null && !foundOptimisticInTranscript) {
+                    if (isLiveTaskRunning && liveStreamingAssistantText != null && !liveStreamingAssistantText.trim().isEmpty()) {
+                        liveStreamingBlockView = renderAssistantMessageBlock(liveStreamingAssistantText + " ▊", "Mengetik...", true);
+                    }
                     if (!pendingTools.isEmpty()) {
-                        renderInlineStepPill(new ArrayList<>(pendingTools), false);
-                        pendingTools.clear();
+                        liveStepPillView = renderInlineStepPill(pendingTools, isLiveTaskRunning);
+                    } else if (isLiveTaskRunning && (liveStreamingAssistantText == null || liveStreamingAssistantText.trim().isEmpty())) {
+                        ArrayList<JSONObject> dummy = new ArrayList<>();
+                        JSONObject o = new JSONObject();
+                        o.put("role", "thinking");
+                        o.put("toolTitle", "Thinking");
+                        o.put("title", "Processing prompt...");
+                        o.put("command", "Planning response & executing engine");
+                        o.put("content", "Starting CLI process and planning response...");
+                        dummy.add(o);
+                        liveStepPillView = renderInlineStepPill(dummy, true);
+                        allSessionTools.addAll(dummy);
                     }
-                    renderUserMessageBlock(pendingOptimisticUserPrompt, pendingOptimisticUserTime);
-                }
-
-                if (isLiveTaskRunning && liveStreamingAssistantText != null && !liveStreamingAssistantText.trim().isEmpty()) {
-                    renderAssistantMessageBlock(liveStreamingAssistantText + " ▊", "Mengetik...", true);
-                }
-                if (!pendingTools.isEmpty()) {
-                    renderInlineStepPill(pendingTools, isLiveTaskRunning);
-                } else if (isLiveTaskRunning && (liveStreamingAssistantText == null || liveStreamingAssistantText.trim().isEmpty())) {
-                    ArrayList<JSONObject> dummy = new ArrayList<>();
-                    JSONObject o = new JSONObject();
-                    o.put("role", "thinking");
-                    o.put("toolTitle", "Thinking");
-                    o.put("title", "Processing prompt...");
-                    o.put("command", "Planning response & executing engine");
-                    o.put("content", "Starting CLI process and planning response...");
-                    dummy.add(o);
-                    renderInlineStepPill(dummy, true);
-                    allSessionTools.addAll(dummy);
                 }
 
                 if (activeBottomSheetDialog != null && activeBottomSheetDialog.isShowing()) {
@@ -7525,7 +7551,7 @@ public class MainActivity extends FragmentActivity {
                     updateExecutionBottomModalContent(toolsToUpdate, isLiveTaskRunning);
                 }
 
-                if (isInitialSessionLoad || isNearBottom) {
+                if ((isInitialSessionLoad || isNearBottom) && !isUserTouchingScroll) {
                     chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
                 }
             }
@@ -7540,11 +7566,16 @@ public class MainActivity extends FragmentActivity {
 
     private boolean isScrollNearBottom() {
         if (chatScroll == null || chatMessagesList == null) return true;
+        if (isUserTouchingScroll) return false;
+        long now = System.currentTimeMillis();
         int scrollY = chatScroll.getScrollY();
         int scrollHeight = chatScroll.getHeight();
         int contentHeight = chatMessagesList.getHeight();
         int distanceToBottom = contentHeight - (scrollY + scrollHeight);
-        return distanceToBottom <= dp(200);
+        if (now - lastUserScrollInteractionTime < 2500) {
+            return distanceToBottom <= dp(45);
+        }
+        return distanceToBottom <= dp(180);
     }
 
         // ============================================================
@@ -7627,8 +7658,8 @@ public class MainActivity extends FragmentActivity {
         chatMessagesList.addView(container, lpC);
     }
 
-    private void renderInlineStepPill(final ArrayList<JSONObject> steps, final boolean isRunning) {
-        if (steps == null || steps.isEmpty()) return;
+    private View renderInlineStepPill(final ArrayList<JSONObject> steps, final boolean isRunning) {
+        if (steps == null || steps.isEmpty()) return null;
 
         showEmptyMascotState(false);
 
@@ -7779,10 +7810,11 @@ public class MainActivity extends FragmentActivity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(6), 0, dp(14));
         chatMessagesList.addView(pillRow, lp);
+        return pillRow;
     }
 
-    private void renderAssistantMessageBlock(String content, String time, boolean isLastMessage) {
-        if (content == null || content.trim().isEmpty()) return;
+    private View renderAssistantMessageBlock(String content, String time, boolean isLastMessage) {
+        if (content == null || content.trim().isEmpty()) return null;
 
         showEmptyMascotState(false);
 
@@ -7831,6 +7863,7 @@ public class MainActivity extends FragmentActivity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(4), 0, dp(8));
         chatMessagesList.addView(container, lp);
+        return container;
     }
 
         private String joinStrings(List<String> list, String sep) {
@@ -8322,6 +8355,9 @@ public class MainActivity extends FragmentActivity {
             isLiveTaskRunning = false;
             liveStreamingAssistantText = "";
             pendingOptimisticUserPrompt = null;
+            lastRenderedHistoricalSignature = "";
+            liveStreamingBlockView = null;
+            liveStepPillView = null;
             if (currentScreen == 1) syncLiveExecution();
             if (!isAppInForeground) {
                 boolean ok = data != null ? data.optBoolean("ok", true) : true;
