@@ -44,12 +44,12 @@ function operationalHealth() {
   const codex = commandVersion(CODEX_BIN, ["--version"]);
   const agy = commandVersion(AGY_BIN, ["--version"]);
   const workdirExists = fs.existsSync(WORKDIR) && fs.statSync(WORKDIR).isDirectory();
-  const git = gitModule.isRepo(WORKDIR) ? "ok" : "not_repository";
+  const gitStatus = git.isRepo(WORKDIR) ? "ok" : "not_repository";
 
   return {
     engines: { antigravity: agy ? { ok: true, version: agy } : { ok: false }, codex: codex ? { ok: true, version: codex } : { ok: false } },
     filesystem: { ok: workdirExists, workdir: WORKDIR },
-    git,
+    git: gitStatus,
     runningJobs: jobs.running().length,
     server: serverResourceStats()
   };

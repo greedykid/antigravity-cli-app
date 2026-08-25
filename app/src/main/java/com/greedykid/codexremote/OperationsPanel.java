@@ -47,11 +47,23 @@ final class OperationsPanel {
         body.removeAllViews();
         if (health == null) { error(body, "Data health kosong"); return; }
         JSONObject server = health.optJSONObject("server");
+        JSONObject engines = health.optJSONObject("engines");
+
+        if (engines != null) {
+            JSONObject agy = engines.optJSONObject("antigravity");
+            if (agy != null && agy.optBoolean("ok", false)) {
+                body.addView(label("Antigravity Engine", agy.optString("version", "Aktif")));
+            }
+            JSONObject cdx = engines.optJSONObject("codex");
+            if (cdx != null && cdx.optBoolean("ok", false)) {
+                body.addView(label("Codex CLI Engine", cdx.optString("version", "Aktif")));
+            }
+        }
 
         body.addView(label("Running jobs", String.valueOf(health.optInt("runningJobs", 0))));
-        body.addView(label("Memory used (MB)", server == null ? "-" : String.valueOf(server.opt("memoryMb"))));
-        body.addView(label("Disk free (GB)", server == null ? "-" : String.valueOf(server.opt("diskFreeGb"))));
-        body.addView(label("Uptime (s)", server == null ? "-" : String.valueOf(server.opt("uptimeSeconds"))));
+        body.addView(label("Memory used", (server == null || server.isNull("memoryMb")) ? "-" : (server.opt("memoryMb") + " MB")));
+        body.addView(label("Disk free", (server == null || server.isNull("diskFreeGb")) ? "-" : (server.opt("diskFreeGb") + " GB")));
+        body.addView(label("Uptime", (server == null || server.isNull("uptimeSeconds")) ? "-" : (server.opt("uptimeSeconds") + " detik")));
 
         body.addView(actionButton("Lihat Logs", () -> showLogs()));
         body.addView(actionButton("Export Backup", () -> exportBackup()));
