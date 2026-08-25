@@ -50,8 +50,67 @@ function operationalHealth() {
     engines: { antigravity: agy ? { ok: true, version: agy } : { ok: false }, codex: codex ? { ok: true, version: codex } : { ok: false } },
     filesystem: { ok: workdirExists, workdir: WORKDIR },
     git,
-    runningJobs: jobs.running().length
+    runningJobs: jobs.running().length,
+    server: serverResourceStats()
   };
+}
+
+function serverResourceStats() {
+  const stats = { memoryMb: null, diskFreeGb: null, diskTotalGb: null, uptimeSeconds: Math.round(process.uptime()) };
+  try {
+    if (fs.existsSync("/proc/meminfo")) {
+      const meminfo = fs.readFileSync("/proc/meminfo", "utf8");
+      const total = Number((meminfo.match(/MemTotal:\\s+(\\d+) kB/) || [])[1]);
+      const available = Number((meminfo.match(/MemAvailable:\\s+(\\d+) kB/) || [])[1]);
+      if (total && Number.isFinite(available)) stats.memoryMb = Math.round((total - available) / 1024);
+    }
+  } catch {}
+  try {
+    const result = spawnSync("df", ["-BG", WORKDIR], { encoding: "utf8", timeout: 2000 });
+    const line = (result.stdout || "").split("\\n").filter(l => l.includes("/")).pop();
+    if (line) {
+      const parts = line.split(/\\s+/);
+      stats.diskTotalGb = parseInt(parts[1], 10) || null;
+      stats.diskFreeGb = parseInt(parts[3], 10) || null;
+    }
+  } catch {}
+  return stats;
+}
+
+function readBridgeLogs(lines = 200) {
+  const candidates = [
+    path.join(config.CONFIG_DIR, "bridge.log"),
+    path.join(config.CONFIG_DIR, "server.log")
+  ];
+  for (const file of candidates) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const content = fs.readFileSync(file, "utf8").trim().split("\\n");
+      return { source: file, lines: content.slice(-lines).reverse() };
+    } catch {}
+  }
+  try {
+    const result = spawnSync("journalctl", ["-u", "codex-bridge", "-n", String(lines), "--no-pager"], {
+      encoding: "utf8", timeout: 5000
+    });
+    if (result.status === 0 && result.stdout.trim()) {
+      return { source: "journalctl:codex-bridge", lines: result.stdout.trim().split("\\n").reverse() };
+    }
+  } catch {}
+  return { source: null, lines: [] };
+}
+
+function backupPayload() {
+  return {
+    exportedAt: new Date().toISOString(),
+    settings: settings.load(),
+    promptLibrary: safeReadJson(path.join(config.CONFIG_DIR, "prompt-library.json")),
+    devices: Object.values(loadDeviceRegistry()).map(d => ({ id: d.id, name: d.name, revoked: d.revoked }))
+  };
+}
+
+function safeReadJson(file) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
 
 function deviceId(req) {
@@ -1321,6 +1380,32 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && pathname === "/api/health/operations") {
     if (!authorized(req)) return send(res, 401, { error: "Unauthorized" });
     return send(res, 200, { ok: true, health: operationalHealth() });
+  }
+
+  if (req.method === "GET" && pathname === "/api/logs") {
+    const limit = Math.min(Math.max(Number(parsedUrl.query.lines) || 200, 10), 1000);
+    return send(res, 200, { ok: true, ...readBridgeLogs(limit) });
+  }
+
+  if (req.method === "GET" && pathname === "/api/backup") {
+    return send(res, 200, { ok: true, backup: backupPayload() });
+  }
+
+  if (req.method === "POST" && pathname === "/api/backup/restore") {
+    let raw = "";
+    req.on("data", chunk => raw += chunk);
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const backup = payload.backup || payload;
+        if (!backup || typeof backup !== "object") throw new Error("Invalid backup payload");
+        if (backup.settings) settings.save(backup.settings);
+        send(res, 200, { ok: true, restored: { settings: Boolean(backup.settings), promptLibrary: false, devices: false } });
+      } catch (err) {
+        send(res, 400, { error: err.message });
+      }
+    });
+    return;
   }
 
   if ((req.method === "GET" && pathname === "/api/devices") ||

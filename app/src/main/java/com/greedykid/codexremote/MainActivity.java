@@ -263,61 +263,7 @@ public class MainActivity extends FragmentActivity {
         } catch (Exception ignored) {}
     }
 
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm != null) {
-                android.app.NotificationChannel ch = new android.app.NotificationChannel(
-                    CHANNEL_TASK_NOTIFICATIONS,
-                    "Task Alerts",
-                    android.app.NotificationManager.IMPORTANCE_HIGH
-                );
-                ch.setDescription("Memberi tahu saat tugas AI selesai di background");
-                ch.enableLights(true);
-                ch.enableVibration(true);
-                ch.setLightColor(Theme.ACCENT);
-                nm.createNotificationChannel(ch);
-            }
-        }
-    }
-
-    private void showTaskCompletionNotification(String sessionTitle, boolean success, String details) {
-        try {
-            android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm == null) return;
-
-            Intent intent = new Intent(this, MainActivity.class);
-            intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            if (activeConversationId != null) {
-                intent.putExtra("open_conversation_id", activeConversationId);
-            }
-            int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? 
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE :
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT;
-            android.app.PendingIntent pi = android.app.PendingIntent.getActivity(this, 100, intent, flags);
-
-            boolean authError = details != null && (details.contains("Unauthorized") || details.contains("401") || details.contains("token"));
-            String icon = success ? "✅" : (authError ? "🔒" : "⚠️");
-            String label = success ? "Tugas Selesai" : (authError ? "Autentikasi Gagal" : "Tugas Gagal");
-            String title = icon + " " + label + ": " + (sessionTitle != null && !sessionTitle.isEmpty() ? sessionTitle : "Antigravity");
-            String message = details != null && !details.isEmpty() ? details : (success ? "AI telah selesai menjalankan tugas coding Anda." : "Terjadi kendala saat menjalankan tugas.");
-
-            androidx.core.app.NotificationCompat.Builder builder = new androidx.core.app.NotificationCompat.Builder(this, CHANNEL_TASK_NOTIFICATIONS)
-                .setSmallIcon(authError ? R.drawable.ic_security : R.drawable.ic_code)
-                .setContentTitle(title)
-                .setContentText(message)
-                .setStyle(new androidx.core.app.NotificationCompat.BigTextStyle().bigText(message))
-                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
-                .setDefaults(androidx.core.app.NotificationCompat.DEFAULT_ALL)
-                .setAutoCancel(true)
-                .setContentIntent(pi);
-
-            nm.notify(NOTIFY_RESULT_ID, builder.build());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-    private static final int NOTIFY_RESULT_ID = 8821;
+    private NotificationManager notificationHelper;
 
 
     private void renderRetryFailedMessageBlock(final String failedText, final String errorReason) {
@@ -1215,6 +1161,7 @@ public class MainActivity extends FragmentActivity {
     private WorkspacePanels panels;
     private PromptLibrary promptLibrary;
     private UtilityPanels utilityPanels;
+    private OperationsPanel operationsPanel;
     private TranscriptCache transcriptCache;
     private AlertDialog libraryDialog;
     private boolean isUnlocked = false;
@@ -1306,6 +1253,7 @@ public class MainActivity extends FragmentActivity {
         bridge = new BridgeClient(prefs);
         promptLibrary = new PromptLibrary(prefs);
         utilityPanels = new UtilityPanels(this, bridge, promptLibrary, executor, mainHandler);
+        operationsPanel = new OperationsPanel(this, bridge, executor, mainHandler);
         transcriptCache = new TranscriptCache(this);
         if (prefs.getString("device_id", "").isEmpty()) {
             prefs.edit().putString("device_id", java.util.UUID.randomUUID().toString()).apply();
@@ -1324,7 +1272,8 @@ public class MainActivity extends FragmentActivity {
         consumePendingEngineNotice();
         syncCodexProviderInfo();
         requestNotificationPermission();
-        createNotificationChannel();
+        notificationHelper = new NotificationManager(this);
+        notificationHelper.createTaskChannel();
         LiveEventBus.register(liveEventListener);
         startLiveEvents();
     }
@@ -1651,6 +1600,11 @@ public class MainActivity extends FragmentActivity {
         addSidebarMenuItem(body, R.drawable.ic_android, "Perangkat", null, -1, false, () -> {
             closeSidebar();
             showDeviceManager();
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_analytics, "Server Ops", null, -1, false, () -> {
+            closeSidebar();
+            operationsPanel.show();
         });
 
         // 3. Gateway section (replaces the reference's "starred" block)
@@ -8269,7 +8223,8 @@ public class MainActivity extends FragmentActivity {
             if (!isAppInForeground) {
                 boolean ok = data != null ? data.optBoolean("ok", true) : true;
                 String err = data != null ? data.optString("error", "") : "";
-                showTaskCompletionNotification(activeSessionTitle, ok, ok ? "AI telah selesai mengerjakan tugas." : err);
+                notificationHelper.showTaskCompletion(activeSessionTitle, ok,
+                        ok ? "AI telah selesai mengerjakan tugas." : err, activeConversationId);
             }
             return;
         }
