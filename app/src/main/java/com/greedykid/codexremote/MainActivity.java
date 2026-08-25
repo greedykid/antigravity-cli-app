@@ -6878,8 +6878,25 @@ public class MainActivity extends FragmentActivity {
             showConnectionBottomSheet();
             return;
         }
+        if (btnSend.getTag() != null || isLiveTaskRunning) {
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("Proses Sedang Berjalan")
+                    .setMessage("AI sedang memproses perintah. Apakah Anda ingin membatalkan atau membuka kunci input?")
+                    .setPositiveButton("Buka Kunci Input", (d, w) -> {
+                        activeJobId = null;
+                        isLiveTaskRunning = false;
+                        liveStreamingAssistantText = "";
+                        btnSend.setTag(null);
+                        btnSend.setEnabled(true);
+                        promptInput.setEnabled(true);
+                        hideSessionLoading();
+                        Toast.makeText(MainActivity.this, "Input dibuka kembali.", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNegativeButton("Tunggu", null)
+                    .show();
+            return;
+        }
         if (text.isEmpty() && attachedMediaList.isEmpty()) return;
-        if (btnSend.getTag() != null) return;
 
         final ArrayList<String> filePathsToSend = new ArrayList<>();
         final StringBuilder fileHeaders = new StringBuilder();
@@ -7021,6 +7038,8 @@ public class MainActivity extends FragmentActivity {
     private JSONObject awaitJobResult(String jobId) {
         long deadline = System.currentTimeMillis() + 4L * 60 * 60 * 1000;
         int delayMs = 1500;
+        int consecutiveErrors = 0;
+        int notFoundCount = 0;
 
         while (System.currentTimeMillis() < deadline) {
             try {
@@ -7029,34 +7048,60 @@ public class MainActivity extends FragmentActivity {
                 Thread.currentThread().interrupt();
                 break;
             }
-            delayMs = Math.min(delayMs + 500, 8000);
+            delayMs = Math.min(delayMs + 500, 5000);
 
             try {
                 JSONObject status = bridge.get("/api/jobs/" + BridgeClient.encode(jobId), 15000);
+                consecutiveErrors = 0;
                 JSONObject job = status.optJSONObject("job");
-                if (job == null) continue;
+                if (job == null) {
+                    if (status.has("error") || status.optInt("statusCode", 200) == 404) {
+                        notFoundCount++;
+                        if (notFoundCount >= 3) {
+                            if (activeConversationId != null && !activeConversationId.isEmpty()) {
+                                try {
+                                    JSONObject tr = bridge.get("/api/session/transcript?id=" + BridgeClient.encode(activeConversationId), 10000);
+                                    if (tr != null && tr.has("turns")) {
+                                        return tr;
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                            JSONObject res = new JSONObject();
+                            res.put("ok", false);
+                            res.put("error", "Koneksi task terputus (server direstart). Silakan kirim ulang pesan.");
+                            return res;
+                        }
+                    }
+                    continue;
+                }
+                notFoundCount = 0;
 
                 String state = job.optString("state", "running");
                 if ("running".equals(state)) continue;
 
                 JSONObject result = new JSONObject();
                 result.put("ok", "done".equals(state));
-                // optString returns the literal string "null" for an explicit
-                // JSON null, which is how a failed run ended up rendered as a
-                // message reading "null".
                 result.put("conversationId", job.isNull("conversationId") ? "" : job.optString("conversationId", ""));
                 result.put("response", job.isNull("response") ? "" : job.optString("response", ""));
                 if (job.has("turns")) result.put("turns", job.opt("turns"));
                 if (job.has("session")) result.put("session", job.opt("session"));
                 if (!job.isNull("error")) result.put("error", job.optString("error", ""));
                 return result;
-            } catch (Exception ignored) {
-                // Network blip: keep waiting, the job runs on the server.
+            } catch (Exception e) {
+                consecutiveErrors++;
+                if (consecutiveErrors >= 8) { // ~30+ seconds of disconnection
+                    JSONObject res = new JSONObject();
+                    try {
+                        res.put("ok", false);
+                        res.put("error", "Koneksi gateway terputus (" + (e.getMessage() != null ? e.getMessage() : "Network error") + ")");
+                    } catch (Exception ignored) {}
+                    return res;
+                }
             }
         }
 
         try {
-            return new JSONObject().put("ok", false).put("error", "Task masih berjalan di server. Buka lagi nanti.");
+            return new JSONObject().put("ok", false).put("error", "Task timeout di server. Silakan coba lagi.");
         } catch (Exception e) {
             return new JSONObject();
         }
