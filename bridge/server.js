@@ -55,7 +55,49 @@ function operationalHealth() {
 }
 
 function deviceId(req) {
+  const raw = String(req.headers["x-codex-device-id"] || "").trim();
+  if (raw && /^[A-Za-z0-9_-]{8,64}$/.test(raw)) return raw;
   return crypto.createHash("sha256").update(String(req.headers["user-agent"] || "unknown")).digest("hex").slice(0, 16);
+}
+
+function deviceRegistryFile() {
+  return path.join(config.CONFIG_DIR, "devices.json");
+}
+
+function loadDeviceRegistry() {
+  try {
+    if (!fs.existsSync(deviceRegistryFile())) return {};
+    return JSON.parse(fs.readFileSync(deviceRegistryFile(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveDeviceRegistry(registry) {
+  fs.mkdirSync(config.CONFIG_DIR, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(deviceRegistryFile(), JSON.stringify(registry, null, 2), { mode: 0o600 });
+}
+
+function registerDevice(req) {
+  const id = deviceId(req);
+  const registry = loadDeviceRegistry();
+  const now = Date.now();
+  const existing = registry[id];
+  registry[id] = {
+    id,
+    name: String(req.headers["x-codex-device-name"] || (existing && existing.name) || id.slice(0, 8)).slice(0, 60),
+    userAgent: String(req.headers["user-agent"] || "").slice(0, 180),
+    createdAt: existing && existing.createdAt || now,
+    lastSeenAt: now,
+    revoked: existing ? Boolean(existing.revoked) : false
+  };
+  saveDeviceRegistry(registry);
+  return registry[id];
+}
+
+function isDeviceRevoked(req) {
+  const device = loadDeviceRegistry()[deviceId(req)];
+  return Boolean(device && device.revoked);
 }
 
 function issueApproval(action) {
@@ -1260,7 +1302,7 @@ const server = http.createServer((req, res) => {
       features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload",
                  "usage_stats", "sse", "files", "git", "search", "sandbox_modes",
                  "jobs", "file_write", "projects", "audit", "session_export", "uploads_cleanup",
-                 "codex_config", "session_archive", "operational_health"],
+                 "codex_config", "session_archive", "operational_health", "device_management"],
       sandboxMode: settings.load().sandboxMode
     });
   }
@@ -1270,9 +1312,49 @@ const server = http.createServer((req, res) => {
     return send(res, 200, { ok: true, health: operationalHealth() });
   }
 
+  if ((req.method === "GET" && pathname === "/api/devices") ||
+      (req.method === "POST" && pathname === "/api/devices/revoke")) {
+    if (!authorized(req)) return send(res, 401, { error: "Unauthorized" });
+    if (isDeviceRevoked(req)) {
+      auditLog.log("device.revoked_access", { path: pathname, device: deviceId(req) });
+      return send(res, 403, { error: "Perangkat telah dicabut", code: "DEVICE_REVOKED" });
+    }
+    try { registerDevice(req); } catch {}
+
+    if (req.method === "GET") {
+      const entries = Object.values(loadDeviceRegistry()).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+      return send(res, 200, { ok: true, devices: entries });
+    }
+
+    let raw = "";
+    req.on("data", chunk => raw += chunk);
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const id = String(payload.id || "");
+        const registry = loadDeviceRegistry();
+        if (!registry[id]) return send(res, 404, { error: "Device not found" });
+        registry[id].revoked = payload.revoked !== false;
+        saveDeviceRegistry(registry);
+        auditLog.log(registry[id].revoked ? "device.revoked" : "device.restored", { device: id });
+        return send(res, 200, { ok: true, device: registry[id] });
+      } catch (err) {
+        send(res, 400, { error: err.message });
+      }
+    });
+    return;
+  }
+
   if (!authorized(req)) {
     return send(res, 401, { error: "Unauthorized" });
   }
+
+  if (isDeviceRevoked(req)) {
+    auditLog.log("device.revoked_access", { path: pathname, device: deviceId(req) });
+    return send(res, 403, { error: "Perangkat telah dicabut", code: "DEVICE_REVOKED" });
+  }
+
+  try { registerDevice(req); } catch {}
 
   if (req.method === "POST" && isWriteBlocked(pathname)) {
     auditLog.log("write.blocked", { path: pathname, sandboxMode: "readonly", device: deviceId(req) });

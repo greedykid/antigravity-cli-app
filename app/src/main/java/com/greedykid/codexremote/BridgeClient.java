@@ -59,6 +59,11 @@ public class BridgeClient {
     private void applyAuth(HttpURLConnection c) {
         String token = token();
         if (!token.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + token);
+        String deviceId = prefs.getString("device_id", "");
+        if (!deviceId.isEmpty()) {
+            c.setRequestProperty("X-Codex-Device-Id", deviceId);
+            c.setRequestProperty("X-Codex-Device-Name", prefs.getString("device_name", "Android"));
+        }
     }
 
     public HttpURLConnection open(String apiPath, String method, int timeoutMs) throws Exception {
@@ -116,6 +121,7 @@ public class BridgeClient {
 
         String raw = sb.toString().trim();
         JSONObject json = raw.startsWith("{") ? new JSONObject(raw) : new JSONObject();
+        json.put("code", code);
         json.put("status", code);
         if (!json.has("ok")) json.put("ok", code < 400);
         return json;

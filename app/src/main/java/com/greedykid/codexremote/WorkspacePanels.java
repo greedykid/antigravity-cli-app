@@ -535,6 +535,13 @@ public class WorkspacePanels {
                 if (message != null) payload.put("message", message);
 
                 JSONObject result = bridge.post(apiPath, payload, 90000);
+                if (result.optString("code", "").equals("APPROVAL_REQUIRED")) {
+                    payload.put("approvalToken", result.optString("approvalToken"));
+                    mainHandler.post(() -> confirmDangerousAction("Konfirmasi aksi Git",
+                            apiPath.equals("/api/git/push") ? "Push ke remote sekarang?" : "Commit sekarang?", () ->
+                            executor.execute(() -> postGit(apiPath, payload, body, dialog))));
+                    return;
+                }
                 mainHandler.post(() -> {
                     boolean ok = result.optBoolean("ok", false);
                     Toast.makeText(act,
@@ -546,6 +553,30 @@ public class WorkspacePanels {
                 mainHandler.post(() -> Toast.makeText(act, "Gagal: " + ex.getMessage(), Toast.LENGTH_SHORT).show());
             }
         });
+    }
+
+    private void postGit(String apiPath, JSONObject payload, LinearLayout body, Dialog dialog) {
+        executor.execute(() -> {
+            try {
+                JSONObject result = bridge.post(apiPath, payload, 90000);
+                mainHandler.post(() -> {
+                    boolean ok = result.optBoolean("ok", false);
+                    Toast.makeText(act, ok ? "Berhasil" : result.optString("error", "Gagal"), Toast.LENGTH_SHORT).show();
+                    if (ok) loadGitStatus(body, dialog);
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(act, "Gagal: " + ex.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void confirmDangerousAction(String title, String message, Runnable action) {
+        new android.app.AlertDialog.Builder(act)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("Lanjutkan", (d, which) -> action.run())
+                .setNegativeButton("Batal", null)
+                .show();
     }
 
     private void showGitDiff(final String filePath) {

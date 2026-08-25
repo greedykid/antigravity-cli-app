@@ -4,6 +4,7 @@ import android.Manifest;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -1205,6 +1206,8 @@ public class MainActivity extends Activity {
     private MarkdownRenderer markdownRenderer;
     private BridgeClient bridge;
     private WorkspacePanels panels;
+    private PromptLibrary promptLibrary;
+    private AlertDialog libraryDialog;
     private EditText promptInput;
     private FrameLayout btnSend;
     private ImageView btnAttach;
@@ -1290,6 +1293,10 @@ public class MainActivity extends Activity {
 
         super.onCreate(savedInstanceState);
         bridge = new BridgeClient(prefs);
+        promptLibrary = new PromptLibrary(prefs);
+        if (prefs.getString("device_id", "").isEmpty()) {
+            prefs.edit().putString("device_id", java.util.UUID.randomUUID().toString()).apply();
+        }
         panels = new WorkspacePanels(this, workspaceHost, bridge, prefs, executor, mainHandler);
         currentEngine = prefs.getString("engine", "antigravity");
 
@@ -1324,11 +1331,106 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        recoverRunningTask();
         if (currentScreen == 0) {
             fetchHubSessions();
         } else if (currentScreen == 1 && (activeConversationId != null || isLiveTaskRunning)) {
             startAutoRefresh();
         }
+    }
+
+    private void recoverRunningTask() {
+        if (!bridge.isPaired() || isLiveTaskRunning) return;
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/jobs", 15000);
+                JSONArray running = json.optJSONArray("running");
+                if (running == null || running.length() == 0) return;
+                JSONObject job = running.getJSONObject(running.length() - 1);
+                if (job.optLong("createdAt", 0) < System.currentTimeMillis() - 24L * 60L * 60L * 1000L) return;
+                final String jobId = job.optString("id", "");
+                if (jobId.isEmpty()) return;
+                mainHandler.post(() -> {
+                    activeJobId = jobId;
+                    isLiveTaskRunning = true;
+                    btnSend.setEnabled(false);
+                    promptInput.setEnabled(false);
+                    startAutoRefresh();
+                    Toast.makeText(this, "Memulihkan task yang masih berjalan", Toast.LENGTH_SHORT).show();
+                    restartLiveEvents();
+                });
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    private void showPromptLibrary() {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(dp(22), dp(20), dp(22), dp(10));
+        TextView title = cText("Prompt Library", 20, Theme.TEXT_MAIN, true, false);
+        container.addView(title);
+        TextView subtitle = cText("Simpan dan pakai ulang prompt penting.", 14, Theme.TEXT_LIGHT, false, false);
+        subtitle.setPadding(0, dp(6), 0, dp(14));
+        container.addView(subtitle);
+
+        JSONArray prompts = promptLibrary.all();
+        if (prompts.length() == 0) {
+            container.addView(cText("Belum ada prompt tersimpan.", 15, Theme.TEXT_MUTED, false, false));
+        }
+        for (int index = prompts.length() - 1; index >= 0; index--) {
+            final JSONObject item;
+            try {
+                item = prompts.getJSONObject(index);
+            } catch (Exception ignored) {
+                continue;
+            }
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 16));
+            row.setPadding(dp(14), dp(12), dp(8), dp(12));
+            TextView label = cText(item.optString("title", "Prompt"), 15.5f, Theme.TEXT_MAIN, true, false);
+            label.setMaxLines(1);
+            label.setEllipsize(TextUtils.TruncateAt.END);
+            row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+            ImageView use = cIconButton(R.drawable.ic_send, 18, 40, Theme.ACCENT);
+            use.setOnClickListener(v -> {
+                libraryDialog.dismiss();
+                promptInput.setText(item.optString("prompt", ""));
+                promptInput.requestFocus();
+            });
+            row.addView(use);
+            ImageView remove = cIconButton(R.drawable.ic_close, 18, 40, Theme.TEXT_MUTED);
+            remove.setOnClickListener(v -> {
+                promptLibrary.delete(item.optString("id", ""));
+                libraryDialog.dismiss();
+                showPromptLibrary();
+            });
+            row.addView(remove);
+            LinearLayout.LayoutParams rowLayout = new LinearLayout.LayoutParams(-1, -2);
+            rowLayout.topMargin = dp(8);
+            container.addView(row, rowLayout);
+        }
+
+        TextView save = cText("+ Simpan teks input saat ini", 15, Theme.ACCENT, true, false);
+        save.setPadding(dp(4), dp(16), dp(4), dp(8));
+        save.setOnClickListener(v -> {
+            String prompt = promptInput.getText().toString().trim();
+            if (prompt.isEmpty()) return;
+            String savedTitle = prompt.length() > 48 ? prompt.substring(0, 48) + "…" : prompt;
+            promptLibrary.add(savedTitle, prompt);
+            libraryDialog.dismiss();
+            Toast.makeText(this, "Prompt disimpan", Toast.LENGTH_SHORT).show();
+            showPromptLibrary();
+        });
+        container.addView(save);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setView(container);
+        builder.setNegativeButton("Tutup", null);
+        libraryDialog = builder.create();
+        libraryDialog.show();
     }
 
     @Override
@@ -1556,6 +1658,11 @@ public class MainActivity extends Activity {
             showSearchPanel();
         });
 
+        addSidebarMenuItem(body, R.drawable.ic_edit, "Prompt Library", null, -1, false, () -> {
+            closeSidebar();
+            showPromptLibrary();
+        });
+
         addSidebarMenuItem(body, R.drawable.ic_folder, "File Workspace", null, -1, false, () -> {
             closeSidebar();
             showFileBrowser(".");
@@ -1574,6 +1681,16 @@ public class MainActivity extends Activity {
         addSidebarMenuItem(body, R.drawable.ic_settings, "Pengaturan", null, 2, false, () -> {
             closeSidebar();
             showScreen(2);
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_security, "Audit Aktivitas", null, -1, false, () -> {
+            closeSidebar();
+            showAuditActivity();
+        });
+
+        addSidebarMenuItem(body, R.drawable.ic_android, "Perangkat", null, -1, false, () -> {
+            closeSidebar();
+            showDeviceManager();
         });
 
         // 3. Gateway section (replaces the reference's "starred" block)
@@ -8336,6 +8453,132 @@ public class MainActivity extends Activity {
 
     private void showMaintenanceSheet() {
         panels.showMaintenanceSheet();
+    }
+
+    private void showAuditActivity() {
+        final Dialog dialog = createBaseBottomSheet(true);
+        final LinearLayout root = createBottomSheetRoot(dialog, "Audit Aktivitas", true);
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, dp(430)));
+        body.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
+
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/audit?limit=100", 20000);
+                JSONArray entries = json.optJSONArray("entries");
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    if (entries == null || entries.length() == 0) {
+                        body.addView(cText("Belum ada aktivitas.", 14f, Theme.TEXT_MUTED, false, false));
+                        return;
+                    }
+                    for (int index = 0; index < entries.length(); index++) {
+                        JSONObject entry = entries.optJSONObject(index);
+                        if (entry == null) continue;
+                        LinearLayout row = new LinearLayout(this);
+                        row.setOrientation(LinearLayout.VERTICAL);
+                        row.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 12));
+                        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+                        String device = entry.optString("device", "");
+                        String detail = device.isEmpty() ? entry.optString("path", "") : entry.optString("path", "") + " · " + device;
+                        row.addView(cText(entry.optString("event", "event"), 14.5f, Theme.TEXT_MAIN, true, false));
+                        TextView meta = cText(entry.optString("at", "") + (detail.isEmpty() ? "" : " · " + detail),
+                                12f, Theme.TEXT_LIGHT, false, false);
+                        meta.setPadding(0, dp(3), 0, 0);
+                        row.addView(meta);
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                        lp.topMargin = dp(8);
+                        body.addView(row, lp);
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    body.addView(cText("Gagal memuat audit: " + ex.getMessage(), 13f, Theme.RED, false, false));
+                });
+            }
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void showDeviceManager() {
+        final Dialog dialog = createBaseBottomSheet(true);
+        final LinearLayout root = createBottomSheetRoot(dialog, "Perangkat", true);
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, dp(430)));
+        body.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
+
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/devices", 20000);
+                JSONArray devices = json.optJSONArray("devices");
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    if (devices == null || devices.length() == 0) {
+                        body.addView(cText("Belum ada perangkat terdaftar.", 14f, Theme.TEXT_MUTED, false, false));
+                        return;
+                    }
+                    for (int index = 0; index < devices.length(); index++) {
+                        JSONObject device = devices.optJSONObject(index);
+                        if (device == null) continue;
+                        boolean revoked = device.optBoolean("revoked", false);
+                        LinearLayout row = new LinearLayout(this);
+                        row.setOrientation(LinearLayout.VERTICAL);
+                        row.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 12));
+                        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+                        row.addView(cText(device.optString("name", "Device") + (revoked ? " · dicabut" : ""),
+                                14.5f, revoked ? Theme.RED : Theme.TEXT_MAIN, true, false));
+                        TextView meta = cText(device.optString("id", "") + "\nTerakhir aktif: " +
+                                new java.util.Date(device.optLong("lastSeenAt", 0)).toString(), 11.5f,
+                                Theme.TEXT_LIGHT, false, false);
+                        meta.setPadding(0, dp(3), 0, 0);
+                        row.addView(meta);
+                        TextView action = cText(revoked ? "Pulihkan" : "Cabut akses", 13.5f,
+                                revoked ? Theme.GREEN : Theme.ACCENT, true, false);
+                        action.setPadding(0, dp(10), 0, 0);
+                        String deviceId = device.optString("id", "");
+                        action.setOnClickListener(v -> {
+                            executor.execute(() -> {
+                                try {
+                                    JSONObject payload = new JSONObject().put("id", deviceId).put("revoked", !revoked);
+                                    JSONObject result = bridge.post("/api/devices/revoke", payload, 20000);
+                                    mainHandler.post(() -> {
+                                        if (result.optBoolean("ok", false)) {
+                                            dialog.dismiss();
+                                            showDeviceManager();
+                                        } else {
+                                            Toast.makeText(this, describeApiError(result, "Gagal mengubah perangkat"), Toast.LENGTH_LONG).show();
+                                        }
+                                    });
+                                } catch (Exception ex) {
+                                    mainHandler.post(() -> Toast.makeText(this, "Gagal: " + ex.getMessage(), Toast.LENGTH_SHORT).show());
+                                }
+                            });
+                        });
+                        row.addView(action);
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                        lp.topMargin = dp(8);
+                        body.addView(row, lp);
+                    }
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    body.addView(cText("Gagal memuat perangkat: " + ex.getMessage(), 13f, Theme.RED, false, false));
+                });
+            }
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     private String describeApiError(JSONObject json, String fallback) {
