@@ -39,5 +39,8 @@
             android:name=".LiveEventService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <receiver
+            android:name=".NotificationActionReceiver"
+            android:exported="false" />
     </application>
 </manifest>

@@ -172,16 +172,79 @@ public class MainActivity extends FragmentActivity {
         quickActionRow.setOrientation(LinearLayout.HORIZONTAL);
         quickActionRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        // Prompts & Tools
+        refreshQuickActionToolbar();
+
+        quickActionScroll.addView(quickActionRow, new ViewGroup.LayoutParams(-2, -2));
+        return quickActionScroll;
+    }
+
+    private void refreshQuickActionToolbar() {
+        if (quickActionRow == null) return;
+        quickActionRow.removeAllViews();
+
+        // 1. Standard Quick Prompt Actions
         addQuickChip(quickActionRow, R.drawable.ic_build, "Perbaiki Error", "Tolong perbaiki error berikut: ");
-        addQuickChip(quickActionRow, R.drawable.ic_search, "Review Kode", "Tolong review dan periksa kode ini untuk potensi bug atau peningkatan: ");
         addQuickChip(quickActionRow, R.drawable.ic_code, "Jalankan Test", "Jalankan test suite dan laporkan hasilnya.");
-        addQuickChip(quickActionRow, R.drawable.ic_description, "Jelaskan Alur", "Jelaskan alur kerja kode ini secara ringkas.");
+
+        // Visual Diff Interactive Viewer
+        LinearLayout diffChip = new LinearLayout(this);
+        diffChip.setOrientation(LinearLayout.HORIZONTAL);
+        diffChip.setGravity(Gravity.CENTER_VERTICAL);
+        diffChip.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+        diffChip.setPadding(dp(10), dp(5), dp(11), dp(5));
+        diffChip.setClickable(true);
+        diffChip.setFocusable(true);
+        diffChip.addView(cIcon(R.drawable.ic_tune, 14, Theme.BLUE));
+        diffChip.addView(cText(" Visual Diff", 12f, Theme.BLUE, true, false));
+        diffChip.setOnClickListener(v -> {
+            vibrateTick();
+            panels.showFullGitDiffViewer();
+        });
+        LinearLayout.LayoutParams lpDiff = new LinearLayout.LayoutParams(-2, -2);
+        lpDiff.setMargins(0, 0, dp(6), 0);
+        quickActionRow.addView(diffChip, lpDiff);
+
         addQuickChip(quickActionRow, R.drawable.ic_source_branch, "Git Status", "Cek git status dan rangkum perubahan.");
-        addQuickChip(quickActionRow, R.drawable.ic_tune, "Git Diff", "Tampilkan git diff dari perubahan terbaru.");
         addQuickChip(quickActionRow, R.drawable.ic_edit, "Buat Commit", "Buat commit git dengan pesan yang jelas untuk perubahan saat ini.");
-        
-        // Code Symbols
+        addQuickChip(quickActionRow, R.drawable.ic_description, "Jelaskan Alur", "Jelaskan alur kerja kode ini secara ringkas.");
+
+        // 2. Custom Bookmarks from PromptLibrary
+        try {
+            PromptLibrary library = new PromptLibrary(prefs);
+            JSONArray customPrompts = library.all();
+            if (customPrompts != null && customPrompts.length() > 0) {
+                for (int i = 0; i < customPrompts.length(); i++) {
+                    JSONObject p = customPrompts.optJSONObject(i);
+                    if (p != null) {
+                        String title = p.optString("title", "");
+                        String promptText = p.optString("prompt", "");
+                        if (!title.isEmpty() && !promptText.isEmpty()) {
+                            addQuickChip(quickActionRow, R.drawable.ic_bookmark, title, promptText);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // 3. + Tambah Bookmark Snippet Chip
+        LinearLayout addChip = new LinearLayout(this);
+        addChip.setOrientation(LinearLayout.HORIZONTAL);
+        addChip.setGravity(Gravity.CENTER_VERTICAL);
+        addChip.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 14));
+        addChip.setPadding(dp(10), dp(5), dp(11), dp(5));
+        addChip.setClickable(true);
+        addChip.setFocusable(true);
+        addChip.addView(cIcon(R.drawable.ic_add, 14, Theme.ACCENT));
+        addChip.addView(cText(" Snippet", 12f, Theme.ACCENT, true, false));
+        addChip.setOnClickListener(v -> {
+            vibrateTick();
+            showAddBookmarkDialog();
+        });
+        LinearLayout.LayoutParams lpAdd = new LinearLayout.LayoutParams(-2, -2);
+        lpAdd.setMargins(0, 0, dp(6), 0);
+        quickActionRow.addView(addChip, lpAdd);
+
+        // 4. Code Symbols
         addSymbolChip(quickActionRow, "```", "```\n\n```", 4);
         addSymbolChip(quickActionRow, "{ }", "{  }", 2);
         addSymbolChip(quickActionRow, "[ ]", "[  ]", 2);
@@ -189,9 +252,62 @@ public class MainActivity extends FragmentActivity {
         addSymbolChip(quickActionRow, "->", "-> ", 3);
         addSymbolChip(quickActionRow, "$", "$ ", 2);
         addSymbolChip(quickActionRow, "/", "/", 1);
+    }
 
-        quickActionScroll.addView(quickActionRow, new ViewGroup.LayoutParams(-2, -2));
-        return quickActionScroll;
+    private void showAddBookmarkDialog() {
+        final Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Tambah Quick Snippet", true);
+
+        root.addView(cText("Simpan prompt yang sering dipakai agar muncul langsung di bilah pintasan.", 12.5f, Theme.TEXT_MUTED, false, false));
+
+        final EditText titleInput = new EditText(this);
+        titleInput.setHint("Judul Pintasan (cth: Refactor API)");
+        titleInput.setHintTextColor(Theme.TEXT_LIGHT);
+        titleInput.setTextColor(Theme.TEXT_MAIN);
+        titleInput.setTextSize(14f);
+        titleInput.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        titleInput.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lpTitle = new LinearLayout.LayoutParams(-1, -2);
+        lpTitle.setMargins(0, dp(12), 0, dp(8));
+        root.addView(titleInput, lpTitle);
+
+        final EditText promptContent = new EditText(this);
+        promptContent.setHint("Teks Prompt / Perintah...");
+        promptContent.setHintTextColor(Theme.TEXT_LIGHT);
+        promptContent.setTextColor(Theme.TEXT_MAIN);
+        promptContent.setTextSize(13.5f);
+        promptContent.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        promptContent.setPadding(dp(14), dp(12), dp(14), dp(12));
+        promptContent.setMinLines(3);
+        promptContent.setMaxLines(6);
+        String currentText = promptInput != null ? promptInput.getText().toString().trim() : "";
+        if (!currentText.isEmpty()) {
+            promptContent.setText(currentText);
+        }
+        LinearLayout.LayoutParams lpPrompt = new LinearLayout.LayoutParams(-1, -2);
+        lpPrompt.setMargins(0, 0, 0, dp(14));
+        root.addView(promptContent, lpPrompt);
+
+        TextView saveBtn = cText("Simpan ke Bilah Pintasan", 14f, Theme.ON_ACCENT, true, false);
+        saveBtn.setGravity(Gravity.CENTER);
+        saveBtn.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
+        saveBtn.setPadding(dp(16), dp(13), dp(16), dp(13));
+        saveBtn.setOnClickListener(v -> {
+            String t = titleInput.getText().toString().trim();
+            String p = promptContent.getText().toString().trim();
+            if (t.isEmpty() || p.isEmpty()) {
+                Toast.makeText(this, "Judul dan isi prompt tidak boleh kosong", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            new PromptLibrary(prefs).add(t, p);
+            refreshQuickActionToolbar();
+            Toast.makeText(this, "Snippet tersimpan ✓", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+        });
+        root.addView(saveBtn, new LinearLayout.LayoutParams(-1, -2));
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     private void addQuickChip(LinearLayout parent, int iconRes, String label, final String promptToInsert) {
@@ -1174,6 +1290,7 @@ public class MainActivity extends FragmentActivity {
     private ImageView btnVoice;
     private TextView repoTagLabel;
     private TextView modelTagLabel;
+    private TextView workspaceTagLabel;
     private HorizontalScrollView attachmentScrollContainer;
     private LinearLayout attachmentChipsList;
 
@@ -2998,6 +3115,16 @@ public class MainActivity extends FragmentActivity {
         if (settingsGitPathSubtitle != null) {
             settingsGitPathSubtitle.setText(gitPathLabel());
         }
+        if (workspaceTagLabel != null) {
+            workspaceTagLabel.setText("📁 " + activeProjectName());
+        }
+    }
+
+    private String activeProjectName() {
+        String path = prefs.getString("git_repo_path", "");
+        if (path.isEmpty()) return "Workdir";
+        int lastSlash = path.lastIndexOf('/');
+        return lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
     }
 
     private String sandboxLabel(String mode) {
@@ -5202,6 +5329,17 @@ public class MainActivity extends FragmentActivity {
         lpModelTag.setMargins(dp(6), 0, 0, 0);
         actionRow.addView(modelTagLabel, lpModelTag);
 
+        workspaceTagLabel = cText("📁 " + activeProjectName(), 11.5f, Theme.TEXT_MUTED, true, false);
+        workspaceTagLabel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        workspaceTagLabel.setPadding(dp(9), dp(4), dp(9), dp(4));
+        workspaceTagLabel.setOnClickListener(v -> {
+            vibrateTick();
+            panels.showProjectPicker();
+        });
+        LinearLayout.LayoutParams lpWsTag = new LinearLayout.LayoutParams(-2, -2);
+        lpWsTag.setMargins(dp(6), 0, 0, 0);
+        actionRow.addView(workspaceTagLabel, lpWsTag);
+
         View spring = new View(this);
         actionRow.addView(spring, new LinearLayout.LayoutParams(0, 1, 1));
 
@@ -6104,6 +6242,14 @@ public class MainActivity extends FragmentActivity {
         addCustomPopupItem(root, "File Explorer", R.drawable.ic_folder, Theme.ACCENT, () -> {
             popupWindow.dismiss();
             openFileExplorerModal(".");
+        });
+        addCustomPopupItem(root, "Visual Git Diff", R.drawable.ic_tune, Theme.BLUE, () -> {
+            popupWindow.dismiss();
+            panels.showFullGitDiffViewer();
+        });
+        addCustomPopupItem(root, "Pilih Proyek / Folder", R.drawable.ic_folder, Theme.TEXT_MAIN, () -> {
+            popupWindow.dismiss();
+            panels.showProjectPicker();
         });
         addCustomPopupItem(root, "Quick Terminal (PTY)", R.drawable.ic_code, Theme.GREEN, () -> {
             popupWindow.dismiss();

@@ -46,6 +46,13 @@ final class TaskNotificationManager {
             PendingIntent pi = PendingIntent.getActivity(context, 100, intent,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
+            // Action: Copy Result to Clipboard directly from notification
+            Intent copyIntent = new Intent(context, NotificationActionReceiver.class);
+            copyIntent.setAction(NotificationActionReceiver.ACTION_COPY_TEXT);
+            copyIntent.putExtra(NotificationActionReceiver.EXTRA_TEXT_TO_COPY, details != null ? details : "");
+            PendingIntent piCopy = PendingIntent.getBroadcast(context, 101, copyIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
             boolean authError = details != null &&
                     (details.contains("Unauthorized") || details.contains("401"));
             String emoji = success ? "✅" : (authError ? "🔒" : "⚠️");
@@ -65,7 +72,10 @@ final class TaskNotificationManager {
                             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                             .setDefaults(androidx.core.app.NotificationCompat.DEFAULT_ALL)
                             .setAutoCancel(true)
-                            .setContentIntent(pi);
+                            .setContentIntent(pi)
+                            .addAction(R.drawable.ic_open_in_new, "Buka Sesi", pi)
+                            .addAction(R.drawable.ic_content_copy, "Salin Hasil", piCopy);
+
             nm.notify(NOTIFY_RESULT_ID, builder.build());
         } catch (Exception ignored) {}
     }

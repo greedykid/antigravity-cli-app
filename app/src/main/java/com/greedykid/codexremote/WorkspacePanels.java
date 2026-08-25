@@ -227,7 +227,7 @@ public class WorkspacePanels {
         lp.setMargins(0, dp(10), 0, 0);
         root.addView(scroll, lp);
 
-        body.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
+        body.addView(cText("Memuat file...", 13f, Theme.TEXT_MUTED, false, false));
 
         executor.execute(() -> {
             try {
@@ -246,23 +246,55 @@ public class WorkspacePanels {
                     String lang = json.optString("language", "");
                     final String content = json.optString("content", "");
                     final boolean truncated = json.optBoolean("truncated", false);
+                    int lineCount = content.isEmpty() ? 0 : content.split("\n").length;
 
-                    // Editing a truncated file would silently drop the tail.
+                    // Header Info & Quick Actions Bar
+                    LinearLayout actionRow = new LinearLayout(act);
+                    actionRow.setOrientation(LinearLayout.HORIZONTAL);
+                    actionRow.setGravity(Gravity.CENTER_VERTICAL);
+                    actionRow.setPadding(0, 0, 0, dp(10));
+
+                    TextView metaBadge = cText((lang.isEmpty() ? "text" : lang) + " • " + lineCount + " baris • " + humanSize(json.optLong("size")),
+                            11.5f, Theme.TEXT_MUTED, true, false);
+                    metaBadge.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 8));
+                    metaBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
+                    actionRow.addView(metaBadge);
+
+                    View spring = new View(act);
+                    actionRow.addView(spring, new LinearLayout.LayoutParams(0, 1, 1));
+
+                    // Copy Content
+                    TextView copyBtn = cText("Salin", 12f, Theme.TEXT_MAIN, true, false);
+                    copyBtn.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+                    copyBtn.setPadding(dp(10), dp(5), dp(10), dp(5));
+                    copyBtn.setOnClickListener(v -> {
+                        android.content.ClipboardManager cm = (android.content.ClipboardManager) act.getSystemService(Activity.CLIPBOARD_SERVICE);
+                        if (cm != null) {
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("File: " + path, content));
+                            Toast.makeText(act, "Isi file disalin ke clipboard ✓", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                    LinearLayout.LayoutParams lpCopy = new LinearLayout.LayoutParams(-2, -2);
+                    lpCopy.setMargins(dp(6), 0, 0, 0);
+                    actionRow.addView(copyBtn, lpCopy);
+
+                    // Edit File
                     if (!truncated) {
-                        TextView edit = cText("Edit file", 13.5f, Theme.ACCENT, true, false);
-                        edit.setGravity(Gravity.CENTER);
-                        edit.setPadding(dp(14), dp(11), dp(14), dp(11));
-                        edit.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
-                        edit.setOnClickListener(v -> {
+                        TextView editBtn = cText("Edit", 12f, Theme.ACCENT, true, false);
+                        editBtn.setBackground(cBox(Theme.ACCENT_SOFT, Theme.BORDER, 1, 10));
+                        editBtn.setPadding(dp(12), dp(5), dp(12), dp(5));
+                        editBtn.setOnClickListener(v -> {
                             dialog.dismiss();
                             showFileEditor(path, content);
                         });
-                        LinearLayout.LayoutParams lpEdit = new LinearLayout.LayoutParams(-1, -2);
-                        lpEdit.setMargins(0, 0, 0, dp(10));
-                        body.addView(edit, lpEdit);
+                        LinearLayout.LayoutParams lpEdit = new LinearLayout.LayoutParams(-2, -2);
+                        lpEdit.setMargins(dp(6), 0, 0, 0);
+                        actionRow.addView(editBtn, lpEdit);
                     }
 
-                    // Reuse the markdown code-block styling by fencing the content.
+                    body.addView(actionRow);
+
+                    // Render highlighted markdown code block
                     renderMarkdownIntoContainer(body, "```" + lang + "\n" + content + "\n```", false);
                     if (truncated) {
                         body.addView(cText("… dipotong di 512 KB — edit dimatikan agar sisanya tidak hilang",
@@ -279,6 +311,10 @@ public class WorkspacePanels {
 
         dialog.setContentView(root);
         dialog.show();
+    }
+
+    public void showFullGitDiffViewer() {
+        showGitDiff("");
     }
 
     // ============================================================
