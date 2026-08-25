@@ -999,6 +999,23 @@ function getTranscript(convId, limit = 1000) {
   return msgs.slice(-limit);
 }
 
+function getLatestAssistantTurn(convId, sinceMs = 0) {
+  if (!convId) return null;
+  try {
+    const turns = getTranscript(convId, 10);
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const t = turns[i];
+      if (t.role === "assistant" && t.content && t.content.trim()) {
+        const turnTime = t.time ? new Date(t.time).getTime() : 0;
+        if (turnTime >= sinceMs - 15000) {
+          return t.content.trim();
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
 // -------------------------------------------------------------
 // CLI PROCESS EXECUTORS
 // -------------------------------------------------------------
@@ -1122,7 +1139,7 @@ function runCodex(prompt, conversationId, model, job) {
   });
 }
 
-function runAgy(prompt, conversationId, resume = false, model, job) {
+function runAgyOnce(prompt, conversationId, resume = false, model, job) {
   return new Promise((resolve, reject) => {
     const extraPath = ":/home/ubuntu/.local/bin:/usr/local/bin";
     const env = Object.assign({}, process.env, {
@@ -1139,6 +1156,7 @@ function runAgy(prompt, conversationId, resume = false, model, job) {
 
     const startTime = Date.now();
     let discoveredConvId = conversationId || null;
+    let lastScanTime = 0;
 
     const child = spawn(AGY_BIN, args, {
       cwd: WORKDIR,
@@ -1153,7 +1171,9 @@ function runAgy(prompt, conversationId, resume = false, model, job) {
       const text = chunk.toString();
       output += text;
 
-      if (!discoveredConvId) {
+      const now = Date.now();
+      if (!discoveredConvId && (now - lastScanTime > 2000)) {
+        lastScanTime = now;
         discoveredConvId = findLatestAgyConversationId(startTime - 3000);
         if (discoveredConvId && job) {
           jobs.update(job.id, { conversationId: discoveredConvId });
@@ -1198,11 +1218,54 @@ function runAgy(prompt, conversationId, resume = false, model, job) {
           response: output.trim() || "Done.",
           sessionId: discoveredConvId
         });
-      } else {
-        reject(new Error((error || output || `Antigravity CLI exited with code ${code}`).trim()));
+        return;
       }
+
+      // If CLI exited with error/stall, check if the response was actually recorded in transcript
+      const recoveredResponse = getLatestAssistantTurn(discoveredConvId || conversationId, startTime);
+      if (recoveredResponse) {
+        resolve({
+          response: recoveredResponse,
+          sessionId: discoveredConvId
+        });
+        return;
+      }
+
+      reject(new Error((error || output || `Antigravity CLI exited with code ${code}`).trim()));
     });
   });
+}
+
+async function runAgy(prompt, conversationId, resume = false, model, job) {
+  const maxRetries = 2;
+  let lastError = null;
+  let currentConvId = conversationId;
+
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    try {
+      const result = await runAgyOnce(prompt, currentConvId, resume, model, job);
+      return result;
+    } catch (err) {
+      lastError = err;
+      const errMsg = (err && err.message) || "";
+      const isTransient = /subscriber fell behind|interrupted before the response finished|transport is closing|stalled for/i.test(errMsg);
+
+      if (isTransient && attempt <= maxRetries) {
+        if (job) {
+          events.broadcast("cli.output", {
+            jobId: job.id,
+            engine: "antigravity",
+            conversationId: currentConvId,
+            chunk: `\n[Sistem] Sambungan stream agen terhenti sesaat (${attempt}/${maxRetries}), mencoba menyambung ulang otomatis...\n`
+          });
+        }
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 
 // -------------------------------------------------------------
