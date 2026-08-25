@@ -1479,14 +1479,26 @@ public class MainActivity extends FragmentActivity {
         ((LinearLayout) lockOverlay).setGravity(Gravity.CENTER);
         lockOverlay.setBackgroundColor(Theme.BG);
         lockOverlay.addView(cText("Aplikasi terkunci", 20, Theme.TEXT_MAIN, true, false));
-        TextView unlockHint = cText("Autentikasi untuk melanjutkan.", 14, Theme.TEXT_LIGHT, false, false);
+        TextView unlockHint = cText("Ketuk untuk autentikasi biometrik.", 14, Theme.TEXT_LIGHT, false, false);
         unlockHint.setPadding(dp(24), dp(8), dp(24), 0);
         lockOverlay.addView(unlockHint);
+        lockOverlay.setOnClickListener(v -> {
+            if (prefs.getBoolean("biometric_lock_enabled", false)) {
+                showBiometricLock();
+            }
+        });
         rootFrame.addView(lockOverlay, new FrameLayout.LayoutParams(-1, -1));
 
         setContentView(rootFrame);
 
-        if (!isUnlocked) showBiometricLock();
+        boolean isBioLockEnabled = prefs.getBoolean("biometric_lock_enabled", false);
+        if (isBioLockEnabled) {
+            lockOverlay.setVisibility(View.VISIBLE);
+            if (!isUnlocked) showBiometricLock();
+        } else {
+            isUnlocked = true;
+            lockOverlay.setVisibility(View.GONE);
+        }
 
         showScreen(0);
     }
@@ -2751,8 +2763,52 @@ public class MainActivity extends FragmentActivity {
         addSettingsRowItem(g4, R.drawable.ic_graphic_eq, "Suara", null, () -> startVoiceRecognition(), false);
         list.addView(g4);
 
-        // Group 5: Umpan balik haptik, Notifikasi, Privasi
+        // Group 5: Keamanan, Notifikasi, Haptik, Privasi
         LinearLayout g5 = createSettingsGroupContainer();
+
+        // Biometric Lock Switch Row
+        LinearLayout bioRow = new LinearLayout(this);
+        bioRow.setOrientation(LinearLayout.HORIZONTAL);
+        bioRow.setGravity(Gravity.CENTER_VERTICAL);
+        bioRow.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        ImageView bioIc = cIcon(R.drawable.ic_fingerprint, 22, Theme.TEXT_MAIN);
+        bioRow.addView(bioIc);
+
+        LinearLayout bioTextCol = new LinearLayout(this);
+        bioTextCol.setOrientation(LinearLayout.VERTICAL);
+        bioTextCol.setPadding(dp(12), 0, dp(8), 0);
+
+        TextView bioLabel = cText("Kunci Sidik Jari / Biometrik", 14.5f, Theme.TEXT_MAIN, false, false);
+        bioTextCol.addView(bioLabel);
+
+        TextView bioSub = cText("Minta autentikasi saat membuka aplikasi", 11.5f, Theme.TEXT_MUTED, false, false);
+        bioTextCol.addView(bioSub);
+        bioRow.addView(bioTextCol, new LinearLayout.LayoutParams(0, -2, 1));
+
+        Switch bioSwitch = new Switch(this);
+        bioSwitch.setChecked(prefs.getBoolean("biometric_lock_enabled", false));
+        bioSwitch.setOnCheckedChangeListener((btn, isChecked) -> {
+            if (isChecked) {
+                BiometricManager bm = BiometricManager.from(MainActivity.this);
+                int canAuth = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK |
+                        BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+                if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {
+                    bioSwitch.setChecked(false);
+                    Toast.makeText(MainActivity.this, "Perangkat belum memiliki sidik jari atau PIN terdaftar di pengaturan Android.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                prefs.edit().putBoolean("biometric_lock_enabled", true).apply();
+                Toast.makeText(MainActivity.this, "Kunci biometrik diaktifkan.", Toast.LENGTH_SHORT).show();
+            } else {
+                prefs.edit().putBoolean("biometric_lock_enabled", false).apply();
+                Toast.makeText(MainActivity.this, "Kunci biometrik dinonaktifkan.", Toast.LENGTH_SHORT).show();
+            }
+        });
+        bioRow.addView(bioSwitch);
+        g5.addView(bioRow);
+
+        addDividerLine(g5);
 
         // Haptic Feedback Switch Row
         LinearLayout hapticRow = new LinearLayout(this);
@@ -8541,11 +8597,17 @@ public class MainActivity extends FragmentActivity {
     }
 
     private void showBiometricLock() {
+        if (!prefs.getBoolean("biometric_lock_enabled", false)) {
+            isUnlocked = true;
+            if (lockOverlay != null) lockOverlay.setVisibility(View.GONE);
+            return;
+        }
         BiometricManager bm = BiometricManager.from(this);
         int canAuth = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK |
                 BiometricManager.Authenticators.DEVICE_CREDENTIAL);
         if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {
             isUnlocked = true;
+            if (lockOverlay != null) lockOverlay.setVisibility(View.GONE);
             return;
         }
         Executor executor = ContextCompat.getMainExecutor(this);
@@ -8554,11 +8616,11 @@ public class MainActivity extends FragmentActivity {
                     @Override
                     public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
                         isUnlocked = true;
-                        lockOverlay.setVisibility(View.GONE);
+                        if (lockOverlay != null) lockOverlay.setVisibility(View.GONE);
                     }
                 });
         prompt.authenticate(new BiometricPrompt.PromptInfo.Builder()
-                .setTitle("Buka AI CLI Remote")
+                .setTitle("Buka Antigravity Remote")
                 .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK |
                         BiometricManager.Authenticators.DEVICE_CREDENTIAL)
                 .build());
