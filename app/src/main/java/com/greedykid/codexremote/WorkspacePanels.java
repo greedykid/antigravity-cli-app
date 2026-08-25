@@ -306,6 +306,29 @@ public class WorkspacePanels {
         lpEd.setMargins(0, dp(10), 0, dp(12));
         root.addView(editor, lpEd);
 
+        final String originalContent = initialContent;
+        TextView dirtyIndicator = cText("Belum ada perubahan", 12f, Theme.TEXT_MUTED, false, false);
+        dirtyIndicator.setPadding(dp(4), 0, 0, dp(8));
+        root.addView(dirtyIndicator);
+        editor.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                boolean dirty = !s.toString().equals(originalContent);
+                dirtyIndicator.setText(dirty ? "● Ada perubahan belum disimpan" : "Belum ada perubahan");
+                dirtyIndicator.setTextColor(dirty ? Theme.ACCENT : Theme.TEXT_MUTED);
+            }
+        });
+
+        boolean isHighlightable = path.endsWith(".js") || path.endsWith(".ts") ||
+                path.endsWith(".py") || path.endsWith(".json") || path.endsWith(".sh");
+        if (isHighlightable) {
+            TextView hint = cText("Syntax: " + path.substring(path.lastIndexOf('.') + 1), 11f,
+                    Theme.BLUE, false, false);
+            hint.setPadding(dp(4), dp(4), 0, 0);
+            root.addView(hint);
+        }
+
         LinearLayout actions = new LinearLayout(act);
         actions.setOrientation(LinearLayout.HORIZONTAL);
 
@@ -623,6 +646,15 @@ public class WorkspacePanels {
 
     // Colour-coded diff: green additions, red removals, muted hunk headers.
     private void renderDiffLines(LinearLayout body, String diff) {
+        final boolean[] viewed = {false};
+        TextView viewedToggle = cText("Tandai sudah dibaca", 13f, Theme.ACCENT, true, false);
+        viewedToggle.setPadding(dp(4), dp(4), dp(4), dp(10));
+        viewedToggle.setOnClickListener(v -> {
+            viewed[0] = !viewed[0];
+            viewedToggle.setText(viewed[0] ? "✓ Sudah dibaca" : "Tandai sudah dibaca");
+        });
+        body.addView(viewedToggle);
+
         HorizontalScrollView hScroll = new HorizontalScrollView(act);
         hScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout column = new LinearLayout(act);
@@ -660,6 +692,15 @@ public class WorkspacePanels {
 
         hScroll.addView(column);
         body.addView(hScroll, new LinearLayout.LayoutParams(-1, -2));
+
+        int plus = 0, minus = 0;
+        for (String line : diff.split("\n")) {
+            if (line.startsWith("+") && !line.startsWith("+++")) plus++;
+            if (line.startsWith("-") && !line.startsWith("---")) minus++;
+        }
+        TextView stats = cText("+" + plus + " / −" + minus + " baris", 12f, Theme.TEXT_MUTED, false, false);
+        stats.setPadding(dp(4), dp(8), dp(4), 0);
+        body.addView(stats);
     }
 
     // ============================================================
@@ -822,6 +863,22 @@ public class WorkspacePanels {
                         + (p.optBoolean("isRepo", false) ? "git repo" : "bukan repo");
                 list.addView(buildProjectRow(p.optString("name", pPath), detail, pPath,
                         p.optBoolean("exists", false), dialog, pPath));
+
+                if (p.optBoolean("isRepo", false)) {
+                    executor.execute(() -> {
+                        try {
+                            JSONObject status = bridge.get("/api/git/status?path=" + BridgeClient.encode(pPath), 15000);
+                            String branch = status.optString("branch", "");
+                            int dirty = status.optJSONArray("files") == null ? 0 : status.optJSONArray("files").length();
+                            mainHandler.post(() -> {
+                                TextView summary = cText(branch + " · " + dirty + " file berubah",
+                                        11f, Theme.TEXT_MUTED, false, false);
+                                summary.setPadding(dp(44), dp(2), dp(8), dp(8));
+                                list.addView(summary);
+                            });
+                        } catch (Exception ignored) {}
+                    });
+                }
             }
         }
     }

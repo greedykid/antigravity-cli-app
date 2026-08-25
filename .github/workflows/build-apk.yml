@@ -54,6 +54,15 @@ jobs:
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Product version: $VERSION"
 
+      - name: Run Android lint and unit tests
+        run: |
+          set -o pipefail
+          gradle --no-daemon lint testDebugUnitTest 2>&1 | tee /tmp/gradle_test.log || {
+            ERR=$(tail -n 30 /tmp/gradle_test.log)
+            echo "::error title=Android Lint/Test Error::$ERR"
+            exit 1
+          }
+
       - name: Build debug APK
         run: |
           # Without pipefail a pipeline reports tee's exit status, so a failed

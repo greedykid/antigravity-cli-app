@@ -312,6 +312,7 @@ case "$1" in
         TOKEN="$NEW_TOKEN"
         echo -e "\033[32m✔ Token baru dibuat: $TOKEN\033[0m"
         echo -e "  Restart server lalu scan ulang QR pairing dari HP."
+        echo -e "  Catatan: semua perangkat yang terpasang perlu pairing ulang."
         if systemd_manages codex-bridge; then
             sudo systemctl restart codex-bridge || true
         else

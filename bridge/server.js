@@ -1904,9 +1904,10 @@ const server = http.createServer((req, res) => {
       }
 
       // A leaked token should not be able to spawn CLI runs in a loop.
-      const limit = auditLog.rateLimit("chat", 20, 60 * 1000);
+      const limit = auditLog.rateLimit(`chat:${deviceId(req)}`, 20, 60 * 1000);
       if (!limit.allowed) {
-        audit("chat.rate_limited", { retryAfterMs: limit.retryAfterMs });
+      audit("chat.rate_limited", { retryAfterMs: limit.retryAfterMs });
+      auditLog.log("chat.rate_limited", { retryAfterMs: limit.retryAfterMs, device: deviceId(req) });
         return send(res, 429, {
           error: "Terlalu banyak permintaan. Coba lagi sebentar.",
           retryAfterMs: limit.retryAfterMs

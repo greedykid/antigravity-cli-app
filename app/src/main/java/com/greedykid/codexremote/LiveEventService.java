@@ -204,7 +204,8 @@ public class LiveEventService extends Service {
 
             if (!running.get()) break;
             try {
-                Thread.sleep(backoffMs);
+                long jitter = (long) (Math.random() * Math.min(backoffMs * 0.3, 3000));
+                Thread.sleep(backoffMs + jitter);
             } catch (InterruptedException e) {
                 break;
             }

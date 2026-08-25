@@ -9,12 +9,39 @@ const path = require("path");
 const config = require("./config");
 
 const LOG_FILE = path.join(config.CONFIG_DIR, "audit.jsonl");
+const ARCHIVE_FILE = path.join(config.CONFIG_DIR, "audit-archive.jsonl");
 const MAX_BYTES = 5 * 1024 * 1024;
+const RETENTION_DAYS = 90;
+
+function pruneOldEntries() {
+  try {
+    if (!fs.existsSync(LOG_FILE)) return;
+    const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const lines = fs.readFileSync(LOG_FILE, "utf8").split("\n").filter(Boolean);
+    const kept = [];
+    let archived = false;
+    for (const line of lines) {
+      let entryAt = null;
+      try { entryAt = new Date(JSON.parse(line).at).getTime(); } catch {}
+      if (entryAt && entryAt < cutoff) {
+        if (!archived) {
+          fs.appendFileSync(ARCHIVE_FILE, "", { mode: 0o600 });
+          archived = true;
+        }
+        fs.appendFileSync(ARCHIVE_FILE, line + "\n", { mode: 0o600 });
+      } else {
+        kept.push(line);
+      }
+    }
+    if (archived) fs.writeFileSync(LOG_FILE, kept.join("\n") + (kept.length ? "\n" : ""), { mode: 0o600 });
+  } catch {}
+}
 
 function log(event, details) {
   try {
     fs.mkdirSync(config.CONFIG_DIR, { recursive: true, mode: 0o700 });
     rotateIfLarge();
+    pruneOldEntries();
     const line = JSON.stringify(Object.assign({
       at: new Date().toISOString(),
       event
@@ -69,4 +96,4 @@ function resetLimits() {
   windows.clear();
 }
 
-module.exports = { log, read, rateLimit, resetLimits, LOG_FILE };
+module.exports = { log, read, rateLimit, resetLimits, LOG_FILE, ARCHIVE_FILE, RETENTION_DAYS };
