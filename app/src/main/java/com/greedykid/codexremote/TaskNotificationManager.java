@@ -14,7 +14,7 @@ final class TaskNotificationManager {
 
     private final Context context;
 
-    NotificationManager(Context context) {
+    TaskNotificationManager(Context context) {
         this.context = context;
     }
 
