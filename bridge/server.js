@@ -40,41 +40,113 @@ function commandVersion(command, args) {
   }
 }
 
+const resourceHistory = [];
+
+function recordResourceSample() {
+  try {
+    const stats = serverResourceStats();
+    resourceHistory.push({
+      time: Date.now(),
+      memPercent: stats.memoryPercent,
+      memUsedMb: stats.memoryMb,
+      diskPercent: stats.diskPercent,
+      load1m: Array.isArray(stats.loadAvg) ? stats.loadAvg[0] : 0
+    });
+    if (resourceHistory.length > 30) {
+      resourceHistory.shift();
+    }
+  } catch {}
+}
+
+// Seed initial history points
+for (let i = 0; i < 5; i++) recordResourceSample();
+setInterval(recordResourceSample, 3000);
+
 function operationalHealth() {
   const codex = commandVersion(CODEX_BIN, ["--version"]);
   const agy = commandVersion(AGY_BIN, ["--version"]);
   const workdirExists = fs.existsSync(WORKDIR) && fs.statSync(WORKDIR).isDirectory();
   const gitStatus = git.isRepo(WORKDIR) ? "ok" : "not_repository";
+  const stats = serverResourceStats();
 
   return {
-    engines: { antigravity: agy ? { ok: true, version: agy } : { ok: false }, codex: codex ? { ok: true, version: codex } : { ok: false } },
+    engines: {
+      antigravity: agy ? { ok: true, version: agy } : { ok: false },
+      codex: codex ? { ok: true, version: codex } : { ok: false }
+    },
     filesystem: { ok: workdirExists, workdir: WORKDIR },
     git: gitStatus,
     runningJobs: jobs.running().length,
-    server: serverResourceStats()
+    server: stats,
+    history: resourceHistory
   };
 }
 
 function serverResourceStats() {
-  const stats = { memoryMb: null, diskFreeGb: null, diskTotalGb: null, uptimeSeconds: Math.round(process.uptime()) };
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  let memTotalMb = Math.round(totalMem / (1024 * 1024));
+  let memFreeMb = Math.round(freeMem / (1024 * 1024));
+  let memUsedMb = memTotalMb - memFreeMb;
+
   try {
     if (fs.existsSync("/proc/meminfo")) {
       const meminfo = fs.readFileSync("/proc/meminfo", "utf8");
-      const total = Number((meminfo.match(/MemTotal:\\s+(\\d+) kB/) || [])[1]);
-      const available = Number((meminfo.match(/MemAvailable:\\s+(\\d+) kB/) || [])[1]);
-      if (total && Number.isFinite(available)) stats.memoryMb = Math.round((total - available) / 1024);
+      const total = Number((meminfo.match(/MemTotal:\s+(\d+) kB/) || [])[1]);
+      const available = Number((meminfo.match(/MemAvailable:\s+(\d+) kB/) || [])[1]);
+      if (total && Number.isFinite(available)) {
+        memTotalMb = Math.round(total / 1024);
+        memFreeMb = Math.round(available / 1024);
+        memUsedMb = memTotalMb - memFreeMb;
+      }
     }
   } catch {}
+
+  const memPercent = memTotalMb > 0 ? Math.round((memUsedMb / memTotalMb) * 100) : 0;
+
+  let diskTotalGb = null;
+  let diskUsedGb = null;
+  let diskFreeGb = null;
+  let diskPercent = 0;
+
   try {
-    const result = spawnSync("df", ["-BG", WORKDIR], { encoding: "utf8", timeout: 2000 });
-    const line = (result.stdout || "").split("\\n").filter(l => l.includes("/")).pop();
-    if (line) {
-      const parts = line.split(/\\s+/);
-      stats.diskTotalGb = parseInt(parts[1], 10) || null;
-      stats.diskFreeGb = parseInt(parts[3], 10) || null;
+    const result = spawnSync("df", ["-m", WORKDIR || "/home/ubuntu"], { encoding: "utf8", timeout: 2000 });
+    const lines = (result.stdout || "").trim().split("\n");
+    if (lines.length >= 2) {
+      const parts = lines[lines.length - 1].split(/\s+/);
+      if (parts.length >= 5) {
+        const totalMb = parseInt(parts[1], 10) || 0;
+        const usedMb = parseInt(parts[2], 10) || 0;
+        const availMb = parseInt(parts[3], 10) || 0;
+        diskTotalGb = parseFloat((totalMb / 1024).toFixed(1));
+        diskUsedGb = parseFloat((usedMb / 1024).toFixed(1));
+        diskFreeGb = parseFloat((availMb / 1024).toFixed(1));
+        diskPercent = totalMb > 0 ? Math.round((usedMb / totalMb) * 100) : 0;
+      }
     }
   } catch {}
-  return stats;
+
+  const cpus = os.cpus() || [];
+  const load = os.loadavg() || [0, 0, 0];
+
+  return {
+    memoryMb: memUsedMb,
+    memoryTotalMb: memTotalMb,
+    memoryFreeMb: memFreeMb,
+    memoryPercent: memPercent,
+    diskTotalGb: diskTotalGb,
+    diskUsedGb: diskUsedGb,
+    diskFreeGb: diskFreeGb,
+    diskPercent: diskPercent,
+    cpuCores: cpus.length,
+    cpuModel: cpus.length > 0 ? cpus[0].model.trim() : "Unknown CPU",
+    loadAvg: [parseFloat(load[0].toFixed(2)), parseFloat(load[1].toFixed(2)), parseFloat(load[2].toFixed(2))],
+    uptimeSeconds: Math.round(os.uptime()),
+    processUptimeSeconds: Math.round(process.uptime()),
+    platform: `${os.type()} ${os.arch()}`,
+    hostname: os.hostname(),
+    nodeVersion: process.version
+  };
 }
 
 function readBridgeLogs(lines = 200) {

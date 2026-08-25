@@ -1135,6 +1135,7 @@ public class MainActivity extends FragmentActivity {
     private FrameLayout viewChatContainer;
     private FrameLayout viewSettingsContainer;
     private FrameLayout viewTerminalContainer;
+    private FrameLayout viewOperationsContainer;
     private TextView fullTermOutputView;
     private ScrollView fullTermScrollView;
     private EditText fullTermInput;
@@ -1253,7 +1254,10 @@ public class MainActivity extends FragmentActivity {
         bridge = new BridgeClient(prefs);
         promptLibrary = new PromptLibrary(prefs);
         utilityPanels = new UtilityPanels(this, bridge, promptLibrary, executor, mainHandler);
-        operationsPanel = new OperationsPanel(this, bridge, executor, mainHandler);
+        operationsPanel = new OperationsPanel(this, bridge, executor, mainHandler, () -> {
+            if (currentScreen == 4) showScreen(0);
+            else showScreen(4);
+        });
         transcriptCache = new TranscriptCache(this);
         if (prefs.getString("device_id", "").isEmpty()) {
             prefs.edit().putString("device_id", java.util.UUID.randomUUID().toString()).apply();
@@ -1334,7 +1338,7 @@ public class MainActivity extends FragmentActivity {
     public void onBackPressed() {
         if (isSidebarOpen) {
             closeSidebar();
-        } else if (currentScreen == 2) {
+        } else if (currentScreen == 2 || currentScreen == 3 || currentScreen == 4) {
             showScreen(0);
         } else if (currentScreen == 1 && navigatedFromHub) {
             navigatedFromHub = false;
@@ -1452,6 +1456,12 @@ public class MainActivity extends FragmentActivity {
         viewTerminalContainer.setVisibility(View.GONE);
         buildTerminalScreen(viewTerminalContainer);
         mainContentContainer.addView(viewTerminalContainer, new LinearLayout.LayoutParams(-1, -1));
+
+        // Screen 4: Server Operations Dashboard Screen
+        viewOperationsContainer = new FrameLayout(this);
+        viewOperationsContainer.setVisibility(View.GONE);
+        operationsPanel.buildOperationsScreen(viewOperationsContainer);
+        mainContentContainer.addView(viewOperationsContainer, new LinearLayout.LayoutParams(-1, -1));
 
         rootFrame.addView(mainContentContainer, new FrameLayout.LayoutParams(-1, -1));
 
@@ -1619,9 +1629,9 @@ public class MainActivity extends FragmentActivity {
             showServerSwitcher();
         });
 
-        addSidebarMenuItem(body, R.drawable.ic_analytics, "Server Operations", null, -1, false, () -> {
+        addSidebarMenuItem(body, R.drawable.ic_analytics, "Server Operations", null, 4, false, () -> {
             closeSidebar();
-            operationsPanel.show();
+            showScreen(4);
         });
 
         // Section: Sistem & Keamanan
@@ -1978,6 +1988,16 @@ public class MainActivity extends FragmentActivity {
         viewSettingsContainer.setVisibility(screenIndex == 2 ? View.VISIBLE : View.GONE);
         if (viewTerminalContainer != null) {
             viewTerminalContainer.setVisibility(screenIndex == 3 ? View.VISIBLE : View.GONE);
+        }
+        if (viewOperationsContainer != null) {
+            viewOperationsContainer.setVisibility(screenIndex == 4 ? View.VISIBLE : View.GONE);
+        }
+
+        if (screenIndex == 4) {
+            stopAutoRefresh();
+            if (operationsPanel != null) operationsPanel.onScreenShown();
+        } else {
+            if (operationsPanel != null) operationsPanel.onScreenHidden();
         }
 
         if (screenIndex == 0) {
