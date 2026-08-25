@@ -105,8 +105,7 @@ test("git push requires and consumes a one-time approval", async (t) => {
   fs.mkdirSync(repo);
   execFileSync("git", ["init", "--initial-branch=main"], { cwd: repo });
   execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repo });
-  execFileSync("git", ["config", "user.email", "test@example.com"]);
-  execFileSync("git", ["config", "user.name", "Test"]);
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: repo });
   fs.writeFileSync(path.join(repo, "README.md"), "# test\n");
   execFileSync("git", ["add", "."], { cwd: repo });
   execFileSync("git", ["commit", "-m", "init"], { cwd: repo });

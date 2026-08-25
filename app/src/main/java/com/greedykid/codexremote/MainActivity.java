@@ -3,10 +3,10 @@ package com.greedykid.codexremote;
 import android.Manifest;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
-import android.app.Activity;
 import android.app.AlertDialog;
 import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
+import androidx.fragment.app.FragmentActivity;
 import androidx.core.content.ContextCompat;
 import android.app.Dialog;
 import android.content.ClipData;
@@ -125,7 +125,7 @@ import android.text.TextWatcher;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainActivity extends Activity {
+public class MainActivity extends FragmentActivity {
     private boolean isAppInForeground = true;
     private String liveStreamingAssistantText = "";
     private String lastFailedPrompt = null;
