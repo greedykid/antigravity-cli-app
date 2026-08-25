@@ -896,7 +896,9 @@ function runCodex(prompt, conversationId, model, job) {
     let error = "";
     let lastCodexError = "";
     let agentMessage = "";
+    let lastActivity = Date.now();
     child.stdout.on("data", chunk => {
+      lastActivity = Date.now();
       const text = chunk.toString();
       fullOutput += text;
       for (const line of text.split("\n")) {
@@ -1263,14 +1265,23 @@ async function runChatJob(job, payload) {
     return result;
   } catch (err) {
     const message = err.message || "Failed to execute command";
-    jobs.finish(job.id, { state: "failed", error: message });
+    const failedTurns = [
+      { role: "user", content: prompt, time: new Date().toISOString() },
+      { role: "assistant", content: `**Gagal menjalankan perintah**\n\n\`\`\`\n${message}\n\`\`\``, time: new Date().toISOString() }
+    ];
+    jobs.finish(job.id, {
+      state: "failed",
+      error: message,
+      turns: failedTurns,
+      conversationId: job.conversationId || conversationId
+    });
     audit("chat.failed", { jobId: job.id, engine, error: message });
 
     events.broadcast("task.finished", {
       ok: false,
       jobId: job.id,
       engine,
-      conversationId,
+      conversationId: job.conversationId || conversationId,
       error: message,
       finishedAt: new Date().toISOString()
     });

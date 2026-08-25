@@ -7017,8 +7017,6 @@ public class MainActivity extends FragmentActivity {
                     String error = finalRes.isNull("error") ? "" : finalRes.optString("error", "");
                     if (!error.isEmpty()) {
                         Toast.makeText(MainActivity.this, error, Toast.LENGTH_LONG).show();
-                        renderAssistantMessageBlock("**Gagal menjalankan perintah**\n\n```\n" + error + "\n```",
-                                new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()), false);
                     }
                     // The user may have opened another session while this ran;
                     // painting the result now would swap the transcript underneath them.
@@ -7313,6 +7311,22 @@ public class MainActivity extends FragmentActivity {
                     JSONObject a = new JSONObject();
                     a.put("role", "assistant");
                     a.put("content", resp);
+                    turns.put(a);
+                }
+            }
+            if ((turns == null || turns.length() == 0) && json.has("error")) {
+                String err = json.optString("error", "").trim();
+                if (!err.isEmpty()) {
+                    turns = new JSONArray();
+                    if (pendingOptimisticUserPrompt != null && !pendingOptimisticUserPrompt.isEmpty()) {
+                        JSONObject u = new JSONObject();
+                        u.put("role", "user");
+                        u.put("content", pendingOptimisticUserPrompt);
+                        turns.put(u);
+                    }
+                    JSONObject a = new JSONObject();
+                    a.put("role", "assistant");
+                    a.put("content", "**Gagal menjalankan perintah**\n\n```\n" + err + "\n```");
                     turns.put(a);
                 }
             }
