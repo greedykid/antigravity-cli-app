@@ -1480,6 +1480,45 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && pathname === "/api/maintenance/restart") {
+    if (!authorized(req)) return send(res, 401, { error: "Unauthorized" });
+    send(res, 200, { ok: true, message: "Graceful restart initiated in background" });
+    setTimeout(() => {
+      try {
+        const { spawn } = require("child_process");
+        const child = spawn("bash", ["-c", "sleep 0.5 && codex-remote restart --detach >/dev/null 2>&1"], {
+          detached: true,
+          stdio: "ignore"
+        });
+        child.unref();
+      } catch (e) {}
+    }, 300);
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/maintenance/prune") {
+    if (!authorized(req)) return send(res, 401, { error: "Unauthorized" });
+    try {
+      const uploadDir = path.join(config.CONFIG_DIR, "uploads");
+      if (fs.existsSync(uploadDir)) {
+        const now = Date.now();
+        const files = fs.readdirSync(uploadDir);
+        for (const file of files) {
+          const filePath = path.join(uploadDir, file);
+          try {
+            const stat = fs.statSync(filePath);
+            if (now - stat.mtimeMs > 24 * 60 * 60 * 1000) {
+              fs.unlinkSync(filePath);
+            }
+          } catch (e) {}
+        }
+      }
+      return send(res, 200, { ok: true, message: "Pruned temporary cache" });
+    } catch (err) {
+      return send(res, 500, { error: err.message });
+    }
+  }
+
   if ((req.method === "GET" && pathname === "/api/devices") ||
       (req.method === "POST" && pathname === "/api/devices/revoke")) {
     if (!authorized(req)) return send(res, 401, { error: "Unauthorized" });
