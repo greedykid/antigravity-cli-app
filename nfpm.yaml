@@ -1,0 +1,29 @@
+# NFPM Configuration for Alpine APK and Debian DEB packaging
+name: "antigravity-cli-app"
+arch: "amd64"
+platform: "linux"
+version: "v1.0.0"
+section: "default"
+priority: "extra"
+maintainer: "Antigravity Devs <dev@antigravity.google>"
+description: "Smooth AI Terminal User Interface (TUI) powered by Go & Bubble Tea"
+vendor: "Antigravity"
+homepage: "https://antigravity.google"
+license: "Apache-2.0"
+
+contents:
+  - src: dist/agy-linux-amd64
+    dst: /usr/local/bin/agy
+    file_info:
+      mode: 0755
+
+apk:
+  maintainer: "Antigravity Devs <dev@antigravity.google>"
+  description: "Antigravity CLI Alpine Package (APK)"
+  signature:
+    key_file: ""
+    key_passphrase: ""
+
+deb:
+  fields:
+    Recommends: ca-certificates

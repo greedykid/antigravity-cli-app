@@ -1,0 +1,115 @@
+name: Automated Latest Release (with APK & Binaries)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Multi-Arch, APK, and Deploy Latest Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Setup Java & Android SDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Install NFPM & Build Tools (for Alpine APK / Deb packaging)
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+
+      - name: Download & Verify Go Modules
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Build Binaries (Linux, macOS, Windows, Android)
+        run: |
+          mkdir -p dist
+          
+          # Linux AMD64 & ARM64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/agy-linux-amd64 ./cmd/agy
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/agy-linux-arm64 ./cmd/agy
+
+          # Darwin / macOS
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/agy-darwin-amd64 ./cmd/agy
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/agy-darwin-arm64 ./cmd/agy
+
+          # Windows AMD64
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/agy-windows-amd64.exe ./cmd/agy
+
+          # Android CLI Binary (Termux / Native Android Shell)
+          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -ldflags="-s -w" -o dist/agy-android-arm64 ./cmd/agy
+
+      - name: Package Alpine APK & Debian DEB via NFPM
+        run: |
+          # Package Alpine .apk
+          nfpm package --config nfpm.yaml --packager apk --target dist/
+          # Package Debian .deb
+          nfpm package --config nfpm.yaml --packager deb --target dist/
+
+      - name: Create Archives & Standalone APK Package
+        run: |
+          cd dist
+          tar -czvf agy-linux-amd64.tar.gz agy-linux-amd64
+          tar -czvf agy-linux-arm64.tar.gz agy-linux-arm64
+          tar -czvf agy-darwin-amd64.tar.gz agy-darwin-amd64
+          tar -czvf agy-darwin-arm64.tar.gz agy-darwin-arm64
+          zip agy-windows-amd64.zip agy-windows-amd64.exe
+          tar -czvf agy-android-arm64.tar.gz agy-android-arm64
+
+          # Create standalone Android/Alpine installer package
+          cp *.apk antigravity-cli-app-latest.apk || true
+
+      - name: Tag and Update 'latest' Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f latest
+          git push origin latest --force
+
+      - name: Publish to GitHub Releases (Latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Antigravity CLI - Latest Build"
+          body: |
+            ## 🚀 Automated Latest Release
+            
+            Build otomatis dari commit terbaru pada branch `main`.
+            
+            ### 📦 Output Binaries & Packages:
+            - **Alpine / Package Manager APK**: `antigravity-cli-app-latest.apk` / `*.apk`
+            - **Debian / Ubuntu DEB**: `*.deb`
+            - **Linux (x86_64 / ARM64)**: `agy-linux-amd64.tar.gz` / `agy-linux-arm64.tar.gz`
+            - **macOS (Apple Silicon & Intel)**: `agy-darwin-arm64.tar.gz` / `agy-darwin-amd64.tar.gz`
+            - **Windows (x64)**: `agy-windows-amd64.zip`
+            - **Android CLI (Termux ARM64)**: `agy-android-arm64.tar.gz`
+          files: |
+            dist/*.apk
+            dist/*.deb
+            dist/*.tar.gz
+            dist/*.zip
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
