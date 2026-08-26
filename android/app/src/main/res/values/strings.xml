@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Antigravity AI</string>
+    <string name="prompt_placeholder">Ketik pesan prompt...</string>
+    <string name="send">Kirim</string>
+</resources>
