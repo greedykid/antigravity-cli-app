@@ -5276,21 +5276,21 @@ public class MainActivity extends FragmentActivity {
 
         LinearLayout composerCard = new LinearLayout(this);
         composerCard.setOrientation(LinearLayout.VERTICAL);
-        composerCard.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 24));
-        composerCard.setPadding(dp(16), dp(12), dp(12), dp(10));
+        composerCard.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 22));
+        composerCard.setPadding(dp(14), dp(10), dp(10), dp(10));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             composerCard.setElevation(dp(8));
         }
 
         promptInput = new EditText(this);
         promptInput.setHint("Code anything...");
-        promptInput.setHintTextColor(Theme.TEXT_LIGHT);
+        promptInput.setHintTextColor(Theme.TEXT_MUTED);
         promptInput.setTextColor(Theme.TEXT_MAIN);
-        promptInput.setTextSize(15.5f);
-        promptInput.setTypeface(Typeface.SERIF);
+        promptInput.setTextSize(15f);
+        promptInput.setTypeface(Typeface.SANS_SERIF);
         promptInput.setBackgroundColor(Color.TRANSPARENT);
         promptInput.setMaxLines(6);
-        promptInput.setPadding(0, 0, 0, dp(8));
+        promptInput.setPadding(dp(2), dp(2), dp(2), dp(8));
         promptInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
@@ -5300,56 +5300,72 @@ public class MainActivity extends FragmentActivity {
         });
         composerCard.addView(promptInput);
 
-        // Action Toolbar
+        // Action Toolbar: Left-side HorizontalScrollView for chips/tools, Right-side fixed Send button
         LinearLayout actionRow = new LinearLayout(this);
         actionRow.setOrientation(LinearLayout.HORIZONTAL);
         actionRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        btnAttach = cIconButton(R.drawable.ic_add, 24, 38, Theme.TEXT_MUTED);
+        HorizontalScrollView toolScroll = new HorizontalScrollView(this);
+        toolScroll.setHorizontalScrollBarEnabled(false);
+        toolScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+
+        LinearLayout toolRow = new LinearLayout(this);
+        toolRow.setOrientation(LinearLayout.HORIZONTAL);
+        toolRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        btnAttach = cIconButton(R.drawable.ic_add, 22, 34, Theme.TEXT_MUTED);
         btnAttach.setOnClickListener(v -> openMultiFilePicker());
-        actionRow.addView(btnAttach);
+        toolRow.addView(btnAttach);
 
-        btnVoice = cIconButton(R.drawable.ic_mic, 22, 38, Theme.TEXT_MUTED);
+        btnVoice = cIconButton(R.drawable.ic_mic, 20, 34, Theme.TEXT_MUTED);
         btnVoice.setOnClickListener(v -> startVoiceRecognition());
-        actionRow.addView(btnVoice);
+        toolRow.addView(btnVoice);
 
-        repoTagLabel = cText(engineShortLabel(currentEngine), 12f, Theme.ACCENT, true, false);
-        repoTagLabel.setBackground(cBox(Theme.ACCENT_SOFT, Theme.BORDER, 1, 12));
-        repoTagLabel.setPadding(dp(10), dp(4), dp(10), dp(4));
+        repoTagLabel = cText(engineShortLabel(currentEngine), 11.5f, Theme.ACCENT, true, false);
+        repoTagLabel.setBackground(cBox(Theme.ACCENT_SOFT, Theme.BORDER, 1, 10));
+        repoTagLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
         repoTagLabel.setOnClickListener(v -> showEngineSwitcher());
         LinearLayout.LayoutParams lpTag = new LinearLayout.LayoutParams(-2, -2);
-        lpTag.setMargins(dp(6), 0, 0, 0);
-        actionRow.addView(repoTagLabel, lpTag);
+        lpTag.setMargins(dp(4), 0, 0, 0);
+        toolRow.addView(repoTagLabel, lpTag);
 
-        modelTagLabel = cText(displayModel(currentModel), 11.5f, Theme.TEXT_MUTED, true, false);
-        modelTagLabel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
-        modelTagLabel.setPadding(dp(9), dp(4), dp(9), dp(4));
+        modelTagLabel = cText(displayModel(currentModel), 11f, Theme.TEXT_MUTED, true, false);
+        modelTagLabel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+        modelTagLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
+        modelTagLabel.setMaxWidth(dp(130));
+        modelTagLabel.setSingleLine(true);
+        modelTagLabel.setEllipsize(TextUtils.TruncateAt.END);
         modelTagLabel.setOnClickListener(v -> showModelPicker());
         LinearLayout.LayoutParams lpModelTag = new LinearLayout.LayoutParams(-2, -2);
-        lpModelTag.setMargins(dp(6), 0, 0, 0);
-        actionRow.addView(modelTagLabel, lpModelTag);
+        lpModelTag.setMargins(dp(4), 0, 0, 0);
+        toolRow.addView(modelTagLabel, lpModelTag);
 
-        workspaceTagLabel = cText("📁 " + activeProjectName(), 11.5f, Theme.TEXT_MUTED, true, false);
-        workspaceTagLabel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
-        workspaceTagLabel.setPadding(dp(9), dp(4), dp(9), dp(4));
+        workspaceTagLabel = cText("📁 " + activeProjectName(), 11f, Theme.TEXT_MUTED, true, false);
+        workspaceTagLabel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+        workspaceTagLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
+        workspaceTagLabel.setMaxWidth(dp(110));
+        workspaceTagLabel.setSingleLine(true);
+        workspaceTagLabel.setEllipsize(TextUtils.TruncateAt.END);
         workspaceTagLabel.setOnClickListener(v -> {
             vibrateTick();
             panels.showProjectPicker();
         });
         LinearLayout.LayoutParams lpWsTag = new LinearLayout.LayoutParams(-2, -2);
-        lpWsTag.setMargins(dp(6), 0, 0, 0);
-        actionRow.addView(workspaceTagLabel, lpWsTag);
+        lpWsTag.setMargins(dp(4), 0, dp(4), 0);
+        toolRow.addView(workspaceTagLabel, lpWsTag);
 
-        View spring = new View(this);
-        actionRow.addView(spring, new LinearLayout.LayoutParams(0, 1, 1));
+        toolScroll.addView(toolRow, new ViewGroup.LayoutParams(-2, -2));
+        actionRow.addView(toolScroll, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         btnSend = new FrameLayout(this);
-        btnSend.setBackground(cBox(Theme.ACCENT, 0, 0, 18));
-        ImageView sendIcon = cIcon(R.drawable.ic_send, 18, Theme.ON_ACCENT);
+        btnSend.setBackground(cBox(Theme.ACCENT, 0, 0, 17));
+        ImageView sendIcon = cIcon(R.drawable.ic_send, 16, Theme.ON_ACCENT);
         FrameLayout.LayoutParams lpSendIc = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         btnSend.addView(sendIcon, lpSendIc);
         btnSend.setOnClickListener(v -> sendClaudePrompt());
-        actionRow.addView(btnSend, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        LinearLayout.LayoutParams lpSend = new LinearLayout.LayoutParams(dp(34), dp(34));
+        lpSend.setMargins(dp(6), 0, dp(2), 0);
+        actionRow.addView(btnSend, lpSend);
 
         composerCard.addView(actionRow);
         floatingWrapper.addView(composerCard);
@@ -7856,7 +7872,7 @@ public class MainActivity extends FragmentActivity {
             tv.setText(userPromptText);
             tv.setTextSize(15.5f);
             tv.setTextColor(Theme.TEXT_MAIN);
-            tv.setTypeface(Typeface.SERIF);
+            tv.setTypeface(Typeface.SANS_SERIF);
             tv.setLineSpacing(0, 1.25f);
             tv.setTextIsSelectable(true);
             bubble.addView(tv);
