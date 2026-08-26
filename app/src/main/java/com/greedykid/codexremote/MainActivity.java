@@ -4176,12 +4176,20 @@ public class MainActivity extends FragmentActivity {
                 if (assets != null) {
                     for (int i = 0; i < assets.length(); i++) {
                         JSONObject ast = assets.optJSONObject(i);
-                        if (ast != null && ast.optString("name", "").endsWith(".apk")) {
-                            apkDownloadUrl = ast.optString("browser_download_url", "");
-                            apkSize = ast.optLong("size", 0);
-                            assetUpdatedAt = ast.optString("updated_at", ast.optString("created_at", ""));
-                            apkDigest = ast.optString("digest", "");
-                            break;
+                        if (ast != null) {
+                            String name = ast.optString("name", "");
+                            if (name.equals("app-debug.apk")) {
+                                apkDownloadUrl = ast.optString("browser_download_url", "");
+                                apkSize = ast.optLong("size", 0);
+                                assetUpdatedAt = ast.optString("updated_at", ast.optString("created_at", ""));
+                                apkDigest = ast.optString("digest", "");
+                                break;
+                            } else if (apkDownloadUrl == null && name.endsWith(".apk")) {
+                                apkDownloadUrl = ast.optString("browser_download_url", "");
+                                apkSize = ast.optLong("size", 0);
+                                assetUpdatedAt = ast.optString("updated_at", ast.optString("created_at", ""));
+                                apkDigest = ast.optString("digest", "");
+                            }
                         }
                     }
                 }
@@ -4194,24 +4202,6 @@ public class MainActivity extends FragmentActivity {
                 final String finalAssetUpdatedAt = assetUpdatedAt;
                 final String finalApkDigest = apkDigest;
 
-                // Determine if up-to-date
-                long installedTime = 0;
-                String installedVerName = "0.3.0";
-                try {
-                    android.content.pm.PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
-                    installedTime = pInfo.lastUpdateTime;
-                    installedVerName = pInfo.versionName;
-                } catch (Exception ignored) {}
-
-                long releaseAssetTime = 0;
-                if (!assetUpdatedAt.isEmpty()) {
-                    try {
-                        SimpleDateFormat parser = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
-                        parser.setTimeZone(TimeZone.getTimeZone("UTC"));
-                        releaseAssetTime = parser.parse(assetUpdatedAt).getTime();
-                    } catch (Exception ignored) {}
-                }
-
                 String releaseSha = "";
                 Matcher matcher = Pattern.compile("commit\\s+([a-f0-9]{7,40})", Pattern.CASE_INSENSITIVE).matcher(bodyNotes);
                 if (matcher.find()) {
@@ -4223,41 +4213,71 @@ public class MainActivity extends FragmentActivity {
                     currentSha = BuildConfig.GIT_COMMIT_SHA != null ? BuildConfig.GIT_COMMIT_SHA.toLowerCase().trim() : "";
                 } catch (Throwable ignored) {}
 
+                long releaseAssetTime = 0;
+                if (!assetUpdatedAt.isEmpty()) {
+                    try {
+                        SimpleDateFormat parser = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+                        parser.setTimeZone(TimeZone.getTimeZone("UTC"));
+                        releaseAssetTime = parser.parse(assetUpdatedAt).getTime();
+                    } catch (Exception ignored) {}
+                }
+
+                long buildTimestamp = 0;
+                try {
+                    buildTimestamp = BuildConfig.BUILD_TIMESTAMP;
+                } catch (Throwable ignored) {}
+
                 boolean isShaMatch = !releaseSha.isEmpty() && !currentSha.isEmpty() &&
                         (currentSha.startsWith(releaseSha) || releaseSha.startsWith(currentSha));
 
-                String lastInstalledSha = prefs.getString("last_installed_apk_sha", "");
-                if (!lastInstalledSha.isEmpty() && !releaseSha.isEmpty() && releaseSha.equalsIgnoreCase(lastInstalledSha)) {
-                    isShaMatch = true;
+                boolean isUpdateAvailable;
+                if (!releaseSha.isEmpty() && !currentSha.isEmpty()) {
+                    isUpdateAvailable = !isShaMatch;
+                } else if (releaseAssetTime > 0 && buildTimestamp > 0) {
+                    isUpdateAvailable = (releaseAssetTime > (buildTimestamp + 15000));
+                } else {
+                    isUpdateAvailable = false;
                 }
 
-                final boolean isUpToDate = isShaMatch || (installedTime > 0 && releaseAssetTime > 0 && installedTime >= (releaseAssetTime - 90000));
+                final boolean isUpToDate = !isUpdateAvailable;
                 final String finalReleaseSha = releaseSha;
+                final String finalCurrentSha = currentSha;
+                final String shortRelSha = releaseSha.length() >= 7 ? releaseSha.substring(0, 7) : releaseSha;
+                final String shortCurSha = currentSha.length() >= 7 ? currentSha.substring(0, 7) : (currentSha.isEmpty() ? "dev" : currentSha);
+
+                String installedVerName = "0.3.0";
+                try {
+                    android.content.pm.PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+                    installedVerName = pInfo.versionName;
+                } catch (Exception ignored) {}
                 final String finalInstalledVer = installedVerName;
 
                 mainHandler.post(() -> {
                     if (progressBar != null) progressBar.setVisibility(View.GONE);
 
                     if (isUpToDate) {
-                        // --- STATE: UP TO DATE (DISTINCT GREEN LOOK, HIDE DOWNLOAD BUTTON) ---
+                        // --- STATE: UP TO DATE ---
                         updateCard.setBackground(cBox(Theme.GREEN_BG, Theme.GREEN, 1, 14));
                         cardHeadIcon.setImageResource(R.drawable.ic_check);
                         cardHeadIcon.setColorFilter(Theme.GREEN);
                         cardTitle.setText("  Aplikasi Sudah Versi Terbaru");
                         cardTitle.setTextColor(Theme.GREEN);
 
-                        statusView.setText("✓ Versi aplikasi Anda sudah yang paling baru (v" + finalInstalledVer + "). Semua fitur dan perbaikan terbaru telah aktif.");
+                        statusView.setText("✓ Versi aplikasi Anda sudah yang paling baru (v" + finalInstalledVer + " • " + shortCurSha + "). Semua fitur dan perbaikan terbaru telah aktif.");
                         statusView.setTextColor(Theme.GREEN);
 
                         StringBuilder info = new StringBuilder();
                         info.append("Status: Terkini & Siap Digunakan\n");
+                        info.append("Build Terpasang: ").append(shortCurSha);
+                        if (!shortRelSha.isEmpty()) {
+                            info.append(" (Sesuai rilis GitHub: ").append(shortRelSha).append(")");
+                        }
                         if (!publishedAt.isEmpty()) {
-                            info.append("Rilis GitHub: latest • ").append(publishedAt.replace("T", " ").replace("Z", " UTC"));
+                            info.append("\nWaktu Rilis: ").append(publishedAt.replace("T", " ").replace("Z", " UTC"));
                         }
                         detailsView.setText(info.toString().trim());
                         detailsView.setVisibility(View.VISIBLE);
 
-                        // HIDE DOWNLOAD BUTTON AS REQUESTED!
                         btnDownload.setVisibility(View.GONE);
 
                         if (btnReinstall != null) {
@@ -4265,17 +4285,18 @@ public class MainActivity extends FragmentActivity {
                             btnReinstall.setOnClickListener(v -> downloadAndInstallApk(finalApkUrl, statusView, detailsView, btnDownload, btnReinstall, updateCard, progressBar, finalReleaseSha));
                         }
                     } else {
-                        // --- STATE: UPDATE AVAILABLE (DISTINCT ACCENT LOOK, SHOW DOWNLOAD BUTTON) ---
+                        // --- STATE: UPDATE AVAILABLE ---
                         updateCard.setBackground(cBox(Theme.ACCENT_SOFT, Theme.ACCENT, 1, 14));
                         cardHeadIcon.setImageResource(R.drawable.ic_spark);
                         cardHeadIcon.setColorFilter(Theme.ACCENT);
                         cardTitle.setText("  Pembaruan Baru Tersedia!");
                         cardTitle.setTextColor(Theme.ACCENT);
 
-                        statusView.setText("⚡ Versi baru telah tersedia di GitHub! Ketuk tombol di bawah untuk mengunduh dan memasang langsung.");
+                        statusView.setText("⚡ Versi baru (" + (!shortRelSha.isEmpty() ? shortRelSha : "Rilis Baru") + ") telah tersedia di GitHub! Ketuk tombol di bawah untuk mengunduh dan memasang.");
                         statusView.setTextColor(Theme.TEXT_MAIN);
 
                         StringBuilder info = new StringBuilder();
+                        info.append("Versi Saat Ini: ").append(shortCurSha).append(" ➔ ").append("Rilis Baru: ").append(shortRelSha).append("\n");
                         if (!publishedAt.isEmpty()) {
                             info.append("Diterbitkan: ").append(publishedAt.replace("T", " ").replace("Z", " UTC")).append("\n");
                         }
@@ -4289,7 +4310,6 @@ public class MainActivity extends FragmentActivity {
                         detailsView.setText(info.toString().trim());
                         detailsView.setVisibility(View.VISIBLE);
 
-                        // SHOW PROMINENT DOWNLOAD BUTTON!
                         btnDownload.setVisibility(View.VISIBLE);
                         if (btnReinstall != null) btnReinstall.setVisibility(View.GONE);
                         btnDownload.setOnClickListener(v -> downloadAndInstallApk(finalApkUrl, statusView, detailsView, btnDownload, btnReinstall, updateCard, progressBar, finalReleaseSha));
