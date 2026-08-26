@@ -5457,7 +5457,13 @@ public class MainActivity extends FragmentActivity {
             if (show && emptyMascotView.getParent() == null && chatMessagesList != null) {
                 chatMessagesList.addView(emptyMascotView, new LinearLayout.LayoutParams(-1, -2));
             }
-            emptyMascotView.setVisibility(show ? View.VISIBLE : View.GONE);
+            if (show) {
+                emptyMascotView.setVisibility(View.VISIBLE);
+                emptyMascotView.setAlpha(0f);
+                emptyMascotView.animate().alpha(1f).setDuration(250).start();
+            } else {
+                emptyMascotView.setVisibility(View.GONE);
+            }
         }
     }
 
@@ -7871,6 +7877,9 @@ public class MainActivity extends FragmentActivity {
 
         LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(-1, -2);
         lpC.setMargins(0, dp(8), 0, dp(12));
+        container.setAlpha(0f);
+        container.setTranslationY(dp(8));
+        container.animate().alpha(1f).translationY(0f).setDuration(220).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
         chatMessagesList.addView(container, lpC);
     }
 
@@ -8025,6 +8034,15 @@ public class MainActivity extends FragmentActivity {
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(6), 0, dp(14));
+        pillRow.setAlpha(0f);
+        pillRow.animate().alpha(1f).setDuration(200).start();
+        if (isRunning) {
+            android.animation.ObjectAnimator pulse = android.animation.ObjectAnimator.ofFloat(actionHeader, "alpha", 0.65f, 1.0f);
+            pulse.setDuration(800);
+            pulse.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+            pulse.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+            pulse.start();
+        }
         chatMessagesList.addView(pillRow, lp);
         return pillRow;
     }
@@ -8078,6 +8096,8 @@ public class MainActivity extends FragmentActivity {
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, dp(4), 0, dp(8));
+        container.setAlpha(0f);
+        container.animate().alpha(1f).setDuration(200).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
         chatMessagesList.addView(container, lp);
         return container;
     }

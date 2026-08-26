@@ -17,9 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
       - name: Install bridge dependencies
@@ -31,14 +31,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
       - name: Resolve version
@@ -65,9 +65,6 @@ jobs:
 
       - name: Build debug APK
         run: |
-          # Without pipefail a pipeline reports tee's exit status, so a failed
-          # Gradle build looked like a success and the only symptom was the
-          # artifact step finding no APK.
           set -o pipefail
           gradle --no-daemon assembleDebug 2>&1 | tee /tmp/gradle_out.log || {
             ERR=$(grep -A 5 "error:" /tmp/gradle_out.log | head -n 30 | tr '\n' ' ' | cut -c 1-500)
@@ -78,14 +75,13 @@ jobs:
             exit 1
           }
       - name: Upload Artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
           name: codex-remote-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
-          # A missing APK is a failed build, not a warning to scroll past.
           if-no-files-found: error
       - name: Create Direct APK Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: latest
@@ -93,8 +89,7 @@ jobs:
           body: |
             Build otomatis dari commit ${{ github.sha }}.
 
-            * `app-debug.apk` — Android, sudah ditandatangani debug key, bisa langsung dipasang.
-            * `CodexRemote.ipa` — iOS, **belum ditandatangani**: pasang lewat AltStore/Sideloadly atau tanda tangani sendiri.
+            * `app-debug.apk` — Android APK lengkap dengan seluruh fitur CodexRemote / Antigravity Remote.
           files: app/build/outputs/apk/debug/app-debug.apk
           overwrite: true
           make_latest: true
