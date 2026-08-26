@@ -5352,27 +5352,13 @@ public class MainActivity extends FragmentActivity {
         modelTagLabel = cText(displayModel(currentModel), 11f, Theme.TEXT_MUTED, true, false);
         modelTagLabel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
         modelTagLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
-        modelTagLabel.setMaxWidth(dp(130));
+        modelTagLabel.setMaxWidth(dp(160));
         modelTagLabel.setSingleLine(true);
         modelTagLabel.setEllipsize(TextUtils.TruncateAt.END);
         modelTagLabel.setOnClickListener(v -> showModelPicker());
         LinearLayout.LayoutParams lpModelTag = new LinearLayout.LayoutParams(-2, -2);
-        lpModelTag.setMargins(dp(4), 0, 0, 0);
+        lpModelTag.setMargins(dp(4), 0, dp(4), 0);
         toolRow.addView(modelTagLabel, lpModelTag);
-
-        workspaceTagLabel = cText("📁 " + activeProjectName(), 11f, Theme.TEXT_MUTED, true, false);
-        workspaceTagLabel.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
-        workspaceTagLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
-        workspaceTagLabel.setMaxWidth(dp(110));
-        workspaceTagLabel.setSingleLine(true);
-        workspaceTagLabel.setEllipsize(TextUtils.TruncateAt.END);
-        workspaceTagLabel.setOnClickListener(v -> {
-            vibrateTick();
-            panels.showProjectPicker();
-        });
-        LinearLayout.LayoutParams lpWsTag = new LinearLayout.LayoutParams(-2, -2);
-        lpWsTag.setMargins(dp(4), 0, dp(4), 0);
-        toolRow.addView(workspaceTagLabel, lpWsTag);
 
         toolScroll.addView(toolRow, new ViewGroup.LayoutParams(-2, -2));
         actionRow.addView(toolScroll, new LinearLayout.LayoutParams(0, -2, 1.0f));
