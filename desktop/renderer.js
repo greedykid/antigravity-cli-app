@@ -229,6 +229,20 @@ function renderTranscript(turns) {
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
+// Inline Markdown Formatter Helper
+function formatInline(text) {
+  if (!text) return '';
+  let out = escapeHtml(text);
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong class="md-strong">$1</strong>');
+  out = out.replace(/__([^_]+)__/g, '<strong class="md-strong">$1</strong>');
+  out = out.replace(/\*([^*]+)\*/g, '<em class="md-em">$1</em>');
+  out = out.replace(/_([^_]+)_/g, '<em class="md-em">$1</em>');
+  out = out.replace(/~~([^~]+)~~/g, '<del class="md-del">$1</del>');
+  out = out.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" class="md-link" target="_blank" rel="noopener">$1 ↗</a>');
+  return out;
+}
+
 // Enhanced Markdown & Syntax Formatter
 function formatMarkdown(text) {
   if (!text) return '';
@@ -242,7 +256,44 @@ function formatMarkdown(text) {
 
   let content = text;
 
-  // 1. Parse Diff Blocks
+  // 1. Parse Think / Reasoning Blocks into Dropdown Accordion
+  content = content.replace(/<(?:think|thinking)>([\s\S]*?)<\/(?:think|thinking)>/gi, (match, thoughtContent) => {
+    const cleanThought = thoughtContent.trim();
+    const formattedThought = cleanThought.split(/\r?\n/).map(l => formatInline(l)).join('<br>');
+    const html = `
+      <details class="thought-accordion">
+        <summary class="thought-summary">
+          <div class="thought-summary-title">
+            <svg class="icon-xs"><use href="#icon-cpu"></use></svg>
+            <span>Proses Berpikir (Thinking)</span>
+          </div>
+          <span class="accordion-badge">Buka / Tutup</span>
+        </summary>
+        <div class="thought-body">${formattedThought}</div>
+      </details>
+    `;
+    return addBlock(html);
+  });
+
+  // 2. Parse Tool Execution / Exec Blocks into Dropdown Accordion
+  content = content.replace(/<(?:exec|execution|tool_call)>([\s\S]*?)<\/(?:exec|execution|tool_call)>/gi, (match, execContent) => {
+    const cleanExec = escapeHtml(execContent.trim());
+    const html = `
+      <details class="exec-accordion">
+        <summary class="exec-summary">
+          <div class="exec-summary-title">
+            <svg class="icon-xs"><use href="#icon-terminal"></use></svg>
+            <span>Log Eksekusi Perintah (Execution)</span>
+          </div>
+          <span class="accordion-badge">Detail</span>
+        </summary>
+        <div class="exec-body"><pre><code>${cleanExec}</code></pre></div>
+      </details>
+    `;
+    return addBlock(html);
+  });
+
+  // 3. Parse Diff Blocks
   content = content.replace(/```(?:diff|patch)\r?\n([\s\S]*?)```/g, (match, diffContent) => {
     const rawLines = diffContent.split(/\r?\n/);
     const formattedLines = rawLines.map(l => {
@@ -271,7 +322,7 @@ function formatMarkdown(text) {
     return addBlock(html);
   });
 
-  // 2. Parse General Code Blocks with Syntax Highlighting & Copy Button
+  // 4. Parse General Code Blocks with Syntax Highlighting & Copy Button
   content = content.replace(/```([a-zA-Z0-9_\-\+]*)\r?\n([\s\S]*?)```/g, (match, lang, code) => {
     const language = (lang || 'code').toUpperCase();
     const highlighted = highlightSyntax(code, lang);
@@ -292,11 +343,11 @@ function formatMarkdown(text) {
     return addBlock(html);
   });
 
-  // 3. GitHub Callout Alerts (> [!NOTE], > [!TIP], etc.)
+  // 5. GitHub Callout Alerts (> [!NOTE], > [!TIP], etc.)
   content = content.replace(/^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\r?\n([\s\S]*?)(?=\n\n|$)/gm, (match, type, body) => {
     const alertType = type.toLowerCase();
     const alertTitle = type.charAt(0) + type.slice(1).toLowerCase();
-    const lines = body.split(/\r?\n/).map(l => l.replace(/^>\s?/, '')).join('<br>');
+    const lines = body.split(/\r?\n/).map(l => formatInline(l.replace(/^>\s?/, ''))).join('<br>');
     const html = `
       <div class="alert-box alert-${alertType}">
         <div class="alert-title">
@@ -309,7 +360,7 @@ function formatMarkdown(text) {
     return addBlock(html);
   });
 
-  // 4. Markdown Tables
+  // 6. Markdown Tables with Full Inline Formatting (Bold, Code, Links)
   content = content.replace(/((?:\|[^\n]+\|\r?\n)+)/g, (match) => {
     const rows = match.trim().split(/\r?\n/);
     if (rows.length < 2) return match;
@@ -320,10 +371,10 @@ function formatMarkdown(text) {
     const headerCells = parseCells(rows[0]);
     const bodyRows = rows.slice(2);
 
-    const thead = `<tr>${headerCells.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
+    const thead = `<tr>${headerCells.map(c => `<th>${formatInline(c)}</th>`).join('')}</tr>`;
     const tbody = bodyRows.map(r => {
       const cells = parseCells(r);
-      return `<tr>${cells.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`;
+      return `<tr>${cells.map(c => `<td>${formatInline(c)}</td>`).join('')}</tr>`;
     }).join('');
 
     const html = `
@@ -337,39 +388,41 @@ function formatMarkdown(text) {
     return addBlock(html);
   });
 
-  // 5. Escape rest of text HTML
+  // 7. Escape rest of text HTML
   let out = escapeHtml(content);
 
-  // 6. Headers
-  out = out.replace(/^#### (.*?)$/gm, '<h4 class="md-h4">$1</h4>');
-  out = out.replace(/^### (.*?)$/gm, '<h3 class="md-h3">$1</h3>');
-  out = out.replace(/^## (.*?)$/gm, '<h2 class="md-h2">$1</h2>');
-  out = out.replace(/^# (.*?)$/gm, '<h1 class="md-h1">$1</h1>');
+  // 8. Headers
+  out = out.replace(/^#### (.*?)$/gm, (m, h) => `<h4 class="md-h4">${formatInline(h)}</h4>`);
+  out = out.replace(/^### (.*?)$/gm, (m, h) => `<h3 class="md-h3">${formatInline(h)}</h3>`);
+  out = out.replace(/^## (.*?)$/gm, (m, h) => `<h2 class="md-h2">${formatInline(h)}</h2>`);
+  out = out.replace(/^# (.*?)$/gm, (m, h) => `<h1 class="md-h1">${formatInline(h)}</h1>`);
 
-  // 7. Horizontal Rule
+  // 9. Horizontal Rule
   out = out.replace(/^---$/gm, '<hr class="md-hr">');
 
-  // 8. Blockquotes
-  out = out.replace(/^> (.*?)$/gm, '<blockquote class="md-blockquote">$1</blockquote>');
+  // 10. Blockquotes
+  out = out.replace(/^> (.*?)$/gm, (m, q) => `<blockquote class="md-blockquote">${formatInline(q)}</blockquote>`);
 
-  // 9. Task lists & lists
-  out = out.replace(/^- \[x\] (.*?)$/gm, '<div class="md-task-item checked"><svg class="icon-xs"><use href="#icon-check"></use></svg> <span>$1</span></div>');
-  out = out.replace(/^- \[ \] (.*?)$/gm, '<div class="md-task-item unchecked"><span class="checkbox-square"></span> <span>$1</span></div>');
-  out = out.replace(/^[*\-] (.*?)$/gm, '<li class="md-li">$1</li>');
+  // 11. Task lists & lists
+  out = out.replace(/^- \[x\] (.*?)$/gm, (m, t) => `<div class="md-task-item checked"><svg class="icon-xs"><use href="#icon-check"></use></svg> <span>${formatInline(t)}</span></div>`);
+  out = out.replace(/^- \[ \] (.*?)$/gm, (m, t) => `<div class="md-task-item unchecked"><span class="checkbox-square"></span> <span>${formatInline(t)}</span></div>`);
+  out = out.replace(/^[*\-] (.*?)$/gm, (m, l) => `<li class="md-li">${formatInline(l)}</li>`);
   out = out.replace(/(<li class="md-li">[\s\S]*?<\/li>)/g, '<ul class="md-ul">$1</ul>');
 
-  // 10. Inline styles (Bold, Italic, Strikethrough, Code, Links)
+  // 12. Inline styles (Bold, Italic, Strikethrough, Code, Links)
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong class="md-strong">$1</strong>');
+  out = out.replace(/__([^_]+)__/g, '<strong class="md-strong">$1</strong>');
   out = out.replace(/\*([^*]+)\*/g, '<em class="md-em">$1</em>');
+  out = out.replace(/_([^_]+)_/g, '<em class="md-em">$1</em>');
   out = out.replace(/~~([^~]+)~~/g, '<del class="md-del">$1</del>');
   out = out.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
   out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" class="md-link" target="_blank" rel="noopener">$1 ↗</a>');
 
-  // 11. Paragraphs & Line breaks
+  // 13. Paragraphs & Line breaks
   out = out.replace(/\n\n/g, '<div class="md-p-gap"></div>');
   out = out.replace(/\n/g, '<br>');
 
-  // 12. Restore Block Placeholders
+  // 14. Restore Block Placeholders
   out = out.replace(/___BLOCK_PLACEHOLDER_(\d+)___/g, (match, idx) => {
     return blocks[parseInt(idx, 10)] || '';
   });
