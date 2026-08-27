@@ -54,6 +54,7 @@ public final class Theme {
     public static int RED;
     public static int RED_BG;
     public static int BLUE;
+    public static int BLUE_BG;
 
     static {
         applyEngine(ENGINE_ANTIGRAVITY);
@@ -102,6 +103,7 @@ public final class Theme {
         RED = Color.rgb(239, 68, 68);
         RED_BG = Color.rgb(54, 23, 24);
         BLUE = Color.rgb(59, 130, 246);
+        BLUE_BG = Color.rgb(24, 40, 68);
     }
 
     /** Cool slate ground, teal-green accent. */
@@ -119,7 +121,7 @@ public final class Theme {
 
         ACCENT = Color.rgb(16, 163, 127);         // #10A37F
         ACCENT_SOFT = Color.rgb(14, 42, 36);      // #0E2A24
-        ON_ACCENT = Color.rgb(8, 18, 15);         // #08120F
+        ON_ACCENT = Color.rgb(8, 12, 15);         // #08120F
 
         GREEN = Color.rgb(52, 199, 137);
         GREEN_BG = Color.rgb(13, 43, 33);
@@ -128,6 +130,7 @@ public final class Theme {
         RED = Color.rgb(238, 92, 92);
         RED_BG = Color.rgb(54, 23, 24);
         BLUE = Color.rgb(90, 156, 248);
+        BLUE_BG = Color.rgb(20, 36, 62);
     }
 
     // ---- engine identity ----

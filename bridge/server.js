@@ -880,6 +880,9 @@ function getSessions(engineFilter) {
 
   const customTitles = getCustomSessionTitles();
   const activityMap = getSessionActivityMap();
+  const runningJobsList = (jobs && typeof jobs.running === "function") ? jobs.running() : [];
+  const runningConvIds = new Set(runningJobsList.map(j => j.conversationId).filter(Boolean));
+
   for (const s of merged) {
     if (customTitles[s.conversationId]) {
       s.title = customTitles[s.conversationId];
@@ -887,6 +890,9 @@ function getSessions(engineFilter) {
     }
     if (activityMap[s.conversationId]) {
       s.timestamp = Math.max(s.timestamp || 0, activityMap[s.conversationId]);
+    }
+    if (runningConvIds.has(s.conversationId)) {
+      s.running = true;
     }
   }
 

@@ -2772,7 +2772,12 @@ public class MainActivity extends FragmentActivity {
 
         String engine = s.optString("engine", "antigravity");
         String subText = ("codex".equalsIgnoreCase(engine) ? "Codex CLI" : "Antigravity CLI") + " • " + currentServerHostname;
-        addSessionCard(title, subText, dateStr, convId, true);
+
+        boolean isRunning = (isLiveTaskRunning && convId != null && !convId.isEmpty() && convId.equals(activeConversationId))
+                || s.optBoolean("running", false)
+                || s.optBoolean("busy", false);
+
+        addSessionCard(title, subText, dateStr, convId, isRunning);
     }
 
     private void addTimeSectionHeader(String title) {
@@ -2782,34 +2787,41 @@ public class MainActivity extends FragmentActivity {
         hubSessionGroupsContainer.addView(v, lp);
     }
 
-    private void addSessionCard(final String title, String subText, String dateStr, final String convId, boolean isConnected) {
+    private void addSessionCard(final String title, String subText, String dateStr, final String convId, boolean isRunning) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 18));
+        card.setBackground(cBox(Theme.SURFACE, isRunning ? Theme.BLUE : Theme.BORDER, 1, 18));
         card.setPadding(dp(14), dp(12), dp(16), dp(12));
 
-        // Left Code Icon Badge with optional blue indicator dot
+        // Left Code Icon Badge with dynamic pulsing blue dot only when running
         FrameLayout badgeFrame = new FrameLayout(this);
         LinearLayout.LayoutParams lpBadge = new LinearLayout.LayoutParams(dp(42), dp(42));
         badgeFrame.setLayoutParams(lpBadge);
 
         View badgeBg = new View(this);
-        badgeBg.setBackground(cBox(Theme.SURFACE_MUTED, 0, 0, 12));
+        badgeBg.setBackground(cBox(isRunning ? Theme.BLUE_BG : Theme.SURFACE_MUTED, 0, 0, 12));
         badgeFrame.addView(badgeBg, new FrameLayout.LayoutParams(-1, -1));
 
-        ImageView codeIcon = cIcon(R.drawable.ic_code, 20, Theme.TEXT_MUTED);
+        ImageView codeIcon = cIcon(R.drawable.ic_code, 20, isRunning ? Theme.BLUE : Theme.TEXT_MUTED);
         FrameLayout.LayoutParams lpCode = new FrameLayout.LayoutParams(dp(20), dp(20));
         lpCode.gravity = Gravity.CENTER;
         badgeFrame.addView(codeIcon, lpCode);
 
-        if (isConnected) {
+        // Blue Dot is ONLY shown when the session is actively executing a task
+        if (isRunning) {
             View blueDot = new View(this);
-            blueDot.setBackground(cBox(Theme.BLUE, 0, 0, 4));
-            FrameLayout.LayoutParams lpDot = new FrameLayout.LayoutParams(dp(8), dp(8));
+            blueDot.setBackground(cBox(Theme.BLUE, 0, 0, 5));
+            FrameLayout.LayoutParams lpDot = new FrameLayout.LayoutParams(dp(9), dp(9));
             lpDot.gravity = Gravity.TOP | Gravity.END;
-            lpDot.setMargins(0, dp(2), dp(2), 0);
+            lpDot.setMargins(0, dp(1), dp(1), 0);
             badgeFrame.addView(blueDot, lpDot);
+
+            android.animation.ObjectAnimator pulse = android.animation.ObjectAnimator.ofFloat(blueDot, "alpha", 0.3f, 1.0f);
+            pulse.setDuration(700);
+            pulse.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+            pulse.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+            pulse.start();
         }
 
         card.addView(badgeFrame);
@@ -2828,10 +2840,11 @@ public class MainActivity extends FragmentActivity {
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
         statusRow.setPadding(0, dp(3), 0, 0);
 
-        ImageView statIcon = cIcon(isConnected ? R.drawable.ic_laptop : R.drawable.ic_link_off, 13, isConnected ? Theme.GREEN : Theme.TEXT_MUTED);
+        ImageView statIcon = cIcon(R.drawable.ic_laptop, 13, isRunning ? Theme.BLUE : Theme.TEXT_MUTED);
         statusRow.addView(statIcon);
 
-        TextView subView = cText(" " + subText, 12.5f, isConnected ? Theme.GREEN : Theme.TEXT_MUTED, false, false);
+        String displaySub = isRunning ? " Sedang memproses..." : " " + subText;
+        TextView subView = cText(displaySub, 12.5f, isRunning ? Theme.BLUE : Theme.TEXT_MUTED, isRunning, false);
         subView.setSingleLine(true);
         statusRow.addView(subView);
 
@@ -2839,7 +2852,7 @@ public class MainActivity extends FragmentActivity {
         card.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1));
 
         // Right date text
-        TextView dateView = cText(dateStr, 12f, Theme.TEXT_MUTED, false, false);
+        TextView dateView = cText(dateStr, 12f, isRunning ? Theme.BLUE : Theme.TEXT_MUTED, isRunning, false);
         card.addView(dateView);
 
         if (archivedSessionIds.contains(convId)) {
