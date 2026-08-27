@@ -1682,11 +1682,15 @@ public class MainActivity extends FragmentActivity {
     }
 
     private String modelPrefKey(String engine) {
-        return "model_" + ("codex".equalsIgnoreCase(engine) ? "codex" : "antigravity");
+        if ("codex".equalsIgnoreCase(engine)) return "model_codex";
+        if ("opencode".equalsIgnoreCase(engine)) return "model_opencode";
+        return "model_antigravity";
     }
 
     private String defaultModelForEngine(String engine) {
-        return "codex".equalsIgnoreCase(engine) ? "gpt-5.6-luna" : "auto";
+        if ("codex".equalsIgnoreCase(engine)) return "gpt-5.6-luna";
+        if ("opencode".equalsIgnoreCase(engine)) return "deepseek-coder";
+        return "auto";
     }
 
     private String displayModel(String model) {
@@ -5810,11 +5814,48 @@ public class MainActivity extends FragmentActivity {
     }
 
     private void showModelPicker() {
-        if (isCodexEngine()) {
+        if ("codex".equalsIgnoreCase(currentEngine)) {
             showCodexModelPicker();
             return;
         }
+        if ("opencode".equalsIgnoreCase(currentEngine)) {
+            showOpenCodeModelPicker();
+            return;
+        }
         showStaticModelPicker();
+    }
+
+    private void showOpenCodeModelPicker() {
+        final String[] models = {
+                "deepseek-coder", "claude-3-5-sonnet", "gpt-4o", "gpt-4o-mini",
+                "ollama/qwen2.5-coder", "ollama/llama3", "ollama/deepseek-coder-v2",
+                "openrouter/anthropic/claude-3.5-sonnet", "openrouter/meta-llama/llama-3.1-70b"
+        };
+        Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Pilih Model OpenCode", true);
+        root.addView(cText("Model multi-provider OpenCode (Cloud & Ollama Lokal)",
+                12.5f, Theme.TEXT_MUTED, false, false));
+
+        for (String model : models) {
+            TextView option = cText((model.equalsIgnoreCase(currentModel) ? "✓  " : "    ") + displayModel(model),
+                    14f, model.equalsIgnoreCase(currentModel) ? Theme.ACCENT : Theme.TEXT_MAIN, true, false);
+            option.setGravity(Gravity.CENTER_VERTICAL);
+            option.setPadding(dp(14), 0, dp(14), 0);
+            option.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(46));
+            lp.setMargins(0, dp(8), 0, 0);
+            root.addView(option, lp);
+            option.setOnClickListener(v -> {
+                currentModel = model;
+                prefs.edit().putString(modelPrefKey(currentEngine), currentModel).apply();
+                updateRepoTag();
+                dialog.dismiss();
+                startNewSession();
+                Toast.makeText(this, "Model: " + displayModel(currentModel), Toast.LENGTH_SHORT).show();
+            });
+        }
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     /** Antigravity's models are fixed by the CLI, so the list stays static. */
@@ -6015,15 +6056,21 @@ public class MainActivity extends FragmentActivity {
     }
 
     private String engineLabel(String engine) {
-        return "codex".equalsIgnoreCase(engine) ? "Codex CLI" : "Antigravity CLI";
+        if ("codex".equalsIgnoreCase(engine)) return "Codex CLI";
+        if ("opencode".equalsIgnoreCase(engine)) return "OpenCode CLI";
+        return "Antigravity CLI";
     }
 
     private String engineShortLabel(String engine) {
-        return "codex".equalsIgnoreCase(engine) ? "Codex" : "Agy";
+        if ("codex".equalsIgnoreCase(engine)) return "Codex";
+        if ("opencode".equalsIgnoreCase(engine)) return "OpenCode";
+        return "Agy";
     }
 
     private String engineRepo(String engine) {
-        return "codex".equalsIgnoreCase(engine) ? "openai/codex-cli" : "google/antigravity-cli";
+        if ("codex".equalsIgnoreCase(engine)) return "openai/codex-cli";
+        if ("opencode".equalsIgnoreCase(engine)) return "opencode-ai/cli";
+        return "google/antigravity-cli";
     }
 
     public interface EngineInstallListener {
@@ -6044,47 +6091,6 @@ public class MainActivity extends FragmentActivity {
 
         root.addView(cText("Sesi tidak dibagi antar engine. Berpindah akan memulai sesi baru.",
                 12.5f, Theme.TEXT_MUTED, false, false));
-
-        // --- toggle row ---
-        LinearLayout toggleRow = new LinearLayout(this);
-        toggleRow.setOrientation(LinearLayout.HORIZONTAL);
-        toggleRow.setGravity(Gravity.CENTER_VERTICAL);
-        toggleRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 16));
-        toggleRow.setPadding(dp(16), dp(14), dp(16), dp(14));
-        LinearLayout.LayoutParams lpToggle = new LinearLayout.LayoutParams(-1, -2);
-        lpToggle.setMargins(0, dp(16), 0, dp(6));
-
-        LinearLayout toggleCol = new LinearLayout(this);
-        toggleCol.setOrientation(LinearLayout.VERTICAL);
-        final TextView toggleTitle = cText(engineLabel(currentEngine), 15.5f, Theme.TEXT_MAIN, true, false);
-        toggleCol.addView(toggleTitle);
-        final TextView toggleSub = cText(engineRepo(currentEngine) + " · " + displayModel(currentModel),
-                12f, Theme.TEXT_MUTED, false, false);
-        toggleSub.setSingleLine(true);
-        toggleSub.setEllipsize(TextUtils.TruncateAt.END);
-        toggleCol.addView(toggleSub);
-        toggleRow.addView(toggleCol, new LinearLayout.LayoutParams(0, -2, 1));
-
-        final Switch engineSwitch = new Switch(this);
-        engineSwitch.setChecked(isCodexEngine());
-        engineSwitch.setThumbTintList(android.content.res.ColorStateList.valueOf(Theme.ACCENT));
-        engineSwitch.setTrackTintList(android.content.res.ColorStateList.valueOf(Theme.BORDER_DARK));
-        toggleRow.addView(engineSwitch);
-        root.addView(toggleRow, lpToggle);
-
-        TextView toggleHint = cText("Mati = Antigravity · Nyala = Codex", 11.5f, Theme.TEXT_LIGHT, false, false);
-        toggleHint.setPadding(dp(4), 0, 0, dp(14));
-        root.addView(toggleHint);
-
-        engineSwitch.setOnClickListener(v -> {
-            final String target = engineSwitch.isChecked() ? "codex" : "antigravity";
-            if (target.equalsIgnoreCase(currentEngine)) return;
-
-            // Put the switch back until the user actually confirms.
-            engineSwitch.setChecked(isCodexEngine());
-            dialog.dismiss();
-            requestEngineSwitch(target);
-        });
 
         final LinearLayout cardsContainer = new LinearLayout(this);
         cardsContainer.setOrientation(LinearLayout.VERTICAL);
@@ -6131,6 +6137,7 @@ public class MainActivity extends FragmentActivity {
         container.removeAllViews();
         container.addView(buildEngineCard("antigravity", dialog, enginesObj));
         container.addView(buildEngineCard("codex", dialog, enginesObj));
+        container.addView(buildEngineCard("opencode", dialog, enginesObj));
     }
 
     private LinearLayout buildEngineCard(final String engine, final Dialog dialog, final JSONObject enginesObj) {
@@ -6380,7 +6387,7 @@ public class MainActivity extends FragmentActivity {
 
     private void applyEngineSwitch(String target) {
         final String previous = currentEngine;
-        final String next = "codex".equalsIgnoreCase(target) ? "codex" : "antigravity";
+        final String next = "codex".equalsIgnoreCase(target) ? "codex" : ("opencode".equalsIgnoreCase(target) ? "opencode" : "antigravity");
         if (next.equals(previous)) return;
 
         prefs.edit()

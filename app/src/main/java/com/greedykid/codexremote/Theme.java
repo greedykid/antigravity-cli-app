@@ -21,6 +21,7 @@ public final class Theme {
 
     public static final String ENGINE_ANTIGRAVITY = "antigravity";
     public static final String ENGINE_CODEX = "codex";
+    public static final String ENGINE_OPENCODE = "opencode";
 
     private static String engine = ENGINE_ANTIGRAVITY;
 
@@ -41,9 +42,7 @@ public final class Theme {
     /** Tinted background that pairs with {@link #ACCENT}. */
     public static int ACCENT_SOFT;
     /**
-     * Label colour for text sitting on an {@link #ACCENT} fill. White reads
-     * fine on terracotta but only reaches 3.2:1 on the Codex green, so that
-     * engine uses a near-black label instead (5.95:1).
+     * Label colour for text sitting on an {@link #ACCENT} fill.
      */
     public static int ON_ACCENT;
 
@@ -66,15 +65,23 @@ public final class Theme {
         return ENGINE_CODEX.equalsIgnoreCase(engine);
     }
 
+    public static boolean isOpenCode() {
+        return ENGINE_OPENCODE.equalsIgnoreCase(engine);
+    }
+
     public static String engine() {
         return engine;
     }
 
     public static void applyEngine(String value) {
-        engine = ENGINE_CODEX.equalsIgnoreCase(value) ? ENGINE_CODEX : ENGINE_ANTIGRAVITY;
-        if (isCodex()) {
+        if (ENGINE_CODEX.equalsIgnoreCase(value)) {
+            engine = ENGINE_CODEX;
             applyCodexPalette();
+        } else if (ENGINE_OPENCODE.equalsIgnoreCase(value)) {
+            engine = ENGINE_OPENCODE;
+            applyOpenCodePalette();
         } else {
+            engine = ENGINE_ANTIGRAVITY;
             applyAntigravityPalette();
         }
     }
@@ -113,10 +120,10 @@ public final class Theme {
         SURFACE_MUTED = Color.rgb(36, 39, 44);    // #24272C
         BORDER = Color.rgb(46, 50, 58);           // #2E323A
         BORDER_DARK = Color.rgb(59, 64, 73);      // #3B4049
-        CODE_BG = Color.rgb(14, 16, 19);          // #0E1013
+        CODE_BG = Color.rgb(12, 13, 15);          // #0C0D0F
 
-        TEXT_MAIN = Color.rgb(231, 234, 238);     // #E7EAEE
-        TEXT_MUTED = Color.rgb(152, 160, 172);    // #98A0AC
+        TEXT_MAIN = Color.rgb(236, 238, 242);     // #ECEEF2
+        TEXT_MUTED = Color.rgb(156, 163, 175);    // #9CA3AF
         TEXT_LIGHT = Color.rgb(107, 114, 128);    // #6B7280
 
         ACCENT = Color.rgb(16, 163, 127);         // #10A37F
@@ -133,11 +140,40 @@ public final class Theme {
         BLUE_BG = Color.rgb(20, 36, 62);
     }
 
+    /** Modern violet/indigo theme for OpenCode multi-provider. */
+    private static void applyOpenCodePalette() {
+        BG = Color.rgb(18, 18, 26);               // #12121A
+        SURFACE = Color.rgb(26, 26, 38);          // #1A1A26
+        SURFACE_MUTED = Color.rgb(36, 36, 52);    // #242434
+        BORDER = Color.rgb(50, 50, 72);           // #323248
+        BORDER_DARK = Color.rgb(65, 65, 95);      // #41415F
+        CODE_BG = Color.rgb(12, 12, 18);          // #0C0C12
+
+        TEXT_MAIN = Color.rgb(238, 238, 248);     // #EEEEF8
+        TEXT_MUTED = Color.rgb(160, 160, 188);    // #A0A0BC
+        TEXT_LIGHT = Color.rgb(115, 115, 145);    // #737391
+
+        ACCENT = Color.rgb(139, 92, 246);         // #8B5CF6 (Purple/Violet)
+        ACCENT_SOFT = Color.rgb(38, 28, 68);      // #261C44
+        ON_ACCENT = Color.WHITE;
+
+        GREEN = Color.rgb(52, 199, 137);
+        GREEN_BG = Color.rgb(13, 43, 33);
+        AMBER = Color.rgb(233, 165, 61);
+        AMBER_BG = Color.rgb(45, 36, 17);
+        RED = Color.rgb(238, 92, 92);
+        RED_BG = Color.rgb(54, 23, 24);
+        BLUE = Color.rgb(90, 156, 248);
+        BLUE_BG = Color.rgb(20, 36, 62);
+    }
+
     // ---- engine identity ----
 
     /** Short mark used where space is tight. */
     public static String wordmark() {
-        return isCodex() ? "Codex" : "Antigravity";
+        if (isCodex()) return "Codex";
+        if (isOpenCode()) return "OpenCode";
+        return "Antigravity";
     }
 
     /** Full product name for the sidebar header. */
@@ -147,25 +183,33 @@ public final class Theme {
 
     /** Title shown on the empty-session screen. */
     public static String brandTitle() {
-        return isCodex() ? "Codex Remote" : "Antigravity Code";
+        if (isCodex()) return "Codex Remote";
+        if (isOpenCode()) return "OpenCode Remote";
+        return "Antigravity Code";
     }
 
     public static String engineLabel() {
-        return isCodex() ? "Codex CLI" : "Antigravity CLI";
+        if (isCodex()) return "Codex CLI";
+        if (isOpenCode()) return "OpenCode CLI";
+        return "Antigravity CLI";
     }
 
     public static String engineShortLabel() {
-        return isCodex() ? "Codex" : "Agy";
+        if (isCodex()) return "Codex";
+        if (isOpenCode()) return "OpenCode";
+        return "Agy";
     }
 
     public static String engineRepo() {
-        return isCodex() ? "openai/codex-cli" : "google/antigravity-cli";
+        if (isCodex()) return "openai/codex-cli";
+        if (isOpenCode()) return "opencode-ai/cli";
+        return "google/antigravity-cli";
     }
 
     public static String engineTagline() {
-        return isCodex()
-                ? "Siap membantu. Ketik perintah untuk memulai sesi Codex."
-                : "Siap membantu. Ketik perintah untuk memulai sesi Antigravity.";
+        if (isCodex()) return "Siap membantu. Ketik perintah untuk memulai sesi Codex.";
+        if (isOpenCode()) return "Siap membantu. Ketik perintah untuk memulai sesi OpenCode.";
+        return "Siap membantu. Ketik perintah untuk memulai sesi Antigravity.";
     }
 
     public static int mascotRes() {

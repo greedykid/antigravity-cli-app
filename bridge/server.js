@@ -65,6 +65,7 @@ setInterval(recordResourceSample, 3000);
 function operationalHealth() {
   const codex = commandVersion(CODEX_BIN, ["--version"]);
   const agy = commandVersion(AGY_BIN, ["--version"]);
+  const opencode = commandVersion(OPENCODE_BIN, ["--version"]) || commandVersion(OPENCODE_BIN, ["-v"]);
   const workdirExists = fs.existsSync(WORKDIR) && fs.statSync(WORKDIR).isDirectory();
   const gitStatus = git.isRepo(WORKDIR) ? "ok" : "not_repository";
   const stats = serverResourceStats();
@@ -72,7 +73,8 @@ function operationalHealth() {
   return {
     engines: {
       antigravity: agy ? { ok: true, version: agy } : { ok: false },
-      codex: codex ? { ok: true, version: codex } : { ok: false }
+      codex: codex ? { ok: true, version: codex } : { ok: false },
+      opencode: opencode ? { ok: true, version: opencode } : { ok: false }
     },
     filesystem: { ok: workdirExists, workdir: WORKDIR },
     git: gitStatus,
@@ -85,6 +87,7 @@ function operationalHealth() {
 function getEnginesStatus() {
   const agy = commandVersion(AGY_BIN, ["--version"]);
   const codex = commandVersion(CODEX_BIN, ["--version"]);
+  const opencode = commandVersion(OPENCODE_BIN, ["--version"]) || commandVersion(OPENCODE_BIN, ["-v"]);
   return {
     ok: true,
     engines: {
@@ -104,6 +107,15 @@ function getEnginesStatus() {
         version: codex || null,
         description: "OpenAI autonomous coding agent engine",
         installCommand: "npm install -g @openai/codex || curl -fsSL https://raw.githubusercontent.com/openai/codex/main/install.sh | bash"
+      },
+      opencode: {
+        id: "opencode",
+        name: "OpenCode CLI",
+        binary: OPENCODE_BIN,
+        available: Boolean(opencode),
+        version: opencode || null,
+        description: "Open-source multi-provider AI coding engine (DeepSeek, Claude, Ollama local)",
+        installCommand: "npm install -g opencode || npm install -g @opencode-ai/cli"
       }
     }
   };
@@ -288,6 +300,7 @@ const TOKEN = config.loadToken();
 const WORKDIR = config.workdir();
 const AGY_BIN = process.env.AGY_BIN || path.join(os.homedir(), ".local/bin/agy");
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
+const OPENCODE_BIN = process.env.OPENCODE_BIN || "opencode";
 let activeCodexSessionId = null;
 const SESSION_ACTIVITY_FILE = path.join(os.homedir(), ".gemini/antigravity-cli/session_activity.json");
 const pendingApprovals = new Map();
@@ -1172,6 +1185,67 @@ function runCodex(prompt, conversationId, model, job) {
   });
 }
 
+function runOpencode(prompt, conversationId, model, job) {
+  return new Promise((resolve, reject) => {
+    const args = ["run"];
+    if (model && model !== "default" && model !== "auto") {
+      args.push("--model", model);
+    }
+    if (conversationId) {
+      args.push("--session", conversationId);
+    }
+    args.push(prompt);
+
+    const child = spawn(OPENCODE_BIN, args, {
+      cwd: WORKDIR,
+      env: Object.assign({}, process.env, {
+        PATH: (process.env.PATH || "") + ":/usr/bin:/usr/local/bin:/home/ubuntu/.local/bin"
+      }),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    let fullOutput = "";
+    let error = "";
+    let lastActivity = Date.now();
+
+    child.stdout.on("data", chunk => {
+      lastActivity = Date.now();
+      const text = chunk.toString();
+      fullOutput += text;
+      events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: text });
+    });
+
+    child.stderr.on("data", chunk => {
+      lastActivity = Date.now();
+      const text = chunk.toString();
+      error += text;
+      events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: text });
+    });
+
+    const timeout = setTimeout(() => {
+      try { child.kill("SIGKILL"); } catch (e) {}
+      reject(new Error("OpenCode execution timed out"));
+    }, settings.taskTimeoutMs());
+
+    child.on("close", code => {
+      clearTimeout(timeout);
+      if (code === 0 || fullOutput.trim()) {
+        resolve({
+          response: fullOutput.trim() || error.trim() || "Done.",
+          sessionId: conversationId || `opencode_${Date.now()}`
+        });
+      } else {
+        reject(new Error(error.trim() || `OpenCode process exited with code ${code}`));
+      }
+    });
+
+    child.on("error", err => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+  });
+}
+
 function runAgyOnce(prompt, conversationId, resume = false, model, job) {
   return new Promise((resolve, reject) => {
     const extraPath = ":/home/ubuntu/.local/bin:/usr/local/bin";
@@ -1567,6 +1641,12 @@ async function runChatJob(job, payload) {
         effectiveEngine = "antigravity";
         fallbackNotice = "> ⚠️ **Catatan Sistem**: Codex CLI belum terpasang di host server. Tugas dialihkan dan diselesaikan otomatis menggunakan Antigravity engine.\n\n";
       }
+    } else if (effectiveEngine === "opencode" && !commandVersion(OPENCODE_BIN, ["--version"]) && !commandVersion(OPENCODE_BIN, ["-v"])) {
+      const agyOk = commandVersion(AGY_BIN, ["--version"]);
+      if (agyOk) {
+        effectiveEngine = "antigravity";
+        fallbackNotice = "> ⚠️ **Catatan Sistem**: OpenCode CLI belum terpasang di host server. Tugas dialihkan dan diselesaikan otomatis menggunakan Antigravity engine.\n\n";
+      }
     }
 
     if (effectiveEngine === "codex") {
@@ -1580,6 +1660,25 @@ async function runChatJob(job, payload) {
         title: prompt.slice(0, 40),
         workspace: WORKDIR,
         engine: "codex"
+      };
+      updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
+      if (updatedTurns.length === 0) {
+        updatedTurns = [
+          { role: "user", content: prompt, time: new Date().toISOString() },
+          { role: "assistant", content: responseText, time: new Date().toISOString() }
+        ];
+      }
+    } else if (effectiveEngine === "opencode") {
+      const result = await runOpencode(prompt, conversationId, model, job);
+      responseText = result.response;
+      activeConvId = result.sessionId || conversationId;
+
+      const sData = getSessions();
+      activeSession = sData.sessions.find(s => s.conversationId === activeConvId) || {
+        conversationId: activeConvId,
+        title: prompt.slice(0, 40),
+        workspace: WORKDIR,
+        engine: "opencode"
       };
       updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
       if (updatedTurns.length === 0) {
@@ -1728,6 +1827,8 @@ const server = http.createServer((req, res) => {
         let cmd = "";
         if (engine === "codex") {
           cmd = "npm install -g @openai/codex || curl -fsSL https://raw.githubusercontent.com/openai/codex/main/install.sh | bash 2>&1";
+        } else if (engine === "opencode") {
+          cmd = "npm install -g opencode || npm install -g @opencode-ai/cli 2>&1";
         } else if (engine === "antigravity") {
           cmd = "npm install -g @google/antigravity-cli || echo 'Antigravity CLI installed' 2>&1";
         } else {
