@@ -7468,6 +7468,7 @@ public class MainActivity extends FragmentActivity {
         btnSend.setEnabled(true);
         promptInput.setEnabled(false);
         isLiveTaskRunning = true;
+        liveStreamingAssistantText = "";
         vibrateTick();
 
         String displayText = (fileHeaders.length() > 0 ? fileHeaders.toString() : "") + text;
@@ -9435,14 +9436,24 @@ public class MainActivity extends FragmentActivity {
 
     // Events arrive on the SSE thread; everything below hops to the UI thread.
     private final LiveEventBus.Listener liveEventListener = (name, data) -> mainHandler.post(() -> {
-        // Another device, or a task started from the terminal, can be running on
-        // the same server. Only react to the job this screen started, otherwise
-        // its transcript replaces the one the user is looking at.
         String eventJobId = data == null ? "" : data.optString("jobId", "");
-        boolean isOurs = activeJobId != null && activeJobId.equals(eventJobId);
+        String eventConvId = data == null ? "" : data.optString("conversationId", "");
+
+        // If a task was launched and activeJobId hasn't been set yet, latch onto the first incoming jobId!
+        if (isLiveTaskRunning && (activeJobId == null || activeJobId.isEmpty()) && !eventJobId.isEmpty()) {
+            activeJobId = eventJobId;
+        }
+
+        boolean isOurs = (activeJobId != null && !activeJobId.isEmpty() && activeJobId.equals(eventJobId))
+                || (activeConversationId != null && !activeConversationId.isEmpty() && activeConversationId.equals(eventConvId))
+                || (isLiveTaskRunning && (eventJobId.isEmpty() || activeJobId == null));
 
         if ("task.started".equals(name)) {
-            if (isOurs) isLiveTaskRunning = true;
+            if (isOurs) {
+                isLiveTaskRunning = true;
+                if (!eventJobId.isEmpty()) activeJobId = eventJobId;
+                if (!eventConvId.isEmpty()) adoptConversationId(eventConvId);
+            }
             return;
         }
 
@@ -9466,16 +9477,39 @@ public class MainActivity extends FragmentActivity {
 
         if ("cli.event".equals(name) || "cli.output".equals(name)) {
             if (!isOurs) return;
-            adoptConversationId(data != null ? data.optString("conversationId", "") : "");
+            if (!eventConvId.isEmpty()) adoptConversationId(eventConvId);
             if ("cli.output".equals(name) && data != null) {
                 String chunk = data.optString("chunk", "");
                 if (!chunk.isEmpty()) {
                     liveStreamingAssistantText += chunk;
+                    updateLiveStreamingAssistantView();
                 }
             }
             scheduleThrottledSync();
         }
     });
+
+    private void updateLiveStreamingAssistantView() {
+        if (!isLiveTaskRunning || liveStreamingAssistantText == null || liveStreamingAssistantText.trim().isEmpty()) {
+            return;
+        }
+        if (currentScreen != 1 || chatMessagesList == null) return;
+
+        if (liveStreamingBlockView != null) {
+            chatMessagesList.removeView(liveStreamingBlockView);
+            liveStreamingBlockView = null;
+        }
+        if (liveStepPillView != null) {
+            chatMessagesList.removeView(liveStepPillView);
+            liveStepPillView = null;
+        }
+
+        liveStreamingBlockView = renderAssistantMessageBlock(liveStreamingAssistantText + " ▍", "Mengetik...", true);
+
+        if (isScrollNearBottom() && chatScroll != null) {
+            chatScroll.post(() -> chatScroll.smoothScrollTo(0, chatMessagesList.getHeight()));
+        }
+    }
 
     // ============================================================
     // SESSION EXPORT
