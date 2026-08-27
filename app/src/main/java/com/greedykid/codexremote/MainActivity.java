@@ -5407,9 +5407,7 @@ public class MainActivity extends FragmentActivity {
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         contentLayout.setPadding(dp(16), dp(8), dp(16), 0);
 
-        LinearLayout topBar = new LinearLayout(this);
-        topBar.setOrientation(LinearLayout.HORIZONTAL);
-        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout topBar = new FrameLayout(this);
         topBar.setPadding(0, dp(2), 0, dp(8));
 
         chatNavIcon = cIconButton(R.drawable.ic_arrow_back, 24, 40, Theme.TEXT_MAIN);
@@ -5421,22 +5419,36 @@ public class MainActivity extends FragmentActivity {
                 openSidebar();
             }
         });
-        topBar.addView(chatNavIcon);
+        FrameLayout.LayoutParams lpNav = new FrameLayout.LayoutParams(dp(40), dp(40), Gravity.START | Gravity.CENTER_VERTICAL);
+        topBar.addView(chatNavIcon, lpNav);
 
-        chatTopTitle = cText("New session", 16f, Theme.TEXT_MAIN, true, false);
+        chatTopTitle = cText("New session", 15.5f, Theme.TEXT_MAIN, true, false);
         chatTopTitle.setGravity(Gravity.CENTER);
+        chatTopTitle.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
         chatTopTitle.setSingleLine(true);
+        chatTopTitle.setMaxLines(1);
+        chatTopTitle.setEllipsize(TextUtils.TruncateAt.END);
+        chatTopTitle.setPadding(dp(4), dp(4), dp(4), dp(4));
         chatTopTitle.setOnClickListener(v -> showRenameSessionDialog(activeConversationId, activeSessionTitle));
-        topBar.addView(chatTopTitle, new LinearLayout.LayoutParams(0, -2, 1));
+        FrameLayout.LayoutParams lpTitle = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
+        lpTitle.setMargins(dp(82), 0, dp(82), 0); // Symmetric margins ensure perfect center alignment
+        topBar.addView(chatTopTitle, lpTitle);
+
+        LinearLayout rightActions = new LinearLayout(this);
+        rightActions.setOrientation(LinearLayout.HORIZONTAL);
+        rightActions.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
 
         ImageView qrTopBtn = cIconButton(R.drawable.ic_qr_code, 22, 40, Theme.TEXT_MAIN);
         qrTopBtn.setOnClickListener(v -> startQrScanner());
-        topBar.addView(qrTopBtn);
+        rightActions.addView(qrTopBtn);
 
         final ImageView moreBtn = cIconButton(R.drawable.ic_more_vert, 24, 40, Theme.TEXT_MAIN);
         moreBtn.setOnClickListener(v -> showMoreDropdownMenu(moreBtn));
-        topBar.addView(moreBtn);
-        contentLayout.addView(topBar);
+        rightActions.addView(moreBtn);
+
+        FrameLayout.LayoutParams lpRight = new FrameLayout.LayoutParams(-2, dp(40), Gravity.END | Gravity.CENTER_VERTICAL);
+        topBar.addView(rightActions, lpRight);
+        contentLayout.addView(topBar, new LinearLayout.LayoutParams(-1, -2));
 
         chatScroll = new ScrollView(this);
         chatScroll.setFillViewport(true);
