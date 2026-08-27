@@ -229,43 +229,193 @@ function renderTranscript(turns) {
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-// Markdown & Diff Formatter
+// Enhanced Markdown & Syntax Formatter
 function formatMarkdown(text) {
-  let escaped = escapeHtml(text);
+  if (!text) return '';
 
-  // Parse diff blocks with 1-tap apply button
-  escaped = escaped.replace(/```(?:diff|patch)\n([\s\S]*?)```/g, (match, diffContent) => {
-    const lines = diffContent.split('\n').map(l => {
-      if (l.startsWith('+')) return `<div class="diff-line add">${l}</div>`;
-      if (l.startsWith('-')) return `<div class="diff-line del">${l}</div>`;
-      return `<div>${l}</div>`;
+  const blocks = [];
+  const addBlock = (html) => {
+    const idx = blocks.length;
+    blocks.push(html);
+    return `___BLOCK_PLACEHOLDER_${idx}___`;
+  };
+
+  let content = text;
+
+  // 1. Parse Diff Blocks
+  content = content.replace(/```(?:diff|patch)\r?\n([\s\S]*?)```/g, (match, diffContent) => {
+    const rawLines = diffContent.split(/\r?\n/);
+    const formattedLines = rawLines.map(l => {
+      const escapedL = escapeHtml(l);
+      if (l.startsWith('+') && !l.startsWith('+++')) return `<div class="diff-line add">${escapedL}</div>`;
+      if (l.startsWith('-') && !l.startsWith('---')) return `<div class="diff-line del">${escapedL}</div>`;
+      if (l.startsWith('@@')) return `<div class="diff-line meta">${escapedL}</div>`;
+      return `<div class="diff-line">${escapedL || '&nbsp;'}</div>`;
     }).join('');
 
-    return `
+    const html = `
       <div class="diff-box">
         <div class="diff-header">
-          <span>Diff Patch</span>
+          <div class="diff-header-title">
+            <svg class="icon-xs"><use href="#icon-zap"></use></svg>
+            <span>Diff Patch Inspector</span>
+          </div>
           <button class="btn-apply-diff" onclick="applyDiffPatch('${encodeURIComponent(diffContent)}')">
             <svg class="icon-xs"><use href="#icon-zap"></use></svg>
-            <span>Terapkan</span>
+            <span>Terapkan Patch</span>
           </button>
         </div>
-        <pre>${lines}</pre>
+        <div class="diff-content-wrapper">${formattedLines}</div>
       </div>
     `;
+    return addBlock(html);
   });
 
-  // Regular Code blocks
-  escaped = escaped.replace(/```([a-zA-Z0-9]*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  // Inline code
-  escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
-  // Bold
-  escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  // Line breaks
-  escaped = escaped.replace(/\n/g, '<br>');
+  // 2. Parse General Code Blocks with Syntax Highlighting & Copy Button
+  content = content.replace(/```([a-zA-Z0-9_\-\+]*)\r?\n([\s\S]*?)```/g, (match, lang, code) => {
+    const language = (lang || 'code').toUpperCase();
+    const highlighted = highlightSyntax(code, lang);
+    const b64 = btoa(unescape(encodeURIComponent(code)));
 
-  return escaped;
+    const html = `
+      <div class="code-block-card">
+        <div class="code-block-header">
+          <span class="code-block-lang">${escapeHtml(language)}</span>
+          <button class="btn-copy-code" onclick="copyCodeBlock(this, '${b64}')">
+            <svg class="icon-xs"><use href="#icon-copy"></use></svg>
+            <span>Salin</span>
+          </button>
+        </div>
+        <pre class="code-block-body"><code>${highlighted}</code></pre>
+      </div>
+    `;
+    return addBlock(html);
+  });
+
+  // 3. GitHub Callout Alerts (> [!NOTE], > [!TIP], etc.)
+  content = content.replace(/^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\r?\n([\s\S]*?)(?=\n\n|$)/gm, (match, type, body) => {
+    const alertType = type.toLowerCase();
+    const alertTitle = type.charAt(0) + type.slice(1).toLowerCase();
+    const lines = body.split(/\r?\n/).map(l => l.replace(/^>\s?/, '')).join('<br>');
+    const html = `
+      <div class="alert-box alert-${alertType}">
+        <div class="alert-title">
+          <svg class="icon-xs"><use href="#icon-alert"></use></svg>
+          <strong>${alertTitle}</strong>
+        </div>
+        <div class="alert-body">${lines}</div>
+      </div>
+    `;
+    return addBlock(html);
+  });
+
+  // 4. Markdown Tables
+  content = content.replace(/((?:\|[^\n]+\|\r?\n)+)/g, (match) => {
+    const rows = match.trim().split(/\r?\n/);
+    if (rows.length < 2) return match;
+    const isTable = rows[1].includes('---');
+    if (!isTable) return match;
+
+    const parseCells = (row) => row.split('|').slice(1, -1).map(c => c.trim());
+    const headerCells = parseCells(rows[0]);
+    const bodyRows = rows.slice(2);
+
+    const thead = `<tr>${headerCells.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
+    const tbody = bodyRows.map(r => {
+      const cells = parseCells(r);
+      return `<tr>${cells.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`;
+    }).join('');
+
+    const html = `
+      <div class="table-responsive-wrapper">
+        <table class="markdown-table">
+          <thead>${thead}</thead>
+          <tbody>${tbody}</tbody>
+        </table>
+      </div>
+    `;
+    return addBlock(html);
+  });
+
+  // 5. Escape rest of text HTML
+  let out = escapeHtml(content);
+
+  // 6. Headers
+  out = out.replace(/^#### (.*?)$/gm, '<h4 class="md-h4">$1</h4>');
+  out = out.replace(/^### (.*?)$/gm, '<h3 class="md-h3">$1</h3>');
+  out = out.replace(/^## (.*?)$/gm, '<h2 class="md-h2">$1</h2>');
+  out = out.replace(/^# (.*?)$/gm, '<h1 class="md-h1">$1</h1>');
+
+  // 7. Horizontal Rule
+  out = out.replace(/^---$/gm, '<hr class="md-hr">');
+
+  // 8. Blockquotes
+  out = out.replace(/^> (.*?)$/gm, '<blockquote class="md-blockquote">$1</blockquote>');
+
+  // 9. Task lists & lists
+  out = out.replace(/^- \[x\] (.*?)$/gm, '<div class="md-task-item checked"><svg class="icon-xs"><use href="#icon-check"></use></svg> <span>$1</span></div>');
+  out = out.replace(/^- \[ \] (.*?)$/gm, '<div class="md-task-item unchecked"><span class="checkbox-square"></span> <span>$1</span></div>');
+  out = out.replace(/^[*\-] (.*?)$/gm, '<li class="md-li">$1</li>');
+  out = out.replace(/(<li class="md-li">[\s\S]*?<\/li>)/g, '<ul class="md-ul">$1</ul>');
+
+  // 10. Inline styles (Bold, Italic, Strikethrough, Code, Links)
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong class="md-strong">$1</strong>');
+  out = out.replace(/\*([^*]+)\*/g, '<em class="md-em">$1</em>');
+  out = out.replace(/~~([^~]+)~~/g, '<del class="md-del">$1</del>');
+  out = out.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" class="md-link" target="_blank" rel="noopener">$1 ↗</a>');
+
+  // 11. Paragraphs & Line breaks
+  out = out.replace(/\n\n/g, '<div class="md-p-gap"></div>');
+  out = out.replace(/\n/g, '<br>');
+
+  // 12. Restore Block Placeholders
+  out = out.replace(/___BLOCK_PLACEHOLDER_(\d+)___/g, (match, idx) => {
+    return blocks[parseInt(idx, 10)] || '';
+  });
+
+  return out;
 }
+
+// Lightweight Syntax Highlighter
+function highlightSyntax(code, lang) {
+  let esc = escapeHtml(code);
+  const l = (lang || '').toLowerCase();
+
+  // Comments
+  esc = esc.replace(/(\/\/[^\n]*|# [^\n]*|\/\*[\s\S]*?\*\/)/g, '<span class="syn-comment">$1</span>');
+
+  // Strings
+  esc = esc.replace(/(&quot;[\s\S]*?&quot;|&#39;[\s\S]*?&#39;|`[\s\S]*?`)/g, '<span class="syn-string">$1</span>');
+
+  // Numbers
+  esc = esc.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="syn-number">$1</span>');
+
+  // Keywords
+  const keywords = ['const','let','var','function','return','class','import','export','from','default','async','await','if','else','switch','case','for','while','try','catch','finally','new','this','typeof','extends','implements','interface','type','public','private','protected','static','def','self','None','True','False','null','undefined','true','false'];
+  const kwRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'g');
+  esc = esc.replace(kwRegex, '<span class="syn-keyword">$1</span>');
+
+  // Functions
+  esc = esc.replace(/\b([a-zA-Z_$][a-zA-Z0-9_$]*)(?=\s*\()/g, '<span class="syn-func">$1</span>');
+
+  return esc;
+}
+
+// Copy Code Block Handler
+window.copyCodeBlock = function(btn, b64) {
+  try {
+    const code = decodeURIComponent(escape(atob(b64)));
+    navigator.clipboard.writeText(code);
+    const originalText = btn.innerHTML;
+    btn.innerHTML = `<svg class="icon-xs" style="color:var(--green)"><use href="#icon-check"></use></svg><span style="color:var(--green)">Tersalin!</span>`;
+    setTimeout(() => {
+      btn.innerHTML = originalText;
+    }, 2000);
+  } catch (e) {
+    console.error('Copy failed:', e);
+  }
+};
 
 // 1-Tap Diff Patch Apply
 window.applyDiffPatch = async function(encodedDiff) {
