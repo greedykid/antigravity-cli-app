@@ -9647,7 +9647,7 @@ public class MainActivity extends FragmentActivity {
         });
 
         // 2. Standalone HTML Webpage (.html)
-        addCustomPopupItem(root, "Buat Halaman Web Standalone (.html)", R.drawable.ic_language, Theme.BLUE, () -> {
+        addCustomPopupItem(root, "Buat Halaman Web Standalone (.html)", R.drawable.ic_code, Theme.BLUE, () -> {
             dialog.dismiss();
             doExportHtml(convId);
         });
