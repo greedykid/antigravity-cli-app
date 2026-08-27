@@ -37,13 +37,19 @@ function fetchJson(target, headers, timeoutMs) {
   });
 }
 
-/** Accepts both the OpenAI shape ({data:[{id}]}) and a bare array. */
+/** Accepts OpenAI shape ({data:[{id}]}), Ollama ({models:[{name}]}), and bare arrays. */
 function extractIds(payload) {
-  const rows = Array.isArray(payload) ? payload
-    : (Array.isArray(payload && payload.data) ? payload.data : []);
+  let rows = [];
+  if (Array.isArray(payload)) {
+    rows = payload;
+  } else if (Array.isArray(payload && payload.data)) {
+    rows = payload.data;
+  } else if (Array.isArray(payload && payload.models)) {
+    rows = payload.models;
+  }
   const ids = [];
   for (const row of rows) {
-    const id = typeof row === "string" ? row : (row && (row.id || row.name));
+    const id = typeof row === "string" ? row : (row && (row.id || row.name || row.model));
     if (id && !ids.includes(id)) ids.push(String(id));
   }
   return ids.sort((a, b) => a.localeCompare(b));
@@ -62,7 +68,22 @@ async function list(provider, force) {
   if (provider.token) headers["Authorization"] = "Bearer " + provider.token;
 
   const base = provider.baseUrl.replace(/\/+$/, "");
-  const result = await fetchJson(base + "/models", headers, 15000);
+  
+  // Try standard /models
+  let result = await fetchJson(base + "/models", headers, 10000);
+  
+  // If failed and base does not end in /v1, try /v1/models
+  if (result.error && !base.endsWith("/v1")) {
+    const v1Result = await fetchJson(base + "/v1/models", headers, 10000);
+    if (!v1Result.error) result = v1Result;
+  }
+
+  // If Ollama / custom tags endpoint
+  if (result.error || (result.data && !result.data.data && !result.data.models && !Array.isArray(result.data))) {
+    const tagResult = await fetchJson(base + "/api/tags", headers, 10000);
+    if (!tagResult.error) result = tagResult;
+  }
+
   if (result.error) return { ok: false, error: result.error };
 
   const models = extractIds(result.data);

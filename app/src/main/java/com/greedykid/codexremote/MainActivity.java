@@ -5826,36 +5826,153 @@ public class MainActivity extends FragmentActivity {
     }
 
     private void showOpenCodeModelPicker() {
-        final String[] models = {
-                "deepseek-coder", "claude-3-5-sonnet", "gpt-4o", "gpt-4o-mini",
-                "ollama/qwen2.5-coder", "ollama/llama3", "ollama/deepseek-coder-v2",
-                "openrouter/anthropic/claude-3.5-sonnet", "openrouter/meta-llama/llama-3.1-70b"
-        };
-        Dialog dialog = createBaseBottomSheet(true);
-        LinearLayout root = createBottomSheetRoot(dialog, "Pilih Model OpenCode", true);
-        root.addView(cText("Model multi-provider OpenCode (Cloud & Ollama Lokal)",
-                12.5f, Theme.TEXT_MUTED, false, false));
+        final Dialog dialog = createBaseBottomSheet(true);
+        final LinearLayout root = createBottomSheetRoot(dialog, "Pilih Model OpenCode", true);
 
-        for (String model : models) {
-            TextView option = cText((model.equalsIgnoreCase(currentModel) ? "✓  " : "    ") + displayModel(model),
-                    14f, model.equalsIgnoreCase(currentModel) ? Theme.ACCENT : Theme.TEXT_MAIN, true, false);
-            option.setGravity(Gravity.CENTER_VERTICAL);
-            option.setPadding(dp(14), 0, dp(14), 0);
-            option.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(46));
-            lp.setMargins(0, dp(8), 0, 0);
-            root.addView(option, lp);
-            option.setOnClickListener(v -> {
-                currentModel = model;
-                prefs.edit().putString(modelPrefKey(currentEngine), currentModel).apply();
-                updateRepoTag();
-                dialog.dismiss();
-                startNewSession();
-                Toast.makeText(this, "Model: " + displayModel(currentModel), Toast.LENGTH_SHORT).show();
-            });
-        }
+        final TextView subtitle = cText("Memuat daftar model dari provider OpenCode...",
+                12.5f, Theme.TEXT_MUTED, false, false);
+        root.addView(subtitle);
+
+        final EditText search = new EditText(this);
+        search.setHint("Cari model, atau ketik nama model manual");
+        search.setTextSize(14f);
+        search.setSingleLine(true);
+        search.setTextColor(Theme.TEXT_MAIN);
+        search.setHintTextColor(Theme.TEXT_LIGHT);
+        search.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 14));
+        search.setPadding(dp(14), dp(11), dp(14), dp(11));
+        LinearLayout.LayoutParams lpSearch = new LinearLayout.LayoutParams(-1, -2);
+        lpSearch.setMargins(0, dp(12), 0, dp(4));
+        root.addView(search, lpSearch);
+
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(list);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, dp(340)));
+
+        TextView useTyped = cText("Pakai yang diketik", 14f, Theme.ON_ACCENT, true, false);
+        useTyped.setGravity(Gravity.CENTER);
+        useTyped.setPadding(dp(16), dp(13), dp(16), dp(13));
+        useTyped.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
+        useTyped.setOnClickListener(v -> {
+            String typed = search.getText().toString().trim();
+            if (typed.isEmpty()) {
+                Toast.makeText(this, "Ketik nama model dulu", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            applyOpenCodeModel(typed, dialog);
+        });
+        LinearLayout.LayoutParams lpUse = new LinearLayout.LayoutParams(-1, -2);
+        lpUse.setMargins(0, dp(10), 0, 0);
+        root.addView(useTyped, lpUse);
+
+        final ArrayList<String> all = new ArrayList<>();
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {
+                renderOpenCodeModelList(list, all, s.toString().trim(), dialog);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        list.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/opencode/models", 25000);
+                final boolean ok = json.optBoolean("ok", false);
+                final String provider = json.optString("provider", "");
+                final String error = json.optString("error", "");
+                JSONArray arr = json.optJSONArray("models");
+                final ArrayList<String> fetched = new ArrayList<>();
+                if (arr != null && arr.length() > 0) {
+                    for (int i = 0; i < arr.length(); i++) fetched.add(arr.optString(i));
+                } else {
+                    fetched.add("deepseek-coder");
+                    fetched.add("claude-3-5-sonnet-latest");
+                    fetched.add("gpt-4o");
+                    fetched.add("gpt-4o-mini");
+                    fetched.add("qwen2.5-coder:latest");
+                    fetched.add("llama3:latest");
+                    fetched.add("anthropic/claude-3.5-sonnet");
+                    fetched.add("llama-3.3-70b-versatile");
+                }
+                mainHandler.post(() -> {
+                    all.clear();
+                    all.addAll(fetched);
+                    if (ok) {
+                        subtitle.setText(fetched.size() + " model dari " + provider);
+                    } else {
+                        subtitle.setText(provider.isEmpty() ? "Daftar model standar OpenCode" : "Provider: " + provider + " (" + error + ")");
+                    }
+                    renderOpenCodeModelList(list, all, search.getText().toString().trim(), dialog);
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    all.clear();
+                    all.add("deepseek-coder");
+                    all.add("claude-3-5-sonnet-latest");
+                    all.add("gpt-4o");
+                    all.add("gpt-4o-mini");
+                    all.add("qwen2.5-coder:latest");
+                    all.add("llama3:latest");
+                    subtitle.setText("Daftar model OpenCode");
+                    renderOpenCodeModelList(list, all, search.getText().toString().trim(), dialog);
+                });
+            }
+        });
+
         dialog.setContentView(root);
         dialog.show();
+    }
+
+    private void renderOpenCodeModelList(final LinearLayout list, final ArrayList<String> all,
+                                         final String filter, final Dialog dialog) {
+        list.removeAllViews();
+        if (all.isEmpty()) return;
+
+        final String needle = filter.toLowerCase(Locale.ROOT);
+        int shown = 0;
+        for (final String model : all) {
+            if (!needle.isEmpty() && !model.toLowerCase(Locale.ROOT).contains(needle)) continue;
+            if (shown >= 60) break;
+            shown++;
+
+            boolean active = model.equalsIgnoreCase(currentModel);
+            TextView option = cText((active ? "✓  " : "     ") + model, 13.5f,
+                    active ? Theme.ACCENT : Theme.TEXT_MAIN, active, false);
+            option.setGravity(Gravity.CENTER_VERTICAL);
+            option.setSingleLine(true);
+            option.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            option.setPadding(dp(14), 0, dp(14), 0);
+            option.setBackground(cBox(Theme.SURFACE_MUTED, active ? Theme.ACCENT : Theme.BORDER, 1, 12));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(44));
+            lp.setMargins(0, dp(6), 0, 0);
+            list.addView(option, lp);
+            option.setOnClickListener(v -> applyOpenCodeModel(model, dialog));
+        }
+
+        if (shown == 0) {
+            list.addView(cText("Tidak ada yang cocok. Ketuk \"Pakai yang diketik\" untuk memakainya apa adanya.",
+                    13f, Theme.TEXT_MUTED, false, false));
+        }
+    }
+
+    private void applyOpenCodeModel(final String model, final Dialog dialog) {
+        executor.execute(() -> {
+            try {
+                bridge.post("/api/opencode/active", new JSONObject().put("model", model), 30000);
+            } catch (Exception ignored) {}
+            mainHandler.post(() -> {
+                currentModel = model;
+                prefs.edit().putString(modelPrefKey("opencode"), model).apply();
+                updateRepoTag();
+                refreshSettingsValues();
+                dialog.dismiss();
+                startNewSession();
+                Toast.makeText(MainActivity.this, "Model: " + model, Toast.LENGTH_SHORT).show();
+            });
+        });
     }
 
     /** Antigravity's models are fixed by the CLI, so the list stays static. */
@@ -6116,18 +6233,31 @@ public class MainActivity extends FragmentActivity {
             });
         }
 
-        // Provider config lives in the Codex CLI itself, so it belongs here.
-        TextView apiRow = cText("Konfigurasi API Codex  ›", 13.5f, Theme.ACCENT, true, false);
-        apiRow.setGravity(Gravity.CENTER);
-        apiRow.setPadding(dp(14), dp(13), dp(14), dp(13));
-        apiRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
-        apiRow.setOnClickListener(v -> {
-            dialog.dismiss();
-            showCodexApiConfig();
-        });
-        LinearLayout.LayoutParams lpApi = new LinearLayout.LayoutParams(-1, -2);
-        lpApi.setMargins(0, dp(14), 0, 0);
-        root.addView(apiRow, lpApi);
+        if ("codex".equalsIgnoreCase(currentEngine)) {
+            TextView apiRow = cText("Konfigurasi API Codex  ›", 13.5f, Theme.ACCENT, true, false);
+            apiRow.setGravity(Gravity.CENTER);
+            apiRow.setPadding(dp(14), dp(13), dp(14), dp(13));
+            apiRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+            apiRow.setOnClickListener(v -> {
+                dialog.dismiss();
+                showCodexApiConfig();
+            });
+            LinearLayout.LayoutParams lpApi = new LinearLayout.LayoutParams(-1, -2);
+            lpApi.setMargins(0, dp(14), 0, 0);
+            root.addView(apiRow, lpApi);
+        } else if ("opencode".equalsIgnoreCase(currentEngine)) {
+            TextView apiRow = cText("Konfigurasi Provider OpenCode  ›", 13.5f, Theme.ACCENT, true, false);
+            apiRow.setGravity(Gravity.CENTER);
+            apiRow.setPadding(dp(14), dp(13), dp(14), dp(13));
+            apiRow.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+            apiRow.setOnClickListener(v -> {
+                dialog.dismiss();
+                showOpenCodeApiConfig();
+            });
+            LinearLayout.LayoutParams lpApi = new LinearLayout.LayoutParams(-1, -2);
+            lpApi.setMargins(0, dp(14), 0, 0);
+            root.addView(apiRow, lpApi);
+        }
 
         dialog.setContentView(root);
         dialog.show();
@@ -10659,6 +10789,274 @@ public class MainActivity extends FragmentActivity {
                         "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
+    }
+
+    // ============================================================
+    // OPENCODE PROVIDER CONFIGURATION
+    // ============================================================
+    private void showOpenCodeApiConfig() {
+        final Dialog dialog = createBaseBottomSheet(true);
+        final LinearLayout root = createBottomSheetRoot(dialog, "Konfigurasi Provider OpenCode", true);
+
+        root.addView(cText("Kelola provider AI untuk OpenCode (DeepSeek, Claude, OpenAI, OpenRouter, Ollama Lokal).",
+                12.5f, Theme.TEXT_MUTED, false, false));
+
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        LinearLayout.LayoutParams lpScroll = new LinearLayout.LayoutParams(-1, dp(400));
+        lpScroll.setMargins(0, dp(12), 0, dp(10));
+        root.addView(scroll, lpScroll);
+
+        body.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
+        loadOpenCodeConfig(body, dialog);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView addPreset = cText("+ DeepSeek", 13.5f, Theme.ACCENT, true, false);
+        addPreset.setGravity(Gravity.CENTER);
+        addPreset.setPadding(dp(12), dp(12), dp(12), dp(12));
+        addPreset.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        addPreset.setOnClickListener(v -> {
+            dialog.dismiss();
+            showOpenCodeProviderEditor("deepseek", "DeepSeek", "https://api.deepseek.com/v1", "deepseek-coder");
+        });
+        LinearLayout.LayoutParams lpA = new LinearLayout.LayoutParams(0, -2, 1);
+        lpA.setMargins(0, 0, dp(8), 0);
+        actions.addView(addPreset, lpA);
+
+        TextView addCustom = cText("+ Provider Lain", 13.5f, Theme.TEXT_MAIN, true, false);
+        addCustom.setGravity(Gravity.CENTER);
+        addCustom.setPadding(dp(12), dp(12), dp(12), dp(12));
+        addCustom.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        addCustom.setOnClickListener(v -> {
+            dialog.dismiss();
+            showOpenCodeProviderEditor("", "", "", "");
+        });
+        actions.addView(addCustom, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(actions);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void loadOpenCodeConfig(final LinearLayout body, final Dialog dialog) {
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/opencode/config");
+                mainHandler.post(() -> renderOpenCodeConfig(body, dialog, json));
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    body.removeAllViews();
+                    body.addView(cText("Gagal: " + ex.getMessage(), 13f, Theme.RED, false, false));
+                });
+            }
+        });
+    }
+
+    private void renderOpenCodeConfig(final LinearLayout body, final Dialog dialog, JSONObject json) {
+        body.removeAllViews();
+        final String activeProvider = json.optString("activeProvider", "");
+        final String activeModel = json.optString("activeModel", "");
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.VERTICAL);
+        head.setBackground(cBox(Theme.ACCENT_SOFT, Theme.ACCENT, 1, 14));
+        head.setPadding(dp(14), dp(12), dp(14), dp(12));
+        head.addView(cText("Provider Aktif: " + (activeProvider.isEmpty() ? "Belum diatur" : activeProvider),
+                14f, Theme.ACCENT, true, false));
+        head.addView(cText("Model: " + (activeModel.isEmpty() ? "Default" : activeModel),
+                12f, Theme.TEXT_MAIN, false, false));
+        body.addView(head);
+
+        TextView sec = cText("Daftar Provider Terkonfigurasi", 12f, Theme.TEXT_MUTED, true, false);
+        sec.setPadding(0, dp(16), 0, dp(6));
+        body.addView(sec);
+
+        JSONArray arr = json.optJSONArray("providers");
+        if (arr == null || arr.length() == 0) {
+            body.addView(cText("Belum ada provider tersimpan.", 13f, Theme.TEXT_MUTED, false, false));
+            return;
+        }
+
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject p = arr.optJSONObject(i);
+            if (p == null) continue;
+            final String id = p.optString("id", "");
+            final String name = p.optString("name", id);
+            final String baseUrl = p.optString("baseUrl", "");
+            final boolean hasToken = p.optBoolean("hasToken", false);
+            final String defModel = p.optString("defaultModel", "");
+            final boolean isActive = id.equalsIgnoreCase(activeProvider);
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setBackground(cBox(Theme.SURFACE_MUTED, isActive ? Theme.ACCENT : Theme.BORDER, 1, 12));
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            LinearLayout.LayoutParams lpC = new LinearLayout.LayoutParams(-1, -2);
+            lpC.setMargins(0, dp(8), 0, 0);
+            card.setLayoutParams(lpC);
+
+            LinearLayout topRow = new LinearLayout(this);
+            topRow.setOrientation(LinearLayout.HORIZONTAL);
+            topRow.setGravity(Gravity.CENTER_VERTICAL);
+            topRow.addView(cText(name, 14.5f, isActive ? Theme.ACCENT : Theme.TEXT_MAIN, true, false));
+
+            if (isActive) {
+                TextView actBadge = cText(" ● Aktif", 11f, Theme.GREEN, true, false);
+                actBadge.setPadding(dp(6), 0, 0, 0);
+                topRow.addView(actBadge);
+            }
+            if (hasToken) {
+                TextView keyBadge = cText(" [API Key Terpasang]", 10.5f, Theme.TEXT_LIGHT, false, false);
+                keyBadge.setPadding(dp(6), 0, 0, 0);
+                topRow.addView(keyBadge);
+            }
+            card.addView(topRow);
+            card.addView(cText(baseUrl.isEmpty() ? "Base URL: Default" : baseUrl, 11.5f, Theme.TEXT_MUTED, false, false));
+
+            LinearLayout btnRow = new LinearLayout(this);
+            btnRow.setOrientation(LinearLayout.HORIZONTAL);
+            btnRow.setPadding(0, dp(8), 0, 0);
+
+            if (!isActive) {
+                TextView btnUse = cText("Gunakan", 12.5f, Theme.ON_ACCENT, true, false);
+                btnUse.setPadding(dp(12), dp(6), dp(12), dp(6));
+                btnUse.setBackground(cBox(Theme.ACCENT, 0, 0, 8));
+                btnUse.setOnClickListener(v -> {
+                    executor.execute(() -> {
+                        try {
+                            JSONObject req = new JSONObject().put("provider", id);
+                            if (!defModel.isEmpty()) req.put("model", defModel);
+                            bridge.post("/api/opencode/active", req, 20000);
+                            mainHandler.post(() -> {
+                                Toast.makeText(MainActivity.this, "Provider " + name + " aktif", Toast.LENGTH_SHORT).show();
+                                loadOpenCodeConfig(body, dialog);
+                            });
+                        } catch (Exception ex) {
+                            mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+                        }
+                    });
+                });
+                btnRow.addView(btnUse);
+            }
+
+            TextView btnEdit = cText("Edit", 12.5f, Theme.TEXT_MAIN, true, false);
+            btnEdit.setPadding(dp(12), dp(6), dp(12), dp(6));
+            btnEdit.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 8));
+            LinearLayout.LayoutParams lpEdit = new LinearLayout.LayoutParams(-2, -2);
+            lpEdit.setMargins(dp(8), 0, 0, 0);
+            btnEdit.setOnClickListener(v -> {
+                dialog.dismiss();
+                showOpenCodeProviderEditor(id, name, baseUrl, defModel);
+            });
+            btnRow.addView(btnEdit, lpEdit);
+
+            card.addView(btnRow);
+            body.addView(card);
+        }
+    }
+
+    private void showOpenCodeProviderEditor(final String id, final String name, final String baseUrl, final String defaultModel) {
+        final Dialog dialog = createBaseBottomSheet(true);
+        final LinearLayout root = createBottomSheetRoot(dialog, id.isEmpty() ? "Tambah Provider OpenCode" : "Edit Provider", true);
+
+        final EditText inputId = new EditText(this);
+        inputId.setHint("ID (misal: deepseek, anthropic, ollama)");
+        inputId.setText(id);
+        inputId.setEnabled(id.isEmpty());
+        inputId.setTextSize(14f);
+        inputId.setTextColor(Theme.TEXT_MAIN);
+        inputId.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 12));
+        inputId.setPadding(dp(12), dp(10), dp(12), dp(10));
+        root.addView(inputId);
+
+        final EditText inputName = new EditText(this);
+        inputName.setHint("Nama Tampilan");
+        inputName.setText(name);
+        inputName.setTextSize(14f);
+        inputName.setTextColor(Theme.TEXT_MAIN);
+        inputName.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 12));
+        inputName.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout.LayoutParams lpN = new LinearLayout.LayoutParams(-1, -2);
+        lpN.setMargins(0, dp(8), 0, 0);
+        root.addView(inputName, lpN);
+
+        final EditText inputUrl = new EditText(this);
+        inputUrl.setHint("Base URL (misal: https://api.deepseek.com/v1)");
+        inputUrl.setText(baseUrl);
+        inputUrl.setTextSize(14f);
+        inputUrl.setTextColor(Theme.TEXT_MAIN);
+        inputUrl.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 12));
+        inputUrl.setPadding(dp(12), dp(10), dp(12), dp(10));
+        root.addView(inputUrl, lpN);
+
+        final EditText inputKey = new EditText(this);
+        inputKey.setHint("API Key / Token (kosongkan jika tanpa auth/ollama)");
+        inputKey.setTextSize(14f);
+        inputKey.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        inputKey.setTextColor(Theme.TEXT_MAIN);
+        inputKey.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 12));
+        inputKey.setPadding(dp(12), dp(10), dp(12), dp(10));
+        root.addView(inputKey, lpN);
+
+        final EditText inputModel = new EditText(this);
+        inputModel.setHint("Default Model (misal: deepseek-coder, claude-3-5-sonnet)");
+        inputModel.setText(defaultModel);
+        inputModel.setTextSize(14f);
+        inputModel.setTextColor(Theme.TEXT_MAIN);
+        inputModel.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 12));
+        inputModel.setPadding(dp(12), dp(10), dp(12), dp(10));
+        root.addView(inputModel, lpN);
+
+        TextView save = cText("Simpan Provider", 14f, Theme.ON_ACCENT, true, false);
+        save.setGravity(Gravity.CENTER);
+        save.setPadding(dp(16), dp(13), dp(16), dp(13));
+        save.setBackground(cBox(Theme.ACCENT, 0, 0, 12));
+        LinearLayout.LayoutParams lpSave = new LinearLayout.LayoutParams(-1, -2);
+        lpSave.setMargins(0, dp(14), 0, 0);
+        save.setOnClickListener(v -> {
+            final String pid = inputId.getText().toString().trim().toLowerCase();
+            final String pname = inputName.getText().toString().trim();
+            final String purl = inputUrl.getText().toString().trim();
+            final String pkey = inputKey.getText().toString().trim();
+            final String pmod = inputModel.getText().toString().trim();
+
+            if (pid.isEmpty() || purl.isEmpty()) {
+                Toast.makeText(this, "ID dan Base URL wajib diisi", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            executor.execute(() -> {
+                try {
+                    JSONObject req = new JSONObject()
+                            .put("id", pid)
+                            .put("name", pname.isEmpty() ? pid : pname)
+                            .put("baseUrl", purl)
+                            .put("defaultModel", pmod);
+                    if (!pkey.isEmpty()) req.put("token", pkey);
+
+                    JSONObject res = bridge.post("/api/opencode/provider", req, 20000);
+                    mainHandler.post(() -> {
+                        if (res.optBoolean("ok", false)) {
+                            Toast.makeText(MainActivity.this, "Provider tersimpan!", Toast.LENGTH_SHORT).show();
+                            dialog.dismiss();
+                            showOpenCodeApiConfig();
+                        } else {
+                            Toast.makeText(MainActivity.this, "Gagal: " + res.optString("error"), Toast.LENGTH_LONG).show();
+                        }
+                    });
+                } catch (Exception ex) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+                }
+            });
+        });
+        root.addView(save, lpSave);
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     // ============================================================

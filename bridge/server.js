@@ -15,6 +15,7 @@ const auditLog = require("./audit");
 const searchIndex = require("./search");
 const quota = require("./quota");
 const codexConfig = require("./codexconfig");
+const opencodeConfig = require("./opencodeconfig");
 const providerModels = require("./models");
 const archive = require("./archive");
 const WRITE_BLOCKED_MESSAGE = "Endpoint ini dinonaktifkan oleh mode Hanya Baca";
@@ -26,6 +27,7 @@ function isWriteBlocked(pathname) {
     pathname === "/api/uploads/cleanup" ||
     pathname.startsWith("/api/git/") ||
     pathname.startsWith("/api/codex/") ||
+    pathname.startsWith("/api/opencode/") ||
     pathname === "/api/chat" ||
     pathname === "/api/projects" ||
     pathname === "/api/settings";
@@ -913,8 +915,9 @@ function getSessions(engineFilter) {
 
   const codexSessions = getCodexSessions();
   const agySessions = Array.from(agyMap.values());
+  const opencodeSessions = opencodeConfig.getOpencodeSessions(WORKDIR);
 
-  let merged = [...codexSessions, ...agySessions].sort((a, b) => {
+  let merged = [...codexSessions, ...agySessions, ...opencodeSessions].sort((a, b) => {
     return (b.timestamp || 0) - (a.timestamp || 0);
   });
 
@@ -954,13 +957,22 @@ function getSessions(engineFilter) {
 }
 
 function normalizeEngine(value) {
-  return String(value || "").toLowerCase() === "codex" ? "codex" : "antigravity";
+  const v = String(value || "").toLowerCase();
+  if (v === "codex") return "codex";
+  if (v === "opencode") return "opencode";
+  return "antigravity";
 }
 
 function getTranscript(convId, limit = 1000) {
   if (!convId) return [];
 
-  // Check Codex first
+  // Check OpenCode transcript
+  const opencodeTurns = opencodeConfig.getOpencodeTranscript(convId, limit);
+  if (opencodeTurns && opencodeTurns.length > 0) {
+    return opencodeTurns;
+  }
+
+  // Check Codex next
   const codexTurns = getCodexTranscript(convId, limit);
   if (codexTurns && codexTurns.length > 0) {
     return codexTurns;
@@ -1229,10 +1241,19 @@ function runOpencode(prompt, conversationId, model, job) {
 
     child.on("close", code => {
       clearTimeout(timeout);
+      const resText = fullOutput.trim() || error.trim() || "Done.";
+      const sid = conversationId || `opencode_${Date.now()}`;
+
+      // Persist turns into OpenCode session transcript
+      try {
+        opencodeConfig.recordTurn(sid, "user", prompt, { workspace: WORKDIR });
+        opencodeConfig.recordTurn(sid, "assistant", resText, { workspace: WORKDIR, model });
+      } catch (e) {}
+
       if (code === 0 || fullOutput.trim()) {
         resolve({
-          response: fullOutput.trim() || error.trim() || "Done.",
-          sessionId: conversationId || `opencode_${Date.now()}`
+          response: resText,
+          sessionId: sid
         });
       } else {
         reject(new Error(error.trim() || `OpenCode process exited with code ${code}`));
@@ -2344,6 +2365,60 @@ const server = http.createServer((req, res) => {
 
         if (result.ok) events.broadcast("codex.config.changed", codexConfig.read());
         send(res, result.ok ? 200 : 400, Object.assign({}, result, { config: codexConfig.read() }));
+      } catch (err) {
+        send(res, 400, { error: err.message });
+      }
+    });
+    return;
+  }
+
+  // GET /api/opencode/models — query active or requested OpenCode provider's catalogue
+  if (req.method === "GET" && pathname === "/api/opencode/models") {
+    const current = opencodeConfig.readConfig();
+    const id = parsedUrl.query.provider || current.activeProvider;
+    const secret = opencodeConfig.providerSecret(id);
+    if (!secret) {
+      return send(res, 200, { ok: false, error: "Provider tidak ditemukan di konfigurasi OpenCode", models: [] });
+    }
+    providerModels.list(secret, parsedUrl.query.refresh === "1").then(result => {
+      send(res, 200, Object.assign({ provider: id, activeModel: current.activeModel }, result));
+    }).catch(err => send(res, 200, { ok: false, error: err.message, models: [] }));
+    return;
+  }
+
+  // GET /api/opencode/config
+  if (req.method === "GET" && pathname === "/api/opencode/config") {
+    return send(res, 200, opencodeConfig.read());
+  }
+
+  // POST /api/opencode/provider        upsert a model provider
+  // POST /api/opencode/provider/delete remove one
+  // POST /api/opencode/active          switch the active provider/model
+  if (req.method === "POST" && pathname.startsWith("/api/opencode/")) {
+    let raw = "";
+    req.on("data", chunk => {
+      raw += chunk;
+      if (raw.length > 64 * 1024) req.destroy();
+    });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        let result;
+        if (pathname === "/api/opencode/provider") {
+          result = opencodeConfig.upsertProvider(payload);
+          audit("opencode.provider.saved", { id: payload.id, baseUrl: payload.baseUrl, ok: result.ok });
+        } else if (pathname === "/api/opencode/provider/delete") {
+          result = opencodeConfig.removeProvider(payload.id);
+          audit("opencode.provider.deleted", { id: payload.id, ok: result.ok });
+        } else if (pathname === "/api/opencode/active") {
+          result = opencodeConfig.setActive(payload);
+          audit("opencode.provider.activated", { provider: payload.provider, model: payload.model, ok: result.ok });
+        } else {
+          return send(res, 404, { error: "Not found" });
+        }
+
+        if (result.ok) events.broadcast("opencode.config.changed", opencodeConfig.read());
+        send(res, result.ok ? 200 : 400, Object.assign({}, result, { config: opencodeConfig.read() }));
       } catch (err) {
         send(res, 400, { error: err.message });
       }
