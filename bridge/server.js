@@ -1705,6 +1705,43 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // POST /api/files/patch
+  if (req.method === "POST" && pathname === "/api/files/patch") {
+    let raw = "";
+    req.on("data", chunk => { raw += chunk; });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const patchContent = (payload.patch || payload.diff || "").trim();
+        if (!patchContent) return send(res, 400, { error: "Diff / patch content tidak boleh kosong" });
+
+        const tmpFile = path.join(os.tmpdir(), "patch-" + Date.now() + ".diff");
+        fs.writeFileSync(tmpFile, patchContent + "\n", "utf8");
+        const { execSync } = require("child_process");
+        let ok = true, msg = "";
+        try {
+          execSync(`git apply --whitespace=nowarn "${tmpFile}" 2>/dev/null || patch -p1 -f < "${tmpFile}" 2>/dev/null || patch -p0 -f < "${tmpFile}"`, {
+            cwd: WORKDIR,
+            timeout: 10000,
+            stdio: "pipe"
+          });
+          msg = "Perubahan diff berhasil diterapkan ke workspace.";
+          audit("file.patch", { ok: true });
+          events.broadcast("git.changed", { path: WORKDIR });
+        } catch (e) {
+          ok = false;
+          msg = e.message || "Gagal menerapkan diff patch.";
+        } finally {
+          try { fs.unlinkSync(tmpFile); } catch (e) {}
+        }
+        return send(res, ok ? 200 : 400, { ok, message: msg });
+      } catch (err) {
+        send(res, 500, { error: err.message });
+      }
+    });
+    return;
+  }
+
   // POST /api/terminal/exec
   if (req.method === "POST" && pathname === "/api/terminal/exec") {
     let raw = "";

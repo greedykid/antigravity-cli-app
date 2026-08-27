@@ -494,13 +494,16 @@ public class MainActivity extends FragmentActivity {
     }
 
     private static final SlashCmd[] SLASH_COMMANDS = new SlashCmd[]{
-        new SlashCmd("/diff", "Tampilkan git diff perubahan terbaru", "Tampilkan git diff dari perubahan terbaru di repository ini."),
-        new SlashCmd("/test", "Jalankan automated test suite", "Jalankan semua test suite di project dan laporkan hasilnya."),
-        new SlashCmd("/commit", "Buat commit git otomatis", "Buat commit git dengan deskripsi ringkas dan rapi untuk perubahan saat ini."),
-        new SlashCmd("/review", "Review kode & analisis kualitas", "Tolong review kode terbaru di workspace ini, periksa potensi bug, performa, dan keamanan."),
+        new SlashCmd("/fix", "Perbaiki bug atau error kode", "Tolong perbaiki bug atau error berikut pada project ini: "),
+        new SlashCmd("/test", "Jalankan & buat automated test", "Buat unit test komprehensif dan jalankan test suite untuk memastikan semua berfungsi."),
+        new SlashCmd("/diff", "Tampilkan git diff perubahan terkini", "Tampilkan git diff dari perubahan terbaru di repository ini."),
+        new SlashCmd("/review", "Review kode & analisis kualitas", "Tolong review kode di workspace ini, periksa potensi bug, performa, dan keamanan."),
+        new SlashCmd("/refactor", "Refactor & optimasi struktur kode", "Refactor kode ini agar lebih bersih, modular, maintainable, dan efisien: "),
         new SlashCmd("/explain", "Jelaskan alur arsitektur kode", "Jelaskan arsitektur dan alur kerja utama dari codebase project ini secara ringkas."),
+        new SlashCmd("/doc", "Buat dokumentasi teknis & docstring", "Buat dokumentasi teknis lengkap dan docstring yang jelas untuk: "),
+        new SlashCmd("/commit", "Buat commit git otomatis", "Buat commit git dengan deskripsi ringkas dan rapi untuk perubahan saat ini."),
         new SlashCmd("/status", "Cek status repository git", "Periksa git status dan rangkum file apa saja yang diubah atau belum di-stage."),
-        new SlashCmd("/fix", "Perbaiki bug atau error kode", "Tolong perbaiki bug atau error berikut pada project ini: ")
+        new SlashCmd("/sec", "Audit keamanan & vulnerability", "Lakukan audit keamanan pada dependency dan kode untuk mendeteksi kerentanan potensial.")
     };
 
     private static class MentionItem {
@@ -5532,6 +5535,28 @@ public class MainActivity extends FragmentActivity {
         btnVoice.setOnClickListener(v -> startVoiceRecognition());
         toolRow.addView(btnVoice);
 
+        TextView slashBtn = cText("/", 13f, Theme.TEXT_MUTED, true, false);
+        slashBtn.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+        slashBtn.setPadding(dp(10), dp(4), dp(10), dp(4));
+        slashBtn.setOnClickListener(v -> {
+            vibrateTick();
+            updateSlashCommandsSuggestions("/");
+        });
+        LinearLayout.LayoutParams lpSlash = new LinearLayout.LayoutParams(-2, -2);
+        lpSlash.setMargins(dp(4), 0, 0, 0);
+        toolRow.addView(slashBtn, lpSlash);
+
+        TextView atBtn = cText("@", 13f, Theme.TEXT_MUTED, true, false);
+        atBtn.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+        atBtn.setPadding(dp(9), dp(4), dp(9), dp(4));
+        atBtn.setOnClickListener(v -> {
+            vibrateTick();
+            updateSlashCommandsSuggestions("@");
+        });
+        LinearLayout.LayoutParams lpAt = new LinearLayout.LayoutParams(-2, -2);
+        lpAt.setMargins(dp(4), 0, 0, 0);
+        toolRow.addView(atBtn, lpAt);
+
         repoTagLabel = cText(engineShortLabel(currentEngine), 11.5f, Theme.ACCENT, true, false);
         repoTagLabel.setBackground(cBox(Theme.ACCENT_SOFT, Theme.BORDER, 1, 10));
         repoTagLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
@@ -8694,6 +8719,84 @@ public class MainActivity extends FragmentActivity {
                     label.setTextColor(Theme.RED);
                     outTv.setText("Error: " + err);
                     outTv.setTextColor(Theme.RED);
+                });
+            }
+        });
+    }
+
+    // ============================================================
+    // INTERACTIVE DIFF INSPECTOR & 1-TAP FILE APPLY
+    // ============================================================
+    public void applyDiffPatch(final String diffContent, final LinearLayout codeBox) {
+        if (!bridge.isPaired()) {
+            Toast.makeText(this, "Hubungkan server bridge terlebih dahulu", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        vibrateTick();
+        final String tagConsole = "inline_diff_console";
+        View existing = codeBox.findViewWithTag(tagConsole);
+        final LinearLayout console;
+        if (existing instanceof LinearLayout) {
+            console = (LinearLayout) existing;
+            console.removeAllViews();
+        } else {
+            console = new LinearLayout(this);
+            console.setTag(tagConsole);
+            console.setOrientation(LinearLayout.VERTICAL);
+            console.setBackground(cBox(Theme.SURFACE_MUTED, Theme.GREEN, 1, 10));
+            console.setPadding(dp(12), dp(10), dp(12), dp(10));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.setMargins(dp(8), 0, dp(8), dp(8));
+            codeBox.addView(console, lp);
+        }
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        ProgressBar pb = new ProgressBar(this);
+        LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(14), dp(14));
+        header.addView(pb, lpPb);
+
+        final TextView label = cText("  Menerapkan perubahan diff ke file...", 11.5f, Theme.GREEN, true, false);
+        header.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 14, 28, Theme.TEXT_MUTED);
+        closeBtn.setOnClickListener(v -> codeBox.removeView(console));
+        header.addView(closeBtn);
+        console.addView(header);
+
+        final TextView outTv = new TextView(this);
+        outTv.setTextSize(11.5f);
+        outTv.setTypeface(Typeface.MONOSPACE);
+        outTv.setTextColor(Theme.TEXT_MAIN);
+        outTv.setPadding(0, dp(6), 0, 0);
+        console.addView(outTv);
+
+        executor.execute(() -> {
+            try {
+                JSONObject req = new JSONObject();
+                req.put("patch", diffContent);
+                JSONObject res = bridge.post("/api/files/patch", req);
+                final boolean ok = res.optBoolean("ok", false);
+                final String msg = res.optString("message", ok ? "Perubahan berhasil diterapkan ke workspace." : "Gagal menerapkan diff");
+
+                mainHandler.post(() -> {
+                    pb.setVisibility(View.GONE);
+                    label.setText(ok ? "  ✓ Patch Diterapkan Berhasil" : "  ✕ Gagal Menerapkan Patch");
+                    label.setTextColor(ok ? Theme.GREEN : Theme.RED);
+                    outTv.setText(msg);
+                    vibrateTick();
+                    Toast.makeText(MainActivity.this, ok ? "Perubahan berhasil disimpan ke workspace! ✓" : msg, Toast.LENGTH_LONG).show();
+                });
+            } catch (Exception e) {
+                final String err = e.getMessage() != null ? e.getMessage() : "Koneksi gagal";
+                mainHandler.post(() -> {
+                    pb.setVisibility(View.GONE);
+                    label.setText("  ✕ Error");
+                    label.setTextColor(Theme.RED);
+                    outTv.setText(err);
                 });
             }
         });

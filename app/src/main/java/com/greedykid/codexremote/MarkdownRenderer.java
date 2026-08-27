@@ -12,10 +12,12 @@ import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
+import android.text.style.BackgroundColorSpan;
 import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.ReplacementSpan;
@@ -209,9 +211,14 @@ public class MarkdownRenderer {
             codeContent = block.substring(firstLf + 1);
         }
 
+        final String rawCode = codeContent.replaceAll("\\s+$", "");
+        final boolean isDiff = "DIFF".equalsIgnoreCase(lang) || "PATCH".equalsIgnoreCase(lang)
+                || rawCode.contains("\n+++ ") || rawCode.startsWith("diff --git")
+                || (rawCode.contains("\n@@") && (rawCode.contains("\n+") || rawCode.contains("\n-")));
+
         LinearLayout codeBox = new LinearLayout(activity);
         codeBox.setOrientation(LinearLayout.VERTICAL);
-        codeBox.setBackground(box(Theme.CODE_BG, Theme.BORDER, 1, 12));
+        codeBox.setBackground(box(Theme.CODE_BG, isDiff ? Theme.BORDER_DARK : Theme.BORDER, 1, 12));
         codeBox.setClipToOutline(true);
 
         LinearLayout codeHeader = new LinearLayout(activity);
@@ -219,33 +226,57 @@ public class MarkdownRenderer {
         codeHeader.setGravity(Gravity.CENTER_VERTICAL);
         codeHeader.setPadding(dp(12), dp(8), dp(8), dp(8));
 
-        TextView langTag = text(lang.isEmpty() ? "CODE" : lang, 10.5f, Theme.ACCENT, true, false);
+        String displayTag = isDiff ? "DIFF / PATCH" : (lang.isEmpty() ? "CODE" : lang);
+        int tagColor = isDiff ? Theme.GREEN : Theme.ACCENT;
+        int tagBg = isDiff ? Theme.GREEN_BG : Theme.ACCENT_SOFT;
+
+        TextView langTag = text(displayTag, 10.5f, tagColor, true, false);
         langTag.setLetterSpacing(0.12f);
-        langTag.setBackground(box(Theme.ACCENT_SOFT, 0, 0, 6));
+        langTag.setBackground(box(tagBg, 0, 0, 6));
         langTag.setPadding(dp(7), dp(3), dp(7), dp(3));
         LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(-2, -2);
         codeHeader.addView(langTag, tagLp);
 
         codeHeader.addView(new View(activity), new LinearLayout.LayoutParams(0, dp(1), 1));
 
-        // Run Code Button (Interactive Playground)
         final String runLang = lang;
-        final String runCode = codeContent.replaceAll("\\s+$", "").trim();
-        LinearLayout runCodeBtn = new LinearLayout(activity);
-        runCodeBtn.setOrientation(LinearLayout.HORIZONTAL);
-        runCodeBtn.setGravity(Gravity.CENTER_VERTICAL);
-        runCodeBtn.setBackground(box(Theme.ACCENT_SOFT, Theme.ACCENT, 1, 8));
-        runCodeBtn.setPadding(dp(9), dp(5), dp(9), dp(5));
-        runCodeBtn.addView(icon(R.drawable.ic_play, 12, Theme.ACCENT));
-        runCodeBtn.addView(text("  Run", 10.5f, Theme.ACCENT, true, false));
-        runCodeBtn.setOnClickListener(v -> {
-            if (activity instanceof MainActivity) {
-                ((MainActivity) activity).executeSnippetFromBlock(runLang, runCode, codeBox);
-            }
-        });
-        LinearLayout.LayoutParams lpRun = new LinearLayout.LayoutParams(-2, -2);
-        lpRun.setMargins(0, 0, dp(6), 0);
-        codeHeader.addView(runCodeBtn, lpRun);
+        final String runCode = rawCode.trim();
+
+        if (isDiff) {
+            // Interactive 1-Tap Apply to Workspace button
+            LinearLayout applyPatchBtn = new LinearLayout(activity);
+            applyPatchBtn.setOrientation(LinearLayout.HORIZONTAL);
+            applyPatchBtn.setGravity(Gravity.CENTER_VERTICAL);
+            applyPatchBtn.setBackground(box(Theme.GREEN_BG, Theme.GREEN, 1, 8));
+            applyPatchBtn.setPadding(dp(9), dp(5), dp(9), dp(5));
+            applyPatchBtn.addView(icon(R.drawable.ic_security, 12, Theme.GREEN));
+            applyPatchBtn.addView(text("  ⚡ Terapkan", 10.5f, Theme.GREEN, true, false));
+            applyPatchBtn.setOnClickListener(v -> {
+                if (activity instanceof MainActivity) {
+                    ((MainActivity) activity).applyDiffPatch(runCode, codeBox);
+                }
+            });
+            LinearLayout.LayoutParams lpApply = new LinearLayout.LayoutParams(-2, -2);
+            lpApply.setMargins(0, 0, dp(6), 0);
+            codeHeader.addView(applyPatchBtn, lpApply);
+        } else {
+            // Run Code Button (Interactive Playground)
+            LinearLayout runCodeBtn = new LinearLayout(activity);
+            runCodeBtn.setOrientation(LinearLayout.HORIZONTAL);
+            runCodeBtn.setGravity(Gravity.CENTER_VERTICAL);
+            runCodeBtn.setBackground(box(Theme.ACCENT_SOFT, Theme.ACCENT, 1, 8));
+            runCodeBtn.setPadding(dp(9), dp(5), dp(9), dp(5));
+            runCodeBtn.addView(icon(R.drawable.ic_play, 12, Theme.ACCENT));
+            runCodeBtn.addView(text("  Run", 10.5f, Theme.ACCENT, true, false));
+            runCodeBtn.setOnClickListener(v -> {
+                if (activity instanceof MainActivity) {
+                    ((MainActivity) activity).executeSnippetFromBlock(runLang, runCode, codeBox);
+                }
+            });
+            LinearLayout.LayoutParams lpRun = new LinearLayout.LayoutParams(-2, -2);
+            lpRun.setMargins(0, 0, dp(6), 0);
+            codeHeader.addView(runCodeBtn, lpRun);
+        }
 
         LinearLayout copyCodeBtn = new LinearLayout(activity);
         copyCodeBtn.setOrientation(LinearLayout.HORIZONTAL);
@@ -262,24 +293,57 @@ public class MarkdownRenderer {
         codeBox.addView(headerRule, new LinearLayout.LayoutParams(-1, dp(1)));
 
         // Long lines scroll sideways instead of wrapping into unreadable soup.
-        final String code = codeContent.replaceAll("\\s+$", "");
         HorizontalScrollView codeScroll = new HorizontalScrollView(activity);
         codeScroll.setHorizontalScrollBarEnabled(false);
         codeScroll.setPadding(dp(12), dp(10), dp(12), dp(12));
         codeScroll.setClipToPadding(false);
 
         TextView codeView = new TextView(activity);
-        codeView.setText(code);
         codeView.setTextSize(12.5f);
-        codeView.setTextColor(Color.rgb(240, 240, 245));
         codeView.setTypeface(Typeface.MONOSPACE);
         codeView.setTextIsSelectable(true);
         codeView.setLineSpacing(0, 1.2f);
         codeView.setHorizontallyScrolling(true);
+
+        if (isDiff) {
+            SpannableStringBuilder ssb = new SpannableStringBuilder();
+            String[] lines = rawCode.split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i];
+                int start = ssb.length();
+                ssb.append(line);
+                int end = ssb.length();
+
+                if (line.startsWith("+") && !line.startsWith("+++")) {
+                    ssb.setSpan(new ForegroundColorSpan(Color.rgb(76, 217, 100)), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.setSpan(new BackgroundColorSpan(Color.argb(38, 76, 217, 100)), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } else if (line.startsWith("-") && !line.startsWith("---")) {
+                    ssb.setSpan(new ForegroundColorSpan(Color.rgb(255, 69, 58)), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.setSpan(new BackgroundColorSpan(Color.argb(38, 255, 69, 58)), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } else if (line.startsWith("@@")) {
+                    ssb.setSpan(new ForegroundColorSpan(Theme.AMBER), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } else if (line.startsWith("diff --git") || line.startsWith("--- ") || line.startsWith("+++ ")) {
+                    ssb.setSpan(new ForegroundColorSpan(Theme.BLUE), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } else {
+                    ssb.setSpan(new ForegroundColorSpan(Color.rgb(180, 180, 185)), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+
+                if (i < lines.length - 1) {
+                    ssb.append("\n");
+                }
+            }
+            codeView.setText(ssb);
+        } else {
+            codeView.setText(rawCode);
+            codeView.setTextColor(Color.rgb(240, 240, 245));
+        }
+
         codeScroll.addView(codeView, new FrameLayout.LayoutParams(-2, -2));
         codeBox.addView(codeScroll, new LinearLayout.LayoutParams(-1, -2));
 
-        final String copyCode = code.trim();
+        final String copyCode = rawCode.trim();
         copyCodeBtn.setOnClickListener(v -> {
             ClipboardManager cm = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
             cm.setPrimaryClip(ClipData.newPlainText("Code snippet", copyCode));
