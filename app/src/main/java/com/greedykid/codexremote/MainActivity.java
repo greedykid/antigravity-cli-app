@@ -9633,40 +9633,151 @@ public class MainActivity extends FragmentActivity {
             Toast.makeText(this, "Belum ada sesi untuk diekspor", Toast.LENGTH_SHORT).show();
             return;
         }
-        Toast.makeText(this, "Menyiapkan transkrip...", Toast.LENGTH_SHORT).show();
+        showExportOptionsBottomSheet(convId);
+    }
 
+    private void showExportOptionsBottomSheet(final String convId) {
+        final Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Ekspor & Bagikan Transkrip", true);
+
+        // 1. Markdown (.md)
+        addCustomPopupItem(root, "Ekspor File Markdown (.md)", R.drawable.ic_description, Theme.ACCENT, () -> {
+            dialog.dismiss();
+            doExportMarkdown(convId);
+        });
+
+        // 2. Standalone HTML Webpage (.html)
+        addCustomPopupItem(root, "Buat Halaman Web Standalone (.html)", R.drawable.ic_language, Theme.BLUE, () -> {
+            dialog.dismiss();
+            doExportHtml(convId);
+        });
+
+        // 3. GitHub Gist
+        addCustomPopupItem(root, "Upload ke GitHub Gist (Cloud Link)", R.drawable.ic_open_in_new, Theme.GREEN, () -> {
+            dialog.dismiss();
+            doExportGist(convId);
+        });
+
+        // 4. PDF Document (.pdf)
+        addCustomPopupItem(root, "Ekspor Dokumen PDF (.pdf)", R.drawable.ic_tune, Theme.AMBER, () -> {
+            dialog.dismiss();
+            doExportPdf(convId);
+        });
+
+        // 5. Salin ke Clipboard
+        addCustomPopupItem(root, "Salin Seluruh Transkrip ke Clipboard", R.drawable.ic_content_copy, Theme.TEXT_MUTED, () -> {
+            dialog.dismiss();
+            doCopyTranscript(convId);
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void doExportMarkdown(String convId) {
+        Toast.makeText(this, "Menyiapkan Markdown...", Toast.LENGTH_SHORT).show();
         executor.execute(() -> {
             try {
                 JSONObject json = bridge.get("/api/session/export?id=" + BridgeClient.encode(convId), 60000);
                 if (!json.optBoolean("ok", false)) {
-                    mainHandler.post(() -> Toast.makeText(MainActivity.this,
-                            describeApiError(json, "Gagal mengekspor"), Toast.LENGTH_LONG).show());
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, describeApiError(json, "Gagal mengekspor"), Toast.LENGTH_LONG).show());
                     return;
                 }
-
                 final String markdown = json.optString("markdown", "");
                 final String title = json.optString("title", "Sesi");
                 final String filename = sanitizeExportName(json.optString("filename", "transkrip.md"));
-
-                // Transcripts on this server reach two megabytes. Handing that to
-                // Intent.putExtra blows past the Binder transaction limit and
-                // takes the process down, so it goes out as a file instead.
                 final File exported = writeExportFile(filename, markdown);
                 if (exported == null) {
                     mainHandler.post(() -> copyTranscriptToClipboard(title, markdown));
                     return;
                 }
                 mainHandler.post(() -> shareExportedFile(exported, title));
-                executor.execute(() -> {
-                    File pdf = writePdfExport(title, markdown);
-                    if (pdf != null) {
-                        mainHandler.post(() -> Toast.makeText(this,
-                                "PDF juga tersedia: " + pdf.getName(), Toast.LENGTH_LONG).show());
-                    }
-                });
             } catch (Exception ex) {
-                mainHandler.post(() -> Toast.makeText(MainActivity.this,
-                        "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private void doExportHtml(String convId) {
+        Toast.makeText(this, "Menyiapkan Halaman HTML...", Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/session/html?id=" + BridgeClient.encode(convId), 60000);
+                if (!json.optBoolean("ok", false)) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, describeApiError(json, "Gagal membuat HTML"), Toast.LENGTH_LONG).show());
+                    return;
+                }
+                final String html = json.optString("html", "");
+                final String title = json.optString("title", "Sesi");
+                final String filename = sanitizeExportName(json.optString("filename", "transkrip.html"));
+                final File exported = writeExportFile(filename, html);
+                if (exported != null) {
+                    mainHandler.post(() -> shareExportedFile(exported, title));
+                }
+            } catch (Exception ex) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private void doExportGist(String convId) {
+        Toast.makeText(this, "Mengunggah transkrip ke GitHub Gist...", Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            try {
+                JSONObject req = new JSONObject();
+                req.put("id", convId);
+                req.put("isPublic", true);
+                JSONObject res = bridge.post("/api/session/gist", req);
+                if (res.optBoolean("ok", false)) {
+                    final String url = res.optString("url", "");
+                    mainHandler.post(() -> {
+                        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                        if (cm != null) {
+                            cm.setPrimaryClip(ClipData.newPlainText("Gist URL", url));
+                        }
+                        vibrateTick();
+                        Toast.makeText(MainActivity.this, "Gist berhasil dibuat & link disalin! ✓", Toast.LENGTH_LONG).show();
+                        try {
+                            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                            startActivity(i);
+                        } catch (Exception ignored) {}
+                    });
+                } else {
+                    final String err = res.optString("error", "Gagal upload Gist");
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, err, Toast.LENGTH_LONG).show());
+                }
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private void doExportPdf(String convId) {
+        Toast.makeText(this, "Menyiapkan Dokumen PDF...", Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/session/export?id=" + BridgeClient.encode(convId), 60000);
+                final String markdown = json.optString("markdown", "");
+                final String title = json.optString("title", "Sesi");
+                File pdf = writePdfExport(title, markdown);
+                if (pdf != null) {
+                    mainHandler.post(() -> shareExportedFile(pdf, title));
+                }
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + e.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private void doCopyTranscript(String convId) {
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/session/export?id=" + BridgeClient.encode(convId), 60000);
+                final String markdown = json.optString("markdown", "");
+                final String title = json.optString("title", "Sesi");
+                mainHandler.post(() -> copyTranscriptToClipboard(title, markdown));
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal: " + e.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
     }
@@ -9675,7 +9786,6 @@ public class MainActivity extends FragmentActivity {
     private String sanitizeExportName(String name) {
         String cleaned = name == null ? "" : name.replaceAll("[^A-Za-z0-9._-]", "-");
         if (cleaned.isEmpty() || cleaned.startsWith(".")) cleaned = "transkrip.md";
-        if (!cleaned.endsWith(".md")) cleaned = cleaned + ".md";
         return cleaned.length() > 80 ? cleaned.substring(cleaned.length() - 80) : cleaned;
     }
 
@@ -9765,7 +9875,6 @@ public class MainActivity extends FragmentActivity {
             Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
 
             Intent share = new Intent(Intent.ACTION_SEND);
-            // text/markdown hides most share targets; the file keeps its .md name.
             share.setType("text/plain");
             share.putExtra(Intent.EXTRA_STREAM, uri);
             share.putExtra(Intent.EXTRA_SUBJECT, title);
@@ -9779,16 +9888,16 @@ public class MainActivity extends FragmentActivity {
         }
     }
 
-    // Last resort when the cache is unwritable. The clipboard has limits of its
-    // own, so a very long transcript is cut rather than dropped entirely.
     private void copyTranscriptToClipboard(String title, String markdown) {
         String payload = markdown.length() > 100000
                 ? markdown.substring(0, 100000) + "\n\n… dipotong, transkrip terlalu panjang untuk clipboard"
                 : markdown;
         try {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            cm.setPrimaryClip(ClipData.newPlainText(title, payload));
-            Toast.makeText(this, "Transkrip disalin ke clipboard", Toast.LENGTH_LONG).show();
+            if (cm != null) {
+                cm.setPrimaryClip(ClipData.newPlainText(title, payload));
+            }
+            Toast.makeText(this, "Transkrip disalin ke clipboard ✓", Toast.LENGTH_SHORT).show();
         } catch (Throwable t) {
             Toast.makeText(this, "Gagal menyiapkan transkrip", Toast.LENGTH_LONG).show();
         }
