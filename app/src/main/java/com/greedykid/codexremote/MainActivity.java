@@ -1575,6 +1575,7 @@ public class MainActivity extends FragmentActivity {
         buildClaudeUiWithSidebar();
         consumePendingEngineNotice();
         syncCodexProviderInfo();
+        syncOpenCodeProviderInfo();
         requestNotificationPermission();
         notificationHelper = new TaskNotificationManager(this);
         notificationHelper.createTaskChannel();
@@ -2339,6 +2340,7 @@ public class MainActivity extends FragmentActivity {
             chatTopTitle.setText(activeSessionTitle);
             updateRepoTag();
             if (isCodexEngine()) syncCodexProviderInfo();
+            else if ("opencode".equalsIgnoreCase(currentEngine)) syncOpenCodeProviderInfo();
             updateChatNavIcon();
             if (activeConversationId != null || isLiveTaskRunning) {
                 fetchActiveSessionTurns(false);
@@ -5779,9 +5781,7 @@ public class MainActivity extends FragmentActivity {
     }
 
     /**
-     * Mirrors the Codex CLI's own provider and model into the toolbar. Codex
-     * reads them from config.toml, so the app's stored model is not the truth
-     * once a provider has been switched.
+     * Mirrors the Codex CLI's own provider and model into the toolbar.
      */
     private void syncCodexProviderInfo() {
         if (!bridge.isPaired()) return;
@@ -5804,12 +5804,43 @@ public class MainActivity extends FragmentActivity {
         });
     }
 
+    private String opencodeProviderId = "";
+
+    /**
+     * Mirrors OpenCode's active provider and model from opencode.jsonc / state into the toolbar.
+     */
+    private void syncOpenCodeProviderInfo() {
+        if (!bridge.isPaired()) return;
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/opencode/config", 15000);
+                if (!json.optBoolean("ok", false)) return;
+                final String provider = json.optString("activeProvider", "");
+                final String model = json.optString("activeModel", "");
+                mainHandler.post(() -> {
+                    opencodeProviderId = provider;
+                    if (!model.isEmpty() && "opencode".equalsIgnoreCase(currentEngine)) {
+                        currentModel = model;
+                        prefs.edit().putString(modelPrefKey("opencode"), model).apply();
+                    }
+                    updateRepoTag();
+                    refreshSettingsValues();
+                });
+            } catch (Exception ignored) {}
+        });
+    }
+
     private void updateRepoTag() {
         if (repoTagLabel != null) {
-            // For Codex the useful label is the provider actually configured,
-            // not the word "Codex" — it can be OpenRouter, a proxy, anything.
-            boolean showProvider = isCodexEngine() && !codexProviderId.isEmpty();
-            repoTagLabel.setText(showProvider ? codexProviderId : engineShortLabel(currentEngine));
+            boolean showCodexProvider = isCodexEngine() && !codexProviderId.isEmpty();
+            boolean showOpenCodeProvider = "opencode".equalsIgnoreCase(currentEngine) && !opencodeProviderId.isEmpty();
+            if (showCodexProvider) {
+                repoTagLabel.setText(codexProviderId);
+            } else if (showOpenCodeProvider) {
+                repoTagLabel.setText(opencodeProviderId);
+            } else {
+                repoTagLabel.setText(engineShortLabel(currentEngine));
+            }
         }
         if (modelTagLabel != null) modelTagLabel.setText(displayModel(currentModel));
     }
@@ -5898,13 +5929,19 @@ public class MainActivity extends FragmentActivity {
                     fetched.add("anthropic/claude-3.5-sonnet");
                     fetched.add("llama-3.3-70b-versatile");
                 }
+                final String actModel = json.optString("activeModel", "");
                 mainHandler.post(() -> {
                     all.clear();
                     all.addAll(fetched);
+                    if (!actModel.isEmpty() && !actModel.equalsIgnoreCase(currentModel)) {
+                        currentModel = actModel;
+                        prefs.edit().putString(modelPrefKey("opencode"), actModel).apply();
+                        updateRepoTag();
+                    }
                     if (ok) {
-                        subtitle.setText(fetched.size() + " model dari " + provider);
+                        subtitle.setText(fetched.size() + " model (" + (provider.isEmpty() ? "OpenCode" : provider) + ")");
                     } else {
-                        subtitle.setText(provider.isEmpty() ? "Daftar model standar OpenCode" : "Provider: " + provider + " (" + error + ")");
+                        subtitle.setText(provider.isEmpty() ? "Daftar model OpenCode" : "Provider: " + provider + " (" + error + ")");
                     }
                     renderOpenCodeModelList(list, all, search.getText().toString().trim(), dialog);
                 });
@@ -9838,6 +9875,7 @@ public class MainActivity extends FragmentActivity {
                     prefs.edit().putString("sandbox_mode", mode).apply();
                     refreshSettingsValues();
                     syncCodexProviderInfo();
+                    syncOpenCodeProviderInfo();
                 });
             } catch (Exception ignored) {}
         });

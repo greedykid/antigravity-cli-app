@@ -33,6 +33,29 @@ function isWriteBlocked(pathname) {
     pathname === "/api/settings";
 }
 
+const PORT = config.port();
+const HOST = config.bindHost();
+const TOKEN = config.loadToken();
+const WORKDIR = config.workdir();
+const AGY_BIN = process.env.AGY_BIN || path.join(os.homedir(), ".local/bin/agy");
+const CODEX_BIN = process.env.CODEX_BIN || "codex";
+
+function findOpencodeBin() {
+  if (process.env.OPENCODE_BIN) return process.env.OPENCODE_BIN;
+  const home = os.homedir();
+  const candidates = [
+    path.join(home, ".opencode/bin/opencode"),
+    path.join(home, ".local/bin/opencode"),
+    "/usr/local/bin/opencode",
+    "opencode"
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return "opencode";
+}
+const OPENCODE_BIN = findOpencodeBin();
+
 function commandVersion(command, args) {
   try {
     const result = spawnSync(command, args, { encoding: "utf8", timeout: 2000 });
@@ -296,13 +319,6 @@ function requireApproval(req, res, pathname, payload, next) {
   });
 }
 
-const PORT = config.port();
-const HOST = config.bindHost();
-const TOKEN = config.loadToken();
-const WORKDIR = config.workdir();
-const AGY_BIN = process.env.AGY_BIN || path.join(os.homedir(), ".local/bin/agy");
-const CODEX_BIN = process.env.CODEX_BIN || "codex";
-const OPENCODE_BIN = process.env.OPENCODE_BIN || "opencode";
 let activeCodexSessionId = null;
 const SESSION_ACTIVITY_FILE = path.join(os.homedir(), ".gemini/antigravity-cli/session_activity.json");
 const pendingApprovals = new Map();
@@ -1211,7 +1227,7 @@ function runOpencode(prompt, conversationId, model, job) {
     const child = spawn(OPENCODE_BIN, args, {
       cwd: WORKDIR,
       env: Object.assign({}, process.env, {
-        PATH: (process.env.PATH || "") + ":/usr/bin:/usr/local/bin:/home/ubuntu/.local/bin"
+        PATH: (process.env.PATH || "") + ":/usr/bin:/usr/local/bin:/home/ubuntu/.local/bin:/home/ubuntu/.opencode/bin"
       }),
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -2376,13 +2392,35 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && pathname === "/api/opencode/models") {
     const current = opencodeConfig.readConfig();
     const id = parsedUrl.query.provider || current.activeProvider;
+    const fallbackModels = opencodeConfig.getModelsForProvider(id);
     const secret = opencodeConfig.providerSecret(id);
-    if (!secret) {
-      return send(res, 200, { ok: false, error: "Provider tidak ditemukan di konfigurasi OpenCode", models: [] });
+
+    if (!secret || !secret.baseUrl) {
+      return send(res, 200, {
+        ok: true,
+        provider: id,
+        activeModel: current.activeModel,
+        models: fallbackModels
+      });
     }
+
     providerModels.list(secret, parsedUrl.query.refresh === "1").then(result => {
-      send(res, 200, Object.assign({ provider: id, activeModel: current.activeModel }, result));
-    }).catch(err => send(res, 200, { ok: false, error: err.message, models: [] }));
+      let list = (result && result.models && result.models.length) ? result.models : fallbackModels;
+      send(res, 200, {
+        ok: true,
+        provider: id,
+        activeModel: current.activeModel,
+        models: list
+      });
+    }).catch(err => {
+      send(res, 200, {
+        ok: true,
+        provider: id,
+        activeModel: current.activeModel,
+        models: fallbackModels,
+        note: err.message
+      });
+    });
     return;
   }
 
