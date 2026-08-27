@@ -5632,22 +5632,78 @@ public class MainActivity extends FragmentActivity {
         emptyMascotView = new LinearLayout(this);
         emptyMascotView.setOrientation(LinearLayout.VERTICAL);
         emptyMascotView.setGravity(Gravity.CENTER);
-        emptyMascotView.setPadding(dp(24), dp(56), dp(24), dp(56));
+        emptyMascotView.setPadding(dp(20), dp(32), dp(20), dp(32));
 
         ImageView mascot = new ImageView(this);
-        // The real product logo, which already spells out the app name.
         mascot.setImageResource(R.drawable.brand_logo);
         mascot.setAdjustViewBounds(true);
         mascot.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        LinearLayout.LayoutParams lpMascot = new LinearLayout.LayoutParams(dp(150), -2);
+        LinearLayout.LayoutParams lpMascot = new LinearLayout.LayoutParams(dp(140), -2);
         emptyMascotView.addView(mascot, lpMascot);
 
-        // The engine still identifies itself here, in text and in the palette.
-        TextView tagline = cText(Theme.engineTagline(), 13.5f, Theme.TEXT_MUTED, false, false);
+        TextView tagline = cText(Theme.engineTagline(), 13f, Theme.TEXT_MUTED, false, false);
         tagline.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams lpTag = new LinearLayout.LayoutParams(-1, -2);
-        lpTag.setMargins(dp(20), dp(18), dp(20), 0);
+        lpTag.setMargins(dp(20), dp(12), dp(20), dp(18));
         emptyMascotView.addView(tagline, lpTag);
+
+        // Interactive Starter Suggestion Cards
+        LinearLayout starterGrid = new LinearLayout(this);
+        starterGrid.setOrientation(LinearLayout.VERTICAL);
+
+        addStarterCard(starterGrid, "🔍 Review Bug & Kualitas Kode", "Periksa potensi error, performa, dan celah keamanan.",
+                "Tolong review kode terbaru di workspace ini, periksa potensi bug, performa, dan keamanan.", R.drawable.ic_build);
+
+        addStarterCard(starterGrid, "⚡ Jalankan Test Suite", "Eksekusi seluruh unit test dan laporkan hasilnya.",
+                "Jalankan test suite pada project ini dan laporkan hasilnya secara lengkap.", R.drawable.ic_code);
+
+        addStarterCard(starterGrid, "📝 Rangkum Perubahan Git", "Analisis git status dan diff yang belum di-commit.",
+                "Periksa git status & diff pada project ini, lalu jelaskan perubahan apa saja yang telah dibuat.", R.drawable.ic_source_branch);
+
+        addStarterCard(starterGrid, "💡 Jelaskan Arsitektur Codebase", "Pahami struktur modul dan alur kerja utama aplikasi.",
+                "Jelaskan arsitektur dan alur kerja utama dari codebase project ini secara ringkas.", R.drawable.ic_description);
+
+        emptyMascotView.addView(starterGrid, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void addStarterCard(LinearLayout parent, String title, String desc, final String promptText, int iconRes) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+        card.setPadding(dp(14), dp(11), dp(14), dp(11));
+        card.setClickable(true);
+        card.setFocusable(true);
+
+        card.addView(cIcon(iconRes, 16, Theme.ACCENT));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(12), 0, dp(6), 0);
+
+        TextView t = cText(title, 13f, Theme.TEXT_MAIN, true, false);
+        col.addView(t);
+
+        TextView d = cText(desc, 11.5f, Theme.TEXT_MUTED, false, false);
+        col.addView(d);
+
+        card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+        card.addView(cIcon(R.drawable.ic_chevron_right, 14, Theme.TEXT_LIGHT));
+
+        card.setOnClickListener(v -> {
+            vibrateTick();
+            promptInput.setText(promptText);
+            promptInput.requestFocus();
+            promptInput.setSelection(promptInput.getText().length());
+            try {
+                android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) imm.showSoftInput(promptInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+            } catch (Exception ignored) {}
+        });
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(8));
+        parent.addView(card, lp);
     }
 
     private void showEmptyMascotState(boolean show) {
@@ -7399,6 +7455,7 @@ public class MainActivity extends FragmentActivity {
         btnSend.setEnabled(true);
         promptInput.setEnabled(false);
         isLiveTaskRunning = true;
+        vibrateTick();
 
         String displayText = (fileHeaders.length() > 0 ? fileHeaders.toString() : "") + text;
         pendingOptimisticUserPrompt = displayText;
@@ -7415,6 +7472,19 @@ public class MainActivity extends FragmentActivity {
 
         renderUserMessageBlock(pendingOptimisticUserPrompt, pendingOptimisticUserTime);
         promptInput.setText("");
+
+        // Immediate responsive thinking indicator
+        ArrayList<JSONObject> initSteps = new ArrayList<>();
+        try {
+            JSONObject o = new JSONObject();
+            o.put("role", "thinking");
+            o.put("toolTitle", "Thinking");
+            o.put("title", "Processing prompt...");
+            o.put("command", "Planning response & executing engine");
+            o.put("content", "Starting CLI process and planning response...");
+            initSteps.add(o);
+            liveStepPillView = renderInlineStepPill(initSteps, true);
+        } catch (Exception ignored) {}
 
         try {
             android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
