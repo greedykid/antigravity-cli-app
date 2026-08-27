@@ -1552,6 +1552,12 @@ async function runChatJob(job, payload) {
     startedAt: new Date(job.createdAt).toISOString()
   });
 
+  try {
+    let responseText;
+    let activeConvId = conversationId;
+    let activeSession = null;
+    let updatedTurns = [];
+
     let effectiveEngine = engine;
     let fallbackNotice = "";
 

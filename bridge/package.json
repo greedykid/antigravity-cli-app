@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "pair": "node pair.js",
-    "test": "node --test test/"
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "qrcode-terminal": "^0.12.0"
