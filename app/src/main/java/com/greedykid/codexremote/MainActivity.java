@@ -48,6 +48,7 @@ import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.method.LinkMovementMethod;
 import android.text.TextUtils;
+import android.text.InputType;
 import android.text.style.ClickableSpan;
 import android.text.style.ReplacementSpan;
 import android.text.style.UnderlineSpan;
