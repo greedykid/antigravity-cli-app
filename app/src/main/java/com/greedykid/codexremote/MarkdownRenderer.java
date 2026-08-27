@@ -228,6 +228,25 @@ public class MarkdownRenderer {
 
         codeHeader.addView(new View(activity), new LinearLayout.LayoutParams(0, dp(1), 1));
 
+        // Run Code Button (Interactive Playground)
+        final String runLang = lang;
+        final String runCode = codeContent.replaceAll("\\s+$", "").trim();
+        LinearLayout runCodeBtn = new LinearLayout(activity);
+        runCodeBtn.setOrientation(LinearLayout.HORIZONTAL);
+        runCodeBtn.setGravity(Gravity.CENTER_VERTICAL);
+        runCodeBtn.setBackground(box(Theme.ACCENT_SOFT, Theme.ACCENT, 1, 8));
+        runCodeBtn.setPadding(dp(9), dp(5), dp(9), dp(5));
+        runCodeBtn.addView(icon(R.drawable.ic_play, 12, Theme.ACCENT));
+        runCodeBtn.addView(text("  Run", 10.5f, Theme.ACCENT, true, false));
+        runCodeBtn.setOnClickListener(v -> {
+            if (activity instanceof MainActivity) {
+                ((MainActivity) activity).executeSnippetFromBlock(runLang, runCode, codeBox);
+            }
+        });
+        LinearLayout.LayoutParams lpRun = new LinearLayout.LayoutParams(-2, -2);
+        lpRun.setMargins(0, 0, dp(6), 0);
+        codeHeader.addView(runCodeBtn, lpRun);
+
         LinearLayout copyCodeBtn = new LinearLayout(activity);
         copyCodeBtn.setOrientation(LinearLayout.HORIZONTAL);
         copyCodeBtn.setGravity(Gravity.CENTER_VERTICAL);

@@ -40,6 +40,10 @@ import android.os.Looper;
 import android.os.Vibrator;
 import android.provider.OpenableColumns;
 import android.speech.RecognizerIntent;
+import android.speech.tts.TextToSpeech;
+import android.webkit.WebView;
+import android.webkit.WebSettings;
+import android.webkit.WebViewClient;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.method.LinkMovementMethod;
@@ -203,6 +207,42 @@ public class MainActivity extends FragmentActivity {
         LinearLayout.LayoutParams lpDiff = new LinearLayout.LayoutParams(-2, -2);
         lpDiff.setMargins(0, 0, dp(6), 0);
         quickActionRow.addView(diffChip, lpDiff);
+
+        // 1-Tap Git Commit & Push Wizard Chip
+        LinearLayout gitWizardChip = new LinearLayout(this);
+        gitWizardChip.setOrientation(LinearLayout.HORIZONTAL);
+        gitWizardChip.setGravity(Gravity.CENTER_VERTICAL);
+        gitWizardChip.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+        gitWizardChip.setPadding(dp(10), dp(5), dp(11), dp(5));
+        gitWizardChip.setClickable(true);
+        gitWizardChip.setFocusable(true);
+        gitWizardChip.addView(cIcon(R.drawable.ic_source_branch, 14, Theme.ACCENT));
+        gitWizardChip.addView(cText(" Commit & Push", 12f, Theme.ACCENT, true, false));
+        gitWizardChip.setOnClickListener(v -> {
+            vibrateTick();
+            showGitCommitPushWizard();
+        });
+        LinearLayout.LayoutParams lpGitW = new LinearLayout.LayoutParams(-2, -2);
+        lpGitW.setMargins(0, 0, dp(6), 0);
+        quickActionRow.addView(gitWizardChip, lpGitW);
+
+        // In-App Web Preview Chip
+        LinearLayout webPreviewChip = new LinearLayout(this);
+        webPreviewChip.setOrientation(LinearLayout.HORIZONTAL);
+        webPreviewChip.setGravity(Gravity.CENTER_VERTICAL);
+        webPreviewChip.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+        webPreviewChip.setPadding(dp(10), dp(5), dp(11), dp(5));
+        webPreviewChip.setClickable(true);
+        webPreviewChip.setFocusable(true);
+        webPreviewChip.addView(cIcon(R.drawable.ic_link, 14, Theme.GREEN));
+        webPreviewChip.addView(cText(" Web Preview", 12f, Theme.GREEN, true, false));
+        webPreviewChip.setOnClickListener(v -> {
+            vibrateTick();
+            showWebPreviewModal("http://localhost:3000");
+        });
+        LinearLayout.LayoutParams lpWebP = new LinearLayout.LayoutParams(-2, -2);
+        lpWebP.setMargins(0, 0, dp(6), 0);
+        quickActionRow.addView(webPreviewChip, lpWebP);
 
         addQuickChip(quickActionRow, R.drawable.ic_source_branch, "Git Status", "Cek git status dan rangkum perubahan.");
         addQuickChip(quickActionRow, R.drawable.ic_edit, "Buat Commit", "Buat commit git dengan pesan yang jelas untuk perubahan saat ini.");
@@ -463,6 +503,27 @@ public class MainActivity extends FragmentActivity {
         new SlashCmd("/fix", "Perbaiki bug atau error kode", "Tolong perbaiki bug atau error berikut pada project ini: ")
     };
 
+    private static class MentionItem {
+        final String tag;
+        final String desc;
+        final int iconRes;
+
+        MentionItem(String tag, String desc, int iconRes) {
+            this.tag = tag;
+            this.desc = desc;
+            this.iconRes = iconRes;
+        }
+    }
+
+    private static final MentionItem[] MENTION_ITEMS = new MentionItem[]{
+            new MentionItem("@file", "Sematkan file dari workspace", R.drawable.ic_attach_file),
+            new MentionItem("@git:diff", "Sematkan git diff terkini", R.drawable.ic_tune),
+            new MentionItem("@git:status", "Sematkan branch & status file", R.drawable.ic_source_branch),
+            new MentionItem("@terminal", "Sematkan log terminal terakhir", R.drawable.ic_code),
+            new MentionItem("@workspace", "Sematkan info direktori proyek", R.drawable.ic_folder),
+            new MentionItem("@think", "Instruksi berpikir mendalam (Deep Thinking)", R.drawable.ic_psychology)
+    };
+
     private View buildSlashCommandsPopup() {
         slashSuggestionsScroll = new HorizontalScrollView(this);
         slashSuggestionsScroll.setHorizontalScrollBarEnabled(false);
@@ -478,6 +539,51 @@ public class MainActivity extends FragmentActivity {
 
     private void updateSlashCommandsSuggestions(String text) {
         if (slashSuggestionsScroll == null || slashSuggestionsRow == null) return;
+        if (text == null || text.trim().isEmpty()) {
+            slashSuggestionsScroll.setVisibility(View.GONE);
+            return;
+        }
+
+        // Handle @mention context suggestions
+        int lastAt = text.lastIndexOf('@');
+        if (lastAt >= 0 && (lastAt == 0 || Character.isWhitespace(text.charAt(lastAt - 1)))) {
+            String mentionQuery = text.substring(lastAt).toLowerCase().trim();
+            slashSuggestionsRow.removeAllViews();
+            int mentionMatches = 0;
+
+            for (final MentionItem mi : MENTION_ITEMS) {
+                if (mi.tag.toLowerCase().startsWith(mentionQuery) || mentionQuery.equals("@")) {
+                    mentionMatches++;
+                    LinearLayout chip = new LinearLayout(this);
+                    chip.setOrientation(LinearLayout.HORIZONTAL);
+                    chip.setGravity(Gravity.CENTER_VERTICAL);
+                    chip.setBackground(cBox(Theme.SURFACE, Theme.ACCENT, 1, 14));
+                    chip.setPadding(dp(12), dp(6), dp(12), dp(6));
+                    chip.setClickable(true);
+                    chip.setFocusable(true);
+
+                    chip.addView(cIcon(mi.iconRes, 14, Theme.ACCENT));
+
+                    TextView cmdTv = cText(" " + mi.tag, 12.5f, Theme.ACCENT, true, false);
+                    cmdTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                    chip.addView(cmdTv);
+
+                    TextView descTv = cText(" • " + mi.desc, 11.5f, Theme.TEXT_MUTED, false, false);
+                    chip.addView(descTv);
+
+                    chip.setOnClickListener(v -> handleMentionSelected(mi.tag));
+
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                    lp.setMargins(0, 0, dp(6), 0);
+                    slashSuggestionsRow.addView(chip, lp);
+                }
+            }
+
+            slashSuggestionsScroll.setVisibility(mentionMatches > 0 ? View.VISIBLE : View.GONE);
+            return;
+        }
+
+        // Handle /slash commands
         if (!text.startsWith("/")) {
             slashSuggestionsScroll.setVisibility(View.GONE);
             return;
@@ -520,6 +626,71 @@ public class MainActivity extends FragmentActivity {
         }
 
         slashSuggestionsScroll.setVisibility(matchCount > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    private void handleMentionSelected(String tag) {
+        vibrateTick();
+        if ("@file".equals(tag)) {
+            openMultiFilePicker();
+            replaceOrAppendMention(tag, "");
+        } else if ("@git:diff".equals(tag)) {
+            Toast.makeText(this, "Mengambil Git Diff...", Toast.LENGTH_SHORT).show();
+            executor.execute(() -> {
+                try {
+                    String repoPath = prefs.getString("git_repo_path", "");
+                    String query = repoPath.isEmpty() ? "" : "?path=" + BridgeClient.encode(repoPath);
+                    JSONObject json = bridge.get("/api/git/diff" + query);
+                    String diff = json.optString("diff", "");
+                    mainHandler.post(() -> replaceOrAppendMention("@git:diff", "```diff\n" + (diff.isEmpty() ? "Tidak ada perubahan git" : diff.trim()) + "\n```\n"));
+                } catch (Exception e) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal mengambil diff: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                }
+            });
+        } else if ("@git:status".equals(tag)) {
+            Toast.makeText(this, "Mengambil Git Status...", Toast.LENGTH_SHORT).show();
+            executor.execute(() -> {
+                try {
+                    String repoPath = prefs.getString("git_repo_path", "");
+                    String query = repoPath.isEmpty() ? "" : "?path=" + BridgeClient.encode(repoPath);
+                    JSONObject json = bridge.get("/api/git/status" + query);
+                    mainHandler.post(() -> {
+                        StringBuilder sb = new StringBuilder("[Git Status: branch=").append(json.optString("branch", "?"));
+                        JSONArray files = json.optJSONArray("files");
+                        if (files != null && files.length() > 0) {
+                            sb.append(", modified=").append(files.length()).append(" files]\n");
+                        } else {
+                            sb.append(", clean]\n");
+                        }
+                        replaceOrAppendMention("@git:status", sb.toString());
+                    });
+                } catch (Exception e) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this, "Gagal mengambil git status", Toast.LENGTH_SHORT).show());
+                }
+            });
+        } else if ("@terminal".equals(tag)) {
+            String term = fullTermOutputView != null ? fullTermOutputView.getText().toString().trim() : "";
+            if (term.length() > 1200) term = term.substring(term.length() - 1200);
+            replaceOrAppendMention("@terminal", "```\n" + (term.isEmpty() ? "(Terminal kosong)" : term) + "\n```\n");
+        } else if ("@workspace".equals(tag)) {
+            replaceOrAppendMention("@workspace", "Proyek aktif: `" + activeProjectName() + "` (" + prefs.getString("git_repo_path", "default") + ")\n");
+        } else if ("@think".equals(tag)) {
+            replaceOrAppendMention("@think", "Tolong pikirkan secara mendalam (deep thinking) langkah demi langkah sebelum membuat solusi kode:\n");
+        }
+    }
+
+    private void replaceOrAppendMention(String tag, String snippet) {
+        if (promptInput == null) return;
+        String cur = promptInput.getText().toString();
+        int atIdx = cur.lastIndexOf('@');
+        if (atIdx >= 0) {
+            String before = cur.substring(0, atIdx);
+            promptInput.setText(before + snippet);
+        } else {
+            promptInput.append(snippet);
+        }
+        promptInput.requestFocus();
+        promptInput.setSelection(promptInput.getText().length());
+        if (slashSuggestionsScroll != null) slashSuggestionsScroll.setVisibility(View.GONE);
     }
 
     // ============================================================
@@ -1405,11 +1576,18 @@ public class MainActivity extends FragmentActivity {
         notificationHelper.createTaskChannel();
         LiveEventBus.register(liveEventListener);
         startLiveEvents();
+        initTextToSpeech();
     }
 
     @Override
     protected void onDestroy() {
         LiveEventBus.unregister(liveEventListener);
+        if (ttsEngine != null) {
+            try {
+                ttsEngine.stop();
+                ttsEngine.shutdown();
+            } catch (Exception ignored) {}
+        }
         super.onDestroy();
     }
 
@@ -8080,7 +8258,7 @@ public class MainActivity extends FragmentActivity {
 
         renderMarkdownIntoContainer(container, content.trim(), false);
 
-        // Sleek Copy Button for Assistant Output
+        // Sleek Copy, TTS Read, and Share Buttons for Assistant Output
         if (isLastMessage) {
             LinearLayout copyBar = new LinearLayout(this);
             copyBar.setOrientation(LinearLayout.HORIZONTAL);
@@ -8111,8 +8289,39 @@ public class MainActivity extends FragmentActivity {
                     copyLabel.setTextColor(Theme.TEXT_MUTED);
                 }, 2000);
             });
-
             copyBar.addView(copyBtn);
+
+            // Two-Way Voice Assistant Mode (Text-to-Speech)
+            final TextView ttsBtnLabel = cText(" Baca", 12f, Theme.TEXT_MUTED, true, false);
+            final LinearLayout ttsBtn = new LinearLayout(this);
+            ttsBtn.setOrientation(LinearLayout.HORIZONTAL);
+            ttsBtn.setGravity(Gravity.CENTER_VERTICAL);
+            ttsBtn.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+            ttsBtn.setPadding(dp(10), dp(5), dp(12), dp(5));
+            ImageView ttsIcon = cIcon(R.drawable.ic_graphic_eq, 14, Theme.TEXT_MUTED);
+            ttsBtn.addView(ttsIcon);
+            ttsBtn.addView(ttsBtnLabel);
+            LinearLayout.LayoutParams lpTts = new LinearLayout.LayoutParams(-2, -2);
+            lpTts.setMargins(dp(6), 0, 0, 0);
+            copyBar.addView(ttsBtn, lpTts);
+
+            final String speechText = cleanMarkdownForSpeech(content.trim());
+            ttsBtn.setOnClickListener(v -> toggleSpeakResponse(speechText, ttsBtnLabel));
+
+            // Share Button
+            final LinearLayout shareBtn = new LinearLayout(this);
+            shareBtn.setOrientation(LinearLayout.HORIZONTAL);
+            shareBtn.setGravity(Gravity.CENTER_VERTICAL);
+            shareBtn.setBackground(cBox(Theme.SURFACE, Theme.BORDER, 1, 14));
+            shareBtn.setPadding(dp(10), dp(5), dp(12), dp(5));
+            ImageView shareIcon = cIcon(R.drawable.ic_open_in_new, 14, Theme.TEXT_MUTED);
+            shareBtn.addView(shareIcon);
+            shareBtn.addView(cText(" Bagikan", 12f, Theme.TEXT_MUTED, true, false));
+            LinearLayout.LayoutParams lpShare = new LinearLayout.LayoutParams(-2, -2);
+            lpShare.setMargins(dp(6), 0, 0, 0);
+            copyBar.addView(shareBtn, lpShare);
+            shareBtn.setOnClickListener(v -> shareCurrentResponse(content.trim()));
+
             container.addView(copyBar);
         }
 
@@ -8122,6 +8331,473 @@ public class MainActivity extends FragmentActivity {
         container.animate().alpha(1f).setDuration(200).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
         chatMessagesList.addView(container, lp);
         return container;
+    }
+
+    // ============================================================
+    // TEXT-TO-SPEECH (TTS) & SHARING
+    // ============================================================
+    private TextToSpeech ttsEngine;
+    private boolean isTtsSpeaking = false;
+    private TextView activeTtsButton;
+
+    private void initTextToSpeech() {
+        try {
+            ttsEngine = new TextToSpeech(this, status -> {
+                if (status == TextToSpeech.SUCCESS) {
+                    try {
+                        int res = ttsEngine.setLanguage(new Locale("id", "ID"));
+                        if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                            ttsEngine.setLanguage(Locale.US);
+                        }
+                    } catch (Exception ignored) {}
+                }
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void toggleSpeakResponse(String text, TextView btn) {
+        if (ttsEngine == null) {
+            Toast.makeText(this, "Mesin suara (TTS) belum siap", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (isTtsSpeaking) {
+            ttsEngine.stop();
+            isTtsSpeaking = false;
+            if (activeTtsButton != null) {
+                activeTtsButton.setText(" Baca");
+                activeTtsButton.setTextColor(Theme.TEXT_MUTED);
+            }
+            return;
+        }
+
+        if (activeTtsButton != null) {
+            activeTtsButton.setText(" Baca");
+            activeTtsButton.setTextColor(Theme.TEXT_MUTED);
+        }
+        activeTtsButton = btn;
+        btn.setText(" Berhenti");
+        btn.setTextColor(Theme.ACCENT);
+        isTtsSpeaking = true;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            ttsEngine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "assistant_speech");
+        } else {
+            ttsEngine.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+        }
+
+        ttsEngine.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
+            @Override public void onStart(String utteranceId) {}
+            @Override public void onDone(String utteranceId) {
+                mainHandler.post(() -> {
+                    isTtsSpeaking = false;
+                    if (activeTtsButton != null) {
+                        activeTtsButton.setText(" Baca");
+                        activeTtsButton.setTextColor(Theme.TEXT_MUTED);
+                    }
+                });
+            }
+            @Override public void onError(String utteranceId) {
+                mainHandler.post(() -> {
+                    isTtsSpeaking = false;
+                    if (activeTtsButton != null) {
+                        activeTtsButton.setText(" Baca");
+                        activeTtsButton.setTextColor(Theme.TEXT_MUTED);
+                    }
+                });
+            }
+        });
+    }
+
+    private String cleanMarkdownForSpeech(String md) {
+        if (md == null) return "";
+        String text = md.replaceAll("```[\\s\\S]*?```", " Blok kode dilewati. ");
+        text = text.replaceAll("[#*`_~]", "");
+        text = text.replaceAll("\\[([^\\]]+)\\]\\([^\\)]+\\)", "$1");
+        return text.trim();
+    }
+
+    private void shareCurrentResponse(String content) {
+        try {
+            Intent sendIntent = new Intent();
+            sendIntent.setAction(Intent.ACTION_SEND);
+            sendIntent.putExtra(Intent.EXTRA_TEXT, content);
+            sendIntent.setType("text/plain");
+            Intent shareIntent = Intent.createChooser(sendIntent, "Bagikan Jawaban AI");
+            startActivity(shareIntent);
+        } catch (Exception e) {
+            Toast.makeText(this, "Gagal membagikan teks", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ============================================================
+    // INLINE CODE RUNNER (▶ Run Code Snippet)
+    // ============================================================
+    public void executeSnippetFromBlock(String lang, String code, final LinearLayout codeBox) {
+        if (!bridge.isPaired()) {
+            Toast.makeText(this, "Hubungkan server bridge terlebih dahulu", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        vibrateTick();
+        final String tagConsole = "inline_exec_console";
+        View existing = codeBox.findViewWithTag(tagConsole);
+        final LinearLayout console;
+        if (existing instanceof LinearLayout) {
+            console = (LinearLayout) existing;
+            console.removeAllViews();
+        } else {
+            console = new LinearLayout(this);
+            console.setTag(tagConsole);
+            console.setOrientation(LinearLayout.VERTICAL);
+            console.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+            console.setPadding(dp(12), dp(10), dp(12), dp(10));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.setMargins(dp(8), 0, dp(8), dp(8));
+            codeBox.addView(console, lp);
+        }
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        ProgressBar pb = new ProgressBar(this);
+        LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(14), dp(14));
+        header.addView(pb, lpPb);
+
+        final TextView label = cText("  Menjalankan kode di server...", 11.5f, Theme.ACCENT, true, false);
+        header.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+
+        ImageView closeBtn = cIconButton(R.drawable.ic_close, 14, 28, Theme.TEXT_MUTED);
+        closeBtn.setOnClickListener(v -> codeBox.removeView(console));
+        header.addView(closeBtn);
+        console.addView(header);
+
+        final TextView outTv = new TextView(this);
+        outTv.setTextSize(11.5f);
+        outTv.setTypeface(Typeface.MONOSPACE);
+        outTv.setTextColor(Theme.TEXT_MAIN);
+        outTv.setTextIsSelectable(true);
+        outTv.setPadding(0, dp(6), 0, 0);
+        console.addView(outTv);
+
+        final long start = System.currentTimeMillis();
+
+        String cmdToRun = code;
+        String l = lang != null ? lang.toUpperCase().trim() : "";
+        if ("PYTHON".equals(l) || "PY".equals(l)) {
+            cmdToRun = "python3 -c " + JSONObject.quote(code);
+        } else if ("JS".equals(l) || "JAVASCRIPT".equals(l) || "NODE".equals(l)) {
+            cmdToRun = "node -e " + JSONObject.quote(code);
+        } else if ("PHP".equals(l)) {
+            cmdToRun = "php -r " + JSONObject.quote(code);
+        }
+
+        final String finalCmd = cmdToRun;
+        executor.execute(() -> {
+            try {
+                JSONObject req = new JSONObject();
+                req.put("command", finalCmd);
+                JSONObject res = bridge.post("/api/terminal/exec", req);
+                final String stdout = res.optString("output", "");
+                final String stderr = res.optString("error", "");
+                final int exitCode = res.optInt("exitCode", 0);
+                final long elapsed = System.currentTimeMillis() - start;
+
+                mainHandler.post(() -> {
+                    pb.setVisibility(View.GONE);
+                    if (exitCode == 0) {
+                        label.setText("✓ Output (" + elapsed + "ms)");
+                        label.setTextColor(Theme.GREEN);
+                    } else {
+                        label.setText("✕ Keluar status " + exitCode + " (" + elapsed + "ms)");
+                        label.setTextColor(Theme.RED);
+                    }
+
+                    if (!stdout.isEmpty()) {
+                        outTv.setText(stdout.trim());
+                    } else if (!stderr.isEmpty()) {
+                        outTv.setText(stderr.trim());
+                        outTv.setTextColor(Theme.RED);
+                    } else {
+                        outTv.setText("(Tidak ada output teks)");
+                        outTv.setTextColor(Theme.TEXT_MUTED);
+                    }
+                });
+            } catch (Exception e) {
+                final String err = e.getMessage() != null ? e.getMessage() : "Gagal terhubung";
+                mainHandler.post(() -> {
+                    pb.setVisibility(View.GONE);
+                    label.setText("✕ Gagal mengeksekusi");
+                    label.setTextColor(Theme.RED);
+                    outTv.setText("Error: " + err);
+                    outTv.setTextColor(Theme.RED);
+                });
+            }
+        });
+    }
+
+    // ============================================================
+    // IN-APP WEB PREVIEW (Localhost Port Tunneling / WebView)
+    // ============================================================
+    public void showWebPreviewModal(String initialUrl) {
+        final Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "In-App Web Preview", true);
+
+        // Address Bar
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+
+        final EditText urlInput = new EditText(this);
+        urlInput.setText(initialUrl != null && !initialUrl.isEmpty() ? initialUrl : "http://localhost:3000");
+        urlInput.setTextSize(13f);
+        urlInput.setTextColor(Theme.TEXT_MAIN);
+        urlInput.setSingleLine(true);
+        urlInput.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+        urlInput.setPadding(dp(10), dp(8), dp(10), dp(8));
+        bar.addView(urlInput, new LinearLayout.LayoutParams(0, -2, 1));
+
+        ImageView goBtn = cIconButton(R.drawable.ic_arrow_back, 16, 36, Theme.ACCENT);
+        goBtn.setRotation(180);
+        bar.addView(goBtn);
+
+        ImageView refreshBtn = cIconButton(R.drawable.ic_refresh, 16, 36, Theme.TEXT_MUTED);
+        bar.addView(refreshBtn);
+
+        ImageView openExtBtn = cIconButton(R.drawable.ic_open_in_new, 16, 36, Theme.TEXT_MUTED);
+        bar.addView(openExtBtn);
+        root.addView(bar);
+
+        // Port Presets Row
+        HorizontalScrollView portScroll = new HorizontalScrollView(this);
+        portScroll.setHorizontalScrollBarEnabled(false);
+        portScroll.setPadding(0, dp(6), 0, dp(6));
+        LinearLayout portRow = new LinearLayout(this);
+        portRow.setOrientation(LinearLayout.HORIZONTAL);
+        portRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        String[] ports = new String[]{"3000", "5173", "8080", "8000", "4200", "8888"};
+        for (final String p : ports) {
+            TextView chip = cText(":" + p, 11f, Theme.TEXT_MUTED, true, false);
+            chip.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 8));
+            chip.setPadding(dp(8), dp(4), dp(8), dp(4));
+            chip.setOnClickListener(v -> {
+                String host = prefs.getString("url", "http://localhost").replace("https://", "").replace("http://", "").split(":")[0];
+                if (host.isEmpty()) host = "localhost";
+                String target = "http://" + host + ":" + p;
+                urlInput.setText(target);
+                urlInput.setSelection(target.length());
+            });
+            LinearLayout.LayoutParams lpChip = new LinearLayout.LayoutParams(-2, -2);
+            lpChip.setMargins(0, 0, dp(6), 0);
+            portRow.addView(chip, lpChip);
+        }
+        portScroll.addView(portRow, new ViewGroup.LayoutParams(-2, -2));
+        root.addView(portScroll);
+
+        // WebView Container
+        android.webkit.WebView webView = new android.webkit.WebView(this);
+        android.webkit.WebSettings ws = webView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setLoadWithOverviewMode(true);
+        ws.setUseWideViewPort(true);
+        webView.setWebViewClient(new android.webkit.WebViewClient());
+        webView.loadUrl(urlInput.getText().toString());
+
+        goBtn.setOnClickListener(v -> webView.loadUrl(urlInput.getText().toString()));
+        refreshBtn.setOnClickListener(v -> webView.reload());
+        openExtBtn.setOnClickListener(v -> {
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(urlInput.getText().toString()));
+                startActivity(i);
+            } catch (Exception e) {
+                Toast.makeText(MainActivity.this, "Gagal membuka browser", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        LinearLayout.LayoutParams lpWeb = new LinearLayout.LayoutParams(-1, (int) (getResources().getDisplayMetrics().heightPixels * 0.65f));
+        lpWeb.setMargins(0, dp(8), 0, 0);
+        root.addView(webView, lpWeb);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    // ============================================================
+    // 1-TAP GIT COMMIT & PUSH WIZARD
+    // ============================================================
+    public void showGitCommitPushWizard() {
+        if (!bridge.isPaired()) {
+            Toast.makeText(this, "Hubungkan server bridge terlebih dahulu", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = createBaseBottomSheet(true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Git Commit & Push Wizard", true);
+
+        final LinearLayout statusCard = new LinearLayout(this);
+        statusCard.setOrientation(LinearLayout.VERTICAL);
+        statusCard.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 12));
+        statusCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+        root.addView(statusCard);
+
+        final TextView branchTv = cText("🌿 Cabang: Memuat...", 13f, Theme.TEXT_MAIN, true, false);
+        statusCard.addView(branchTv);
+
+        final TextView filesTv = cText("Memeriksa status git...", 12f, Theme.TEXT_MUTED, false, false);
+        filesTv.setPadding(0, dp(4), 0, 0);
+        statusCard.addView(filesTv);
+
+        final EditText commitMsgInput = new EditText(this);
+        commitMsgInput.setHint("Pesan commit (cth: feat: implement new feature)");
+        commitMsgInput.setHintTextColor(Theme.TEXT_LIGHT);
+        commitMsgInput.setTextColor(Theme.TEXT_MAIN);
+        commitMsgInput.setTextSize(13.5f);
+        commitMsgInput.setMinLines(2);
+        commitMsgInput.setMaxLines(4);
+        commitMsgInput.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 12));
+        commitMsgInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout.LayoutParams lpMsg = new LinearLayout.LayoutParams(-1, -2);
+        lpMsg.setMargins(0, dp(12), 0, dp(8));
+        root.addView(commitMsgInput, lpMsg);
+
+        // Auto-Generate AI Commit Message Button
+        LinearLayout aiBtn = new LinearLayout(this);
+        aiBtn.setOrientation(LinearLayout.HORIZONTAL);
+        aiBtn.setGravity(Gravity.CENTER);
+        aiBtn.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+        aiBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
+        aiBtn.addView(cIcon(R.drawable.ic_spark, 14, Theme.ACCENT));
+        final TextView aiLabel = cText("  Auto-Generate Pesan Commit (AI)", 12f, Theme.ACCENT, true, false);
+        aiBtn.addView(aiLabel);
+        root.addView(aiBtn);
+
+        final LinearLayout btnCommitPush = new LinearLayout(this);
+        btnCommitPush.setOrientation(LinearLayout.HORIZONTAL);
+        btnCommitPush.setGravity(Gravity.CENTER);
+        btnCommitPush.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
+        btnCommitPush.setPadding(dp(16), dp(12), dp(16), dp(12));
+        btnCommitPush.addView(cIcon(R.drawable.ic_source_branch, 16, Theme.ON_ACCENT));
+        final TextView commitLabel = cText("  Commit Semua & Push ke Remote", 13.5f, Theme.ON_ACCENT, true, false);
+        btnCommitPush.addView(commitLabel);
+        LinearLayout.LayoutParams lpCommit = new LinearLayout.LayoutParams(-1, -2);
+        lpCommit.setMargins(0, dp(12), 0, dp(4));
+        root.addView(btnCommitPush, lpCommit);
+
+        final TextView resultLog = cText("", 11.5f, Theme.TEXT_MUTED, false, false);
+        resultLog.setVisibility(View.GONE);
+        resultLog.setPadding(0, dp(8), 0, dp(4));
+        root.addView(resultLog);
+
+        dialog.setContentView(root);
+        dialog.show();
+
+        // Load git status in background
+        executor.execute(() -> {
+            try {
+                String repoPath = prefs.getString("git_repo_path", "");
+                String query = repoPath.isEmpty() ? "" : "?path=" + BridgeClient.encode(repoPath);
+                JSONObject json = bridge.get("/api/git/status" + query);
+                final String branch = json.optString("branch", "main");
+                final JSONArray files = json.optJSONArray("files");
+                final int fileCount = files != null ? files.length() : 0;
+                final boolean isClean = json.optBoolean("clean", true);
+
+                mainHandler.post(() -> {
+                    branchTv.setText("🌿 Cabang: " + branch);
+                    if (isClean || fileCount == 0) {
+                        filesTv.setText("✓ Direktori kerja bersih (tidak ada perubahan file).");
+                        filesTv.setTextColor(Theme.GREEN);
+                        btnCommitPush.setEnabled(false);
+                        btnCommitPush.setAlpha(0.5f);
+                    } else {
+                        filesTv.setText("Ada " + fileCount + " file yang telah dimodifikasi.");
+                        filesTv.setTextColor(Theme.AMBER);
+                    }
+                });
+            } catch (Exception e) {
+                mainHandler.post(() -> filesTv.setText("Gagal membaca status: " + e.getMessage()));
+            }
+        });
+
+        // AI generate commit message handler
+        aiBtn.setOnClickListener(v -> {
+            aiLabel.setText("  Menganalisis perubahan...");
+            executor.execute(() -> {
+                try {
+                    String repoPath = prefs.getString("git_repo_path", "");
+                    String query = repoPath.isEmpty() ? "" : "?path=" + BridgeClient.encode(repoPath);
+                    JSONObject json = bridge.get("/api/git/status" + query);
+                    JSONArray files = json.optJSONArray("files");
+                    StringBuilder summary = new StringBuilder();
+                    if (files != null) {
+                        for (int i = 0; i < Math.min(4, files.length()); i++) {
+                            JSONObject f = files.optJSONObject(i);
+                            if (f != null) {
+                                String path = f.optString("path", "");
+                                String filename = new java.io.File(path).getName();
+                                summary.append(filename).append(", ");
+                            }
+                        }
+                    }
+                    final String generatedMsg = "feat: update " + (summary.length() > 0 ? summary.toString().replaceAll(", $", "") : "project files");
+                    mainHandler.post(() -> {
+                        aiLabel.setText("  Auto-Generate Pesan Commit (AI)");
+                        commitMsgInput.setText(generatedMsg);
+                        commitMsgInput.setSelection(generatedMsg.length());
+                    });
+                } catch (Exception e) {
+                    mainHandler.post(() -> aiLabel.setText("  Gagal meng-generate"));
+                }
+            });
+        });
+
+        // Commit and Push action handler
+        btnCommitPush.setOnClickListener(v -> {
+            String msg = commitMsgInput.getText().toString().trim();
+            if (msg.isEmpty()) {
+                Toast.makeText(MainActivity.this, "Masukkan pesan commit terlebih dahulu", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            btnCommitPush.setEnabled(false);
+            commitLabel.setText("  Menjalankan Commit & Push...");
+            resultLog.setText("Menjalankan: git add . && git commit && git push...");
+            resultLog.setVisibility(View.VISIBLE);
+
+            executor.execute(() -> {
+                try {
+                    JSONObject reqCommit = new JSONObject();
+                    reqCommit.put("command", "git add . && git commit -m " + JSONObject.quote(msg) + " && git push");
+                    JSONObject res = bridge.post("/api/terminal/exec", reqCommit);
+                    final String stdout = res.optString("output", "");
+                    final String stderr = res.optString("error", "");
+                    final int exitCode = res.optInt("exitCode", 0);
+
+                    mainHandler.post(() -> {
+                        btnCommitPush.setEnabled(true);
+                        if (exitCode == 0) {
+                            commitLabel.setText("✓ Berhasil Terkirim ke Remote!");
+                            resultLog.setText((stdout.isEmpty() ? "Commit dan Push selesai." : stdout.trim()));
+                            resultLog.setTextColor(Theme.GREEN);
+                            Toast.makeText(MainActivity.this, "Git Commit & Push Berhasil!", Toast.LENGTH_LONG).show();
+                        } else {
+                            commitLabel.setText("✕ Gagal Melakukan Push");
+                            resultLog.setText(stderr.isEmpty() ? stdout : stderr);
+                            resultLog.setTextColor(Theme.RED);
+                        }
+                    });
+                } catch (Exception e) {
+                    mainHandler.post(() -> {
+                        btnCommitPush.setEnabled(true);
+                        commitLabel.setText("✕ Terjadi Kesalahan");
+                        resultLog.setText("Error: " + e.getMessage());
+                        resultLog.setTextColor(Theme.RED);
+                    });
+                }
+            });
+        });
     }
 
         private String joinStrings(List<String> list, String sep) {
