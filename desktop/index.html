@@ -7,21 +7,120 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Inline SVG Icon Definitions -->
+  <svg style="display: none;">
+    <symbol id="icon-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+    </symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19"></line>
+      <line x1="5" y1="12" x2="19" y2="12"></line>
+    </symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"></circle>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </symbol>
+    <symbol id="icon-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+      <rect x="9" y="9" width="6" height="6"></rect>
+      <line x1="9" y1="1" x2="9" y2="4"></line>
+      <line x1="15" y1="1" x2="15" y2="4"></line>
+      <line x1="9" y1="20" x2="9" y2="23"></line>
+      <line x1="15" y1="20" x2="15" y2="23"></line>
+      <line x1="20" y1="9" x2="23" y2="9"></line>
+      <line x1="20" y1="14" x2="23" y2="14"></line>
+      <line x1="1" y1="9" x2="4" y2="9"></line>
+      <line x1="1" y1="14" x2="4" y2="14"></line>
+    </symbol>
+    <symbol id="icon-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+    </symbol>
+    <symbol id="icon-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+      <polyline points="13 2 13 9 20 9"></polyline>
+    </symbol>
+    <symbol id="icon-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="4 17 10 11 4 5"></polyline>
+      <line x1="12" y1="19" x2="20" y2="19"></line>
+    </symbol>
+    <symbol id="icon-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+      <polyline points="16 6 12 2 8 6"></polyline>
+      <line x1="12" y1="2" x2="12" y2="15"></line>
+    </symbol>
+    <symbol id="icon-paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+    </symbol>
+    <symbol id="icon-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13"></line>
+      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+    </symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </symbol>
+    <symbol id="icon-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"></line>
+      <line x1="6" y1="6" x2="18" y2="18"></line>
+    </symbol>
+    <symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="3 6 5 6 21 6"></polyline>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+    </symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+      <circle cx="12" cy="7" r="4"></circle>
+    </symbol>
+    <symbol id="icon-bot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+      <circle cx="12" cy="5" r="2"></circle>
+      <path d="M12 7v4"></path>
+      <line x1="8" y1="16" x2="8" y2="16"></line>
+      <line x1="16" y1="16" x2="16" y2="16"></line>
+    </symbol>
+    <symbol id="icon-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10"></polyline>
+      <polyline points="1 20 1 14 7 14"></polyline>
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+    </symbol>
+  </svg>
+
   <div class="app-layout">
     <!-- Left Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="brand">
-          <div class="brand-logo">⚡</div>
+          <div class="brand-logo">
+            <svg class="icon"><use href="#icon-zap"></use></svg>
+          </div>
           <div class="brand-info">
             <h2>Antigravity</h2>
             <span class="server-badge" id="serverStatusBadge">● Menghubungkan...</span>
           </div>
         </div>
-        <button class="btn-new-session" id="btnNewSession">+ Sesi Baru</button>
+        <button class="btn-new-session" id="btnNewSession">
+          <svg class="icon-sm"><use href="#icon-plus"></use></svg>
+          <span>Sesi Baru</span>
+        </button>
       </div>
 
       <div class="session-search-box">
+        <svg class="icon-search-input"><use href="#icon-search"></use></svg>
         <input type="text" id="sessionSearchInput" placeholder="Cari sesi & riwayat...">
       </div>
 
@@ -30,9 +129,10 @@
       </div>
 
       <div class="sidebar-footer">
-        <div class="server-config-btn" id="btnServerConfig">
-          <span>⚙️ Pengaturan Server</span>
-        </div>
+        <button class="server-config-btn" id="btnServerConfig">
+          <svg class="icon-sm"><use href="#icon-settings"></use></svg>
+          <span>Pengaturan Server & Host</span>
+        </button>
       </div>
     </aside>
 
@@ -42,29 +142,40 @@
       <header class="topbar">
         <div class="topbar-left">
           <h3 id="currentSessionTitle">Sesi Baru</h3>
+          <button class="btn-icon-subtle" id="btnRenameSession" title="Ubah Nama Sesi">
+            <svg class="icon-xs"><use href="#icon-edit"></use></svg>
+          </button>
           <span class="session-id-tag" id="currentSessionTag">ID: Baru</span>
         </div>
         <div class="topbar-right">
           <!-- Engine Switcher -->
-          <div class="engine-selector" id="engineSelectorBtn">
-            <span class="engine-icon">🚀</span>
+          <button class="engine-selector" id="engineSelectorBtn" title="Pilih Engine & Model AI">
+            <svg class="icon-sm"><use href="#icon-cpu"></use></svg>
             <span class="engine-name" id="currentEngineName">Antigravity</span>
             <span class="model-badge" id="currentModelBadge">auto</span>
-          </div>
+          </button>
 
-          <!-- Quick Workspace / Terminal Toggle -->
-          <button class="btn-icon" id="btnToggleWorkspace" title="Buka Workspace & File">📁</button>
-          <button class="btn-icon" id="btnToggleTerminal" title="Buka Mini Terminal">💻</button>
-          <button class="btn-icon" id="btnExportSession" title="Ekspor Transkrip">📤</button>
+          <!-- Action Buttons -->
+          <button class="btn-icon" id="btnToggleWorkspace" title="Buka File Workspace">
+            <svg class="icon"><use href="#icon-folder"></use></svg>
+          </button>
+          <button class="btn-icon" id="btnToggleTerminal" title="Buka Mini Terminal">
+            <svg class="icon"><use href="#icon-terminal"></use></svg>
+          </button>
+          <button class="btn-icon" id="btnExportSession" title="Ekspor Transkrip">
+            <svg class="icon"><use href="#icon-share"></use></svg>
+          </button>
         </div>
       </header>
 
       <!-- Chat Messages Container -->
       <div class="chat-container" id="chatContainer">
         <div class="empty-state" id="emptyState">
-          <div class="empty-icon">🪐</div>
-          <h2>Antigravity & Codex Remote</h2>
-          <p>Mulai sesi coding baru dengan mengetik prompt di bawah atau gunakan shortcut <code>/</code> untuk perintah cepat.</p>
+          <div class="empty-icon">
+            <svg class="icon-lg"><use href="#icon-bot"></use></svg>
+          </div>
+          <h2>Antigravity & Codex Remote Desktop</h2>
+          <p>Mulai coding dengan mengetik instruksi di bawah. Gunakan shortcut <code>/</code> untuk perintah cepat seperti <code>/fix</code>, <code>/diff</code>, atau <code>/test</code>.</p>
         </div>
         <div class="messages-list" id="messagesList">
           <!-- Chat messages rendered dynamically -->
@@ -88,6 +199,7 @@
           <div class="slash-item" data-cmd="/review"><strong>/review</strong> — Review kualitas kode & keamanan</div>
           <div class="slash-item" data-cmd="/refactor"><strong>/refactor</strong> — Optimasi struktur kode</div>
           <div class="slash-item" data-cmd="/commit"><strong>/commit</strong> — Buat git commit otomatis</div>
+          <div class="slash-item" data-cmd="/status"><strong>/status</strong> — Status git & branch</div>
         </div>
 
         <div class="composer-box">
@@ -96,9 +208,16 @@
             <div class="composer-tools">
               <button class="tool-btn" id="btnSlash" title="Slash Commands">/</button>
               <button class="tool-btn" id="btnAt" title="Context Mention">@</button>
-              <button class="tool-btn" id="btnAttach" title="Lampirkan File">📎</button>
+              <button class="tool-btn" id="btnAttach" title="Lampirkan File">
+                <svg class="icon-xs"><use href="#icon-paperclip"></use></svg>
+                <span>Lampiran</span>
+              </button>
+              <input type="file" id="filePickerHidden" style="display:none;" multiple>
             </div>
-            <button class="btn-send" id="btnSend">Kirim ➔</button>
+            <button class="btn-send" id="btnSend">
+              <span>Kirim</span>
+              <svg class="icon-xs"><use href="#icon-send"></use></svg>
+            </button>
           </div>
         </div>
       </footer>
@@ -107,13 +226,125 @@
     <!-- Collapsible Right Workspace / File Explorer / Terminal Drawer -->
     <aside class="right-drawer hidden" id="rightDrawer">
       <div class="drawer-header">
-        <h4 id="drawerTitle">📁 Workspace Files</h4>
-        <button class="btn-close-drawer" id="btnCloseDrawer">✕</button>
+        <h4 id="drawerTitle">
+          <svg class="icon-sm"><use href="#icon-folder"></use></svg>
+          <span id="drawerTitleText">Workspace Files</span>
+        </h4>
+        <div class="drawer-header-actions">
+          <button class="btn-icon-subtle" id="btnRefreshDrawer" title="Segarkan">
+            <svg class="icon-xs"><use href="#icon-refresh"></use></svg>
+          </button>
+          <button class="btn-icon-subtle" id="btnCloseDrawer" title="Tutup">
+            <svg class="icon-xs"><use href="#icon-x"></use></svg>
+          </button>
+        </div>
       </div>
       <div class="drawer-content" id="drawerContent">
-        <!-- File list or Terminal console -->
+        <!-- File list or Terminal console dynamically populated -->
       </div>
     </aside>
+  </div>
+
+  <!-- Modal: Engine Switcher & 1-Tap Installer -->
+  <div class="modal-overlay hidden" id="modalEngine">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>
+          <svg class="icon-sm"><use href="#icon-cpu"></use></svg>
+          <span>Pilih Engine & Pasang CLI</span>
+        </h3>
+        <button class="btn-modal-close" onclick="closeModal('modalEngine')">
+          <svg class="icon-xs"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+      <div class="modal-body" id="engineModalBody">
+        <!-- Engine selection cards & installation output -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Server Configuration -->
+  <div class="modal-overlay hidden" id="modalServer">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>
+          <svg class="icon-sm"><use href="#icon-settings"></use></svg>
+          <span>Pengaturan Server Bridge</span>
+        </h3>
+        <button class="btn-modal-close" onclick="closeModal('modalServer')">
+          <svg class="icon-xs"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Alamat URL Bridge Server:</label>
+        <input type="text" class="form-input" id="inputServerUrl" placeholder="http://127.0.0.1:18790">
+        
+        <label class="form-label" style="margin-top:12px;">Token Keamanan / Secret (Opsional):</label>
+        <input type="password" class="form-input" id="inputServerToken" placeholder="Masukkan token jika diaktifkan...">
+
+        <div style="display:flex; gap:10px; margin-top:16px;">
+          <button class="btn-secondary" id="btnTestConnection">Tes Koneksi</button>
+          <button class="btn-primary" id="btnSaveServerConfig">Simpan & Hubungkan</button>
+        </div>
+        <div class="test-result-box" id="testResultBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Export Session -->
+  <div class="modal-overlay hidden" id="modalExport">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>
+          <svg class="icon-sm"><use href="#icon-share"></use></svg>
+          <span>Ekspor Transkrip Sesi</span>
+        </h3>
+        <button class="btn-modal-close" onclick="closeModal('modalExport')">
+          <svg class="icon-xs"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="export-options-list">
+          <button class="export-option-btn" id="btnExportMarkdown">
+            <strong>Markdown (.md)</strong>
+            <span>Unduh transkrip lengkap berformat standar Markdown</span>
+          </button>
+          <button class="export-option-btn" id="btnExportHtml">
+            <strong>Standalone Web (.html)</strong>
+            <span>Halaman web mandiri responsif dengan dark mode</span>
+          </button>
+          <button class="export-option-btn" id="btnExportGist">
+            <strong>GitHub Gist Cloud</strong>
+            <span>Unggah transkrip langsung ke akun GitHub</span>
+          </button>
+          <button class="export-option-btn" id="btnExportCopy">
+            <strong>Salin ke Clipboard</strong>
+            <span>Salin seluruh teks percakapan ke papan klip</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: In-App File Viewer & Editor -->
+  <div class="modal-overlay hidden" id="modalEditor">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <h3 id="editorFileTitle">
+          <svg class="icon-sm"><use href="#icon-file"></use></svg>
+          <span id="editorFileName">file.txt</span>
+        </h3>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-primary-sm" id="btnSaveFile">Simpan File</button>
+          <button class="btn-modal-close" onclick="closeModal('modalEditor')">
+            <svg class="icon-xs"><use href="#icon-x"></use></svg>
+          </button>
+        </div>
+      </div>
+      <div class="modal-body" style="padding:0;">
+        <textarea id="editorTextarea" class="code-editor-textarea" spellcheck="false"></textarea>
+      </div>
+    </div>
   </div>
 
   <script src="renderer.js"></script>
