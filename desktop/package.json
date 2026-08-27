@@ -1,0 +1,58 @@
+{
+  "name": "antigravity-remote-desktop",
+  "productName": "Antigravity Remote",
+  "version": "1.0.0",
+  "description": "Antigravity & Codex Remote Desktop Client for Windows",
+  "main": "main.js",
+  "author": "greedykid",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --x64"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.greedykid.antigravityremote",
+    "productName": "Antigravity Remote",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Antigravity Remote",
+      "artifactName": "Antigravity-Remote-Setup.exe"
+    },
+    "portable": {
+      "artifactName": "Antigravity-Remote-Portable.exe"
+    }
+  }
+}

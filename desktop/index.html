@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Antigravity Remote Desktop</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <div class="brand-logo">⚡</div>
+          <div class="brand-info">
+            <h2>Antigravity</h2>
+            <span class="server-badge" id="serverStatusBadge">● Menghubungkan...</span>
+          </div>
+        </div>
+        <button class="btn-new-session" id="btnNewSession">+ Sesi Baru</button>
+      </div>
+
+      <div class="session-search-box">
+        <input type="text" id="sessionSearchInput" placeholder="Cari sesi & riwayat...">
+      </div>
+
+      <div class="sessions-list" id="sessionsList">
+        <!-- Dynamic Session Cards -->
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="server-config-btn" id="btnServerConfig">
+          <span>⚙️ Pengaturan Server</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat Workspace -->
+    <main class="main-workspace">
+      <!-- Top Navigation Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h3 id="currentSessionTitle">Sesi Baru</h3>
+          <span class="session-id-tag" id="currentSessionTag">ID: Baru</span>
+        </div>
+        <div class="topbar-right">
+          <!-- Engine Switcher -->
+          <div class="engine-selector" id="engineSelectorBtn">
+            <span class="engine-icon">🚀</span>
+            <span class="engine-name" id="currentEngineName">Antigravity</span>
+            <span class="model-badge" id="currentModelBadge">auto</span>
+          </div>
+
+          <!-- Quick Workspace / Terminal Toggle -->
+          <button class="btn-icon" id="btnToggleWorkspace" title="Buka Workspace & File">📁</button>
+          <button class="btn-icon" id="btnToggleTerminal" title="Buka Mini Terminal">💻</button>
+          <button class="btn-icon" id="btnExportSession" title="Ekspor Transkrip">📤</button>
+        </div>
+      </header>
+
+      <!-- Chat Messages Container -->
+      <div class="chat-container" id="chatContainer">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">🪐</div>
+          <h2>Antigravity & Codex Remote</h2>
+          <p>Mulai sesi coding baru dengan mengetik prompt di bawah atau gunakan shortcut <code>/</code> untuk perintah cepat.</p>
+        </div>
+        <div class="messages-list" id="messagesList">
+          <!-- Chat messages rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- Live Floating Progress Notification -->
+      <div class="live-task-banner hidden" id="liveTaskBanner">
+        <div class="spinner"></div>
+        <span id="liveTaskText">AI sedang menganalisis kode & memproses tugas...</span>
+        <button class="btn-sm" id="btnCancelTask">Batalkan</button>
+      </div>
+
+      <!-- Bottom Composer -->
+      <footer class="composer-container">
+        <!-- Slash Commands Autocomplete Popup -->
+        <div class="slash-popup hidden" id="slashPopup">
+          <div class="slash-item" data-cmd="/fix"><strong>/fix</strong> — Perbaiki bug atau error kode</div>
+          <div class="slash-item" data-cmd="/test"><strong>/test</strong> — Jalankan & buat unit test</div>
+          <div class="slash-item" data-cmd="/diff"><strong>/diff</strong> — Tampilkan git diff perubahan</div>
+          <div class="slash-item" data-cmd="/review"><strong>/review</strong> — Review kualitas kode & keamanan</div>
+          <div class="slash-item" data-cmd="/refactor"><strong>/refactor</strong> — Optimasi struktur kode</div>
+          <div class="slash-item" data-cmd="/commit"><strong>/commit</strong> — Buat git commit otomatis</div>
+        </div>
+
+        <div class="composer-box">
+          <textarea id="promptInput" placeholder="Tanyakan instruksi coding ke Antigravity / Codex... (Shift+Enter untuk baris baru)" rows="2"></textarea>
+          <div class="composer-actions">
+            <div class="composer-tools">
+              <button class="tool-btn" id="btnSlash" title="Slash Commands">/</button>
+              <button class="tool-btn" id="btnAt" title="Context Mention">@</button>
+              <button class="tool-btn" id="btnAttach" title="Lampirkan File">📎</button>
+            </div>
+            <button class="btn-send" id="btnSend">Kirim ➔</button>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <!-- Collapsible Right Workspace / File Explorer / Terminal Drawer -->
+    <aside class="right-drawer hidden" id="rightDrawer">
+      <div class="drawer-header">
+        <h4 id="drawerTitle">📁 Workspace Files</h4>
+        <button class="btn-close-drawer" id="btnCloseDrawer">✕</button>
+      </div>
+      <div class="drawer-content" id="drawerContent">
+        <!-- File list or Terminal console -->
+      </div>
+    </aside>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

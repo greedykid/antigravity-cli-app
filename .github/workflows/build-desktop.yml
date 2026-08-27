@@ -1,0 +1,59 @@
+name: Build Desktop Windows (.exe)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'bridge/**'
+      - '.github/workflows/build-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Bridge Dependencies
+        run: npm install --prefix bridge --no-audit --no-fund
+
+      - name: Install Desktop Dependencies
+        run: npm install --prefix desktop --no-audit --no-fund
+
+      - name: Build Windows Executable (.exe)
+        run: npm --prefix desktop run build:win
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: antigravity-remote-windows-exe
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: latest
+          name: "Antigravity Remote Latest Release"
+          body: |
+            Rilis otomatis multi-platform Antigravity & Codex Remote:
+
+            * 📱 `app-debug.apk` — Android Client
+            * 💻 `Antigravity-Remote-Setup.exe` — Windows Installer
+            * 💻 `Antigravity-Remote-Portable.exe` — Windows Portable (tanpa install)
+          files: desktop/dist/*.exe
+          overwrite: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
