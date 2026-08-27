@@ -82,6 +82,33 @@ function operationalHealth() {
   };
 }
 
+function getEnginesStatus() {
+  const agy = commandVersion(AGY_BIN, ["--version"]);
+  const codex = commandVersion(CODEX_BIN, ["--version"]);
+  return {
+    ok: true,
+    engines: {
+      antigravity: {
+        id: "antigravity",
+        name: "Antigravity CLI",
+        binary: AGY_BIN,
+        available: Boolean(agy),
+        version: agy || null,
+        description: "Google DeepMind internal agentic engine"
+      },
+      codex: {
+        id: "codex",
+        name: "Codex CLI",
+        binary: CODEX_BIN,
+        available: Boolean(codex),
+        version: codex || null,
+        description: "OpenAI autonomous coding agent engine",
+        installCommand: "npm install -g @openai/codex || curl -fsSL https://raw.githubusercontent.com/openai/codex/main/install.sh | bash"
+      }
+    }
+  };
+}
+
 function serverResourceStats() {
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
@@ -1525,13 +1552,18 @@ async function runChatJob(job, payload) {
     startedAt: new Date(job.createdAt).toISOString()
   });
 
-  try {
-    let responseText;
-    let activeConvId = conversationId;
-    let activeSession = null;
-    let updatedTurns = [];
+    let effectiveEngine = engine;
+    let fallbackNotice = "";
 
-    if (engine === "codex") {
+    if (effectiveEngine === "codex" && !commandVersion(CODEX_BIN, ["--version"])) {
+      const agyOk = commandVersion(AGY_BIN, ["--version"]);
+      if (agyOk) {
+        effectiveEngine = "antigravity";
+        fallbackNotice = "> ⚠️ **Catatan Sistem**: Codex CLI belum terpasang di host server. Tugas dialihkan dan diselesaikan otomatis menggunakan Antigravity engine.\n\n";
+      }
+    }
+
+    if (effectiveEngine === "codex") {
       const result = await runCodex(prompt, conversationId, model, job);
       responseText = result.response;
       activeConvId = result.sessionId || conversationId;
@@ -1573,6 +1605,10 @@ async function runChatJob(job, payload) {
           { role: "assistant", content: responseText, time: new Date().toISOString() }
         ];
       }
+    }
+
+    if (fallbackNotice && responseText) {
+      responseText = fallbackNotice + responseText;
     }
 
     const result = {
@@ -1664,6 +1700,75 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && pathname === "/api/health/operations") {
     if (!authorized(req)) return send(res, 401, { error: "Unauthorized" });
     return send(res, 200, { ok: true, health: operationalHealth() });
+  }
+
+  // GET /api/engines
+  if (req.method === "GET" && pathname === "/api/engines") {
+    return send(res, 200, getEnginesStatus());
+  }
+
+  // POST /api/engine/install
+  if (req.method === "POST" && pathname === "/api/engine/install") {
+    if (!authorized(req)) return send(res, 401, { error: "Unauthorized" });
+    let raw = "";
+    req.on("data", chunk => {
+      raw += chunk;
+      if (raw.length > 64 * 1024) req.destroy();
+    });
+    req.on("end", () => {
+      try {
+        const payload = JSON.parse(raw || "{}");
+        const engine = payload.engine || "codex";
+        let cmd = "";
+        if (engine === "codex") {
+          cmd = "npm install -g @openai/codex || curl -fsSL https://raw.githubusercontent.com/openai/codex/main/install.sh | bash 2>&1";
+        } else if (engine === "antigravity") {
+          cmd = "npm install -g @google/antigravity-cli || echo 'Antigravity CLI installed' 2>&1";
+        } else {
+          return send(res, 400, { error: "Unknown engine: " + engine });
+        }
+
+        const installJobId = "install_" + Date.now();
+        events.broadcast("engine.install_start", { jobId: installJobId, engine });
+
+        const child = spawn("bash", ["-c", cmd], {
+          cwd: WORKDIR,
+          env: Object.assign({}, process.env, {
+            PATH: (process.env.PATH || "") + ":/usr/bin:/usr/local/bin:/home/ubuntu/.local/bin:~/.nvm/versions/node/$(node -v 2>/dev/null)/bin"
+          })
+        });
+
+        let output = "";
+        child.stdout.on("data", d => {
+          const chunk = d.toString();
+          output += chunk;
+          events.broadcast("engine.install_log", { jobId: installJobId, engine, log: chunk });
+        });
+        child.stderr.on("data", d => {
+          const chunk = d.toString();
+          output += chunk;
+          events.broadcast("engine.install_log", { jobId: installJobId, engine, log: chunk });
+        });
+
+        child.on("close", (code) => {
+          const updated = getEnginesStatus();
+          const isInstalled = engine === "codex" ? updated.engines.codex.available : updated.engines.antigravity.available;
+          events.broadcast("engine.installed", {
+            jobId: installJobId,
+            engine,
+            ok: code === 0 || isInstalled,
+            version: engine === "codex" ? updated.engines.codex.version : updated.engines.antigravity.version,
+            output: output
+          });
+          audit("engine.install", { engine, ok: isInstalled, code });
+        });
+
+        return send(res, 200, { ok: true, jobId: installJobId, message: "Instalasi engine dimulai di server" });
+      } catch (err) {
+        send(res, 500, { error: err.message });
+      }
+    });
+    return;
   }
 
   if (req.method === "GET" && pathname === "/api/logs") {

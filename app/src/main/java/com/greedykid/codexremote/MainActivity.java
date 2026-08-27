@@ -6014,6 +6014,13 @@ public class MainActivity extends FragmentActivity {
         return "codex".equalsIgnoreCase(engine) ? "openai/codex-cli" : "google/antigravity-cli";
     }
 
+    public interface EngineInstallListener {
+        void onLog(String log);
+        void onInstalled(boolean ok, String version, String output);
+    }
+    private EngineInstallListener activeEngineInstallListener = null;
+    private JSONObject serverEnginesData = null;
+
     /**
      * Engine picker with a real toggle. Switching starts a fresh session on the
      * other CLI, so an in-progress conversation is confirmed first instead of
@@ -6021,7 +6028,7 @@ public class MainActivity extends FragmentActivity {
      */
     private void showEngineSwitcher() {
         final Dialog dialog = createBaseBottomSheet(true);
-        LinearLayout root = createBottomSheetRoot(dialog, "Engine", true);
+        LinearLayout root = createBottomSheetRoot(dialog, "Pilih Engine AI", true);
 
         root.addView(cText("Sesi tidak dibagi antar engine. Berpindah akan memulai sesi baru.",
                 12.5f, Theme.TEXT_MUTED, false, false));
@@ -6067,9 +6074,29 @@ public class MainActivity extends FragmentActivity {
             requestEngineSwitch(target);
         });
 
-        // --- per-engine detail cards ---
-        root.addView(buildEngineCard("antigravity", dialog));
-        root.addView(buildEngineCard("codex", dialog));
+        final LinearLayout cardsContainer = new LinearLayout(this);
+        cardsContainer.setOrientation(LinearLayout.VERTICAL);
+        root.addView(cardsContainer, new LinearLayout.LayoutParams(-1, -2));
+
+        renderEngineCards(cardsContainer, dialog, serverEnginesData);
+
+        // Fetch fresh engines info from bridge server
+        if (bridge.isPaired()) {
+            executor.execute(() -> {
+                try {
+                    JSONObject res = bridge.get("/api/engines", 5000);
+                    if (res.optBoolean("ok", false)) {
+                        final JSONObject enginesObj = res.optJSONObject("engines");
+                        serverEnginesData = enginesObj;
+                        mainHandler.post(() -> {
+                            if (dialog.isShowing()) {
+                                renderEngineCards(cardsContainer, dialog, serverEnginesData);
+                            }
+                        });
+                    }
+                } catch (Exception ignored) {}
+            });
+        }
 
         // Provider config lives in the Codex CLI itself, so it belongs here.
         TextView apiRow = cText("Konfigurasi API Codex  ›", 13.5f, Theme.ACCENT, true, false);
@@ -6088,43 +6115,204 @@ public class MainActivity extends FragmentActivity {
         dialog.show();
     }
 
-    private LinearLayout buildEngineCard(final String engine, final Dialog dialog) {
+    private void renderEngineCards(LinearLayout container, Dialog dialog, JSONObject enginesObj) {
+        container.removeAllViews();
+        container.addView(buildEngineCard("antigravity", dialog, enginesObj));
+        container.addView(buildEngineCard("codex", dialog, enginesObj));
+    }
+
+    private LinearLayout buildEngineCard(final String engine, final Dialog dialog, final JSONObject enginesObj) {
         boolean selected = engine.equalsIgnoreCase(currentEngine);
         String model = prefs.getString(modelPrefKey(engine), defaultModelForEngine(engine));
+
+        boolean isInstalled = true;
+        String versionStr = null;
+        if (enginesObj != null) {
+            JSONObject engInfo = enginesObj.optJSONObject(engine);
+            if (engInfo != null) {
+                isInstalled = engInfo.optBoolean("available", true);
+                versionStr = engInfo.optString("version", null);
+            }
+        }
+
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.VERTICAL);
+        wrapper.setBackground(cBox(selected ? Theme.ACCENT_SOFT : Theme.SURFACE_MUTED,
+                selected ? Theme.ACCENT : Theme.BORDER, 1, 14));
+        wrapper.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lpWrap = new LinearLayout.LayoutParams(-1, -2);
+        lpWrap.setMargins(0, dp(10), 0, 0);
+        wrapper.setLayoutParams(lpWrap);
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setBackground(cBox(selected ? Theme.ACCENT_SOFT : Theme.SURFACE_MUTED,
-                selected ? Theme.ACCENT : Theme.BORDER, 1, 14));
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
 
-        card.addView(cIcon(R.drawable.ic_tune, 18, selected ? Theme.ACCENT : Theme.TEXT_MUTED));
+        card.addView(cIcon(R.drawable.ic_tune, 18, selected ? Theme.ACCENT : (isInstalled ? Theme.TEXT_MUTED : Theme.AMBER)));
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(12), 0, dp(8), 0);
-        col.addView(cText(engineLabel(engine), 14.5f,
-                selected ? Theme.ACCENT : Theme.TEXT_MAIN, true, false));
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(cText(engineLabel(engine), 14.5f, selected ? Theme.ACCENT : Theme.TEXT_MAIN, true, false));
+
+        if (isInstalled) {
+            TextView badge = cText(versionStr != null && !versionStr.isEmpty() ? " ● " + versionStr : " ● Terinstall", 10.5f, Theme.GREEN, true, false);
+            badge.setPadding(dp(6), 0, 0, 0);
+            titleRow.addView(badge);
+        } else {
+            TextView badge = cText(" ⚠️ Belum Terpasang", 10.5f, Theme.AMBER, true, false);
+            badge.setPadding(dp(6), 0, 0, 0);
+            titleRow.addView(badge);
+        }
+        col.addView(titleRow);
+
         col.addView(cText(engineRepo(engine) + " · " + displayModel(model), 11.5f, Theme.TEXT_MUTED, false, false));
         card.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
 
-        if (selected) card.addView(cIcon(R.drawable.ic_check, 18, Theme.ACCENT));
+        if (selected) {
+            card.addView(cIcon(R.drawable.ic_check, 18, Theme.ACCENT));
+        }
 
+        wrapper.addView(card);
+
+        final boolean canSwitch = isInstalled;
         card.setOnClickListener(v -> {
             if (selected) {
                 dialog.dismiss();
                 showModelPicker();
                 return;
             }
+            if (!canSwitch) {
+                showEngineInstallationDialog(engine, dialog);
+                return;
+            }
             dialog.dismiss();
             requestEngineSwitch(engine);
         });
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, dp(8), 0, 0);
-        card.setLayoutParams(lp);
-        return card;
+        // If not installed on server, add prominent install button!
+        if (!isInstalled) {
+            TextView installBtn = cText("⚡ Pasang " + engineLabel(engine) + " di Server", 12f, Color.WHITE, true, false);
+            installBtn.setBackground(cBox(Theme.ACCENT, 0, 0, 10));
+            installBtn.setGravity(Gravity.CENTER);
+            installBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
+            LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, -2);
+            lpBtn.setMargins(0, dp(10), 0, 0);
+            installBtn.setLayoutParams(lpBtn);
+            installBtn.setOnClickListener(v -> {
+                dialog.dismiss();
+                showEngineInstallationDialog(engine, null);
+            });
+            wrapper.addView(installBtn);
+        }
+
+        return wrapper;
+    }
+
+    public void showEngineInstallationDialog(final String engine, final Dialog parentDialog) {
+        if (parentDialog != null) parentDialog.dismiss();
+        if (!bridge.isPaired()) {
+            Toast.makeText(this, "Hubungkan server bridge terlebih dahulu", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Dialog dialog = createBaseBottomSheet(false);
+        LinearLayout root = createBottomSheetRoot(dialog, "Instalasi " + engineLabel(engine) + " di Server", true);
+
+        TextView desc = cText("Sedang mengunduh dan memasang paket " + engineLabel(engine) + " di host server secara otomatis...",
+                12f, Theme.TEXT_MUTED, false, false);
+        root.addView(desc);
+
+        final ProgressBar pb = new ProgressBar(this);
+        LinearLayout.LayoutParams lpPb = new LinearLayout.LayoutParams(dp(22), dp(22));
+        lpPb.gravity = Gravity.CENTER_HORIZONTAL;
+        lpPb.setMargins(0, dp(14), 0, dp(8));
+        root.addView(pb, lpPb);
+
+        final TextView statusTv = cText("Menjalankan perintah instalasi...", 12.5f, Theme.ACCENT, true, false);
+        statusTv.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.addView(statusTv);
+
+        final ScrollView logScroll = new ScrollView(this);
+        logScroll.setBackground(cBox(Theme.SURFACE_MUTED, Theme.BORDER, 1, 10));
+        logScroll.setPadding(dp(10), dp(10), dp(10), dp(10));
+        LinearLayout.LayoutParams lpScroll = new LinearLayout.LayoutParams(-1, dp(220));
+        lpScroll.setMargins(0, dp(12), 0, dp(12));
+
+        final TextView logTv = new TextView(this);
+        logTv.setTextSize(11f);
+        logTv.setTypeface(Typeface.MONOSPACE);
+        logTv.setTextColor(Theme.TEXT_MAIN);
+        logTv.setText("$ Memulai instalasi " + engineLabel(engine) + "...\n");
+        logScroll.addView(logTv);
+        root.addView(logScroll, lpScroll);
+
+        activeEngineInstallListener = new EngineInstallListener() {
+            @Override
+            public void onLog(String log) {
+                mainHandler.post(() -> {
+                    logTv.append(log);
+                    logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+                });
+            }
+
+            @Override
+            public void onInstalled(boolean ok, String version, String output) {
+                mainHandler.post(() -> {
+                    activeEngineInstallListener = null;
+                    pb.setVisibility(View.GONE);
+                    if (ok) {
+                        statusTv.setText("✓ " + engineLabel(engine) + " Berhasil Terpasang!");
+                        statusTv.setTextColor(Theme.GREEN);
+                        vibrateTick();
+                        Toast.makeText(MainActivity.this, engineLabel(engine) + " siap digunakan! ✓", Toast.LENGTH_LONG).show();
+                        // Re-fetch engines
+                        executor.execute(() -> {
+                            try {
+                                JSONObject res = bridge.get("/api/engines", 5000);
+                                if (res.optBoolean("ok", false)) {
+                                    serverEnginesData = res.optJSONObject("engines");
+                                }
+                            } catch (Exception ignored) {}
+                        });
+                    } else {
+                        statusTv.setText("✕ Gagal Memasang Engine");
+                        statusTv.setTextColor(Theme.RED);
+                        Toast.makeText(MainActivity.this, "Gagal menginstall " + engineLabel(engine), Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        };
+
+        dialog.setOnDismissListener(d -> activeEngineInstallListener = null);
+
+        executor.execute(() -> {
+            try {
+                JSONObject req = new JSONObject();
+                req.put("engine", engine);
+                JSONObject res = bridge.post("/api/engine/install", req);
+                if (!res.optBoolean("ok", false)) {
+                    mainHandler.post(() -> {
+                        pb.setVisibility(View.GONE);
+                        statusTv.setText("✕ Gagal memulai instalasi: " + res.optString("error", "Error"));
+                        statusTv.setTextColor(Theme.RED);
+                    });
+                }
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    pb.setVisibility(View.GONE);
+                    statusTv.setText("✕ Error koneksi: " + e.getMessage());
+                    statusTv.setTextColor(Theme.RED);
+                });
+            }
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
     }
 
     /** Confirms first when there is a live task or an ongoing conversation. */
@@ -9549,6 +9737,24 @@ public class MainActivity extends FragmentActivity {
 
     // Events arrive on the SSE thread; everything below hops to the UI thread.
     private final LiveEventBus.Listener liveEventListener = (name, data) -> mainHandler.post(() -> {
+        if ("engine.install_log".equals(name) && data != null) {
+            String log = data.optString("log", "");
+            if (activeEngineInstallListener != null && !log.isEmpty()) {
+                activeEngineInstallListener.onLog(log);
+            }
+            return;
+        }
+
+        if ("engine.installed".equals(name) && data != null) {
+            boolean ok = data.optBoolean("ok", false);
+            String version = data.optString("version", "");
+            String output = data.optString("output", "");
+            if (activeEngineInstallListener != null) {
+                activeEngineInstallListener.onInstalled(ok, version, output);
+            }
+            return;
+        }
+
         String eventJobId = data == null ? "" : data.optString("jobId", "");
         String eventConvId = data == null ? "" : data.optString("conversationId", "");
 
