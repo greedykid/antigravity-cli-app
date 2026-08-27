@@ -357,7 +357,7 @@ function send(res, code, data) {
   res.writeHead(code, {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, x-bridge-token, x-codex-token",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
   });
   res.end(JSON.stringify(data));
@@ -1684,7 +1684,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Authorization, Content-Type",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type, x-bridge-token, x-codex-token",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
     });
     return res.end();

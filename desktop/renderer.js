@@ -1,4 +1,4 @@
-let SERVER_URL = localStorage.getItem('antigravity_server_url') || 'http://127.0.0.1:18790';
+let SERVER_URL = normalizeServerUrl(localStorage.getItem('antigravity_server_url') || 'http://127.0.0.1:18790');
 let SERVER_TOKEN = localStorage.getItem('antigravity_server_token') || '';
 let activeConversationId = null;
 let activeSessionTitle = 'Sesi Baru';
@@ -8,6 +8,58 @@ let isTaskRunning = false;
 let sseSource = null;
 let currentDrawerMode = 'files'; // 'files' or 'terminal'
 let activeEditingPath = null;
+
+// Smart URL Normalizer
+function normalizeServerUrl(rawInput) {
+  if (!rawInput) return 'http://127.0.0.1:18790';
+  let s = rawInput.trim();
+
+  // If user pasted a JSON pairing object
+  if (s.startsWith('{') && s.endsWith('}')) {
+    try {
+      const obj = JSON.parse(s);
+      if (obj.url) s = obj.url;
+      if (obj.token) {
+        SERVER_TOKEN = obj.token;
+        localStorage.setItem('antigravity_server_token', SERVER_TOKEN);
+        const tokenInput = document.getElementById('inputServerToken');
+        if (tokenInput) tokenInput.value = SERVER_TOKEN;
+      }
+    } catch (e) {}
+  }
+
+  // If user pasted custom scheme e.g. codexremote://host:port?token=xyz or antigravity://...
+  if (s.startsWith('codexremote://') || s.startsWith('antigravity://')) {
+    s = s.replace(/^(?:codexremote|antigravity):\/\//i, 'http://');
+  }
+
+  // Ensure protocol
+  if (!s.startsWith('http://') && !s.startsWith('https://')) {
+    if (s.includes('trycloudflare.com') || s.includes('ngrok.io') || s.includes('loca.lt') || s.includes('.app') || s.includes('.dev')) {
+      s = 'https://' + s;
+    } else {
+      s = 'http://' + s;
+    }
+  }
+
+  try {
+    const u = new URL(s);
+    // If URL contains query params for token (e.g. ?token=...)
+    const urlToken = u.searchParams.get('token') || u.searchParams.get('key');
+    if (urlToken) {
+      SERVER_TOKEN = urlToken;
+      localStorage.setItem('antigravity_server_token', SERVER_TOKEN);
+      const tokenInput = document.getElementById('inputServerToken');
+      if (tokenInput) tokenInput.value = SERVER_TOKEN;
+    }
+
+    // Keep origin only (strip /api/chat, /api/health, /api/sessions, trailing slashes)
+    return u.origin;
+  } catch (e) {
+    // Fallback regex cleanup
+    return s.replace(/\/api(?:\/[a-zA-Z0-9_\-]+)*\/?$/i, '').replace(/\/+$/, '');
+  }
+}
 
 // DOM Elements
 const serverStatusBadge = document.getElementById('serverStatusBadge');
@@ -41,6 +93,7 @@ const filePickerHidden = document.getElementById('filePickerHidden');
 
 // Initialize
 async function init() {
+  SERVER_URL = normalizeServerUrl(SERVER_URL);
   document.getElementById('inputServerUrl').value = SERVER_URL;
   document.getElementById('inputServerToken').value = SERVER_TOKEN;
 
@@ -54,6 +107,7 @@ function getHeaders() {
   if (SERVER_TOKEN) {
     h['Authorization'] = `Bearer ${SERVER_TOKEN}`;
     h['x-bridge-token'] = SERVER_TOKEN;
+    h['x-codex-token'] = SERVER_TOKEN;
   }
   return h;
 }
@@ -478,34 +532,41 @@ btnServerConfig.onclick = () => {
 };
 
 document.getElementById('btnTestConnection').onclick = async () => {
-  const testUrl = document.getElementById('inputServerUrl').value.trim();
+  const rawUrl = document.getElementById('inputServerUrl').value.trim();
+  const cleanUrl = normalizeServerUrl(rawUrl);
+  document.getElementById('inputServerUrl').value = cleanUrl; // Auto-update input with clean base URL!
   const testToken = document.getElementById('inputServerToken').value.trim();
   const resBox = document.getElementById('testResultBox');
-  resBox.textContent = 'Menghubungkan ke server...';
+  resBox.textContent = 'Menghubungkan ke ' + cleanUrl + '...';
   resBox.style.color = 'var(--text-muted)';
 
   try {
     const t0 = performance.now();
     const h = { 'Content-Type': 'application/json' };
-    if (testToken) h['Authorization'] = `Bearer ${testToken}`;
-    const res = await fetch(`${testUrl}/api/health`, { headers: h });
+    if (testToken) {
+      h['Authorization'] = `Bearer ${testToken}`;
+      h['x-bridge-token'] = testToken;
+      h['x-codex-token'] = testToken;
+    }
+    const res = await fetch(`${cleanUrl}/api/health`, { headers: h });
     const data = await res.json();
     const lat = Math.round(performance.now() - t0);
     if (data.ok) {
-      resBox.textContent = `✓ Berhasil terhubung! (Latensi: ${lat}ms)`;
+      resBox.textContent = `✓ Berhasil terhubung ke ${cleanUrl} (Latensi: ${lat}ms) - Host: ${data.hostname || 'Server OK'}`;
       resBox.style.color = 'var(--green)';
     } else {
-      resBox.textContent = '✕ Server merespons tetapi tidak sehat.';
+      resBox.textContent = `✕ Server merespons (${res.status}): ${data.error || 'Autentikasi gagal / token tidak cocok'}`;
       resBox.style.color = 'var(--red)';
     }
   } catch (e) {
-    resBox.textContent = `✕ Gagal terhubung: ${e.message}`;
+    resBox.textContent = `✕ Gagal terhubung ke ${cleanUrl}: ${e.message}`;
     resBox.style.color = 'var(--red)';
   }
 };
 
 document.getElementById('btnSaveServerConfig').onclick = () => {
-  SERVER_URL = document.getElementById('inputServerUrl').value.trim() || 'http://127.0.0.1:18790';
+  const rawUrl = document.getElementById('inputServerUrl').value.trim();
+  SERVER_URL = normalizeServerUrl(rawUrl);
   SERVER_TOKEN = document.getElementById('inputServerToken').value.trim();
   localStorage.setItem('antigravity_server_url', SERVER_URL);
   localStorage.setItem('antigravity_server_token', SERVER_TOKEN);
