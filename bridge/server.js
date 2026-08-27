@@ -40,25 +40,51 @@ const WORKDIR = config.workdir();
 const AGY_BIN = process.env.AGY_BIN || path.join(os.homedir(), ".local/bin/agy");
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
 
+function extendedPath() {
+  const home = os.homedir();
+  return (process.env.PATH || "") + ":" + [
+    path.join(home, ".opencode/bin"),
+    path.join(home, ".local/bin"),
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin"
+  ].join(":");
+}
+
 function findOpencodeBin() {
-  if (process.env.OPENCODE_BIN) return process.env.OPENCODE_BIN;
+  if (process.env.OPENCODE_BIN && fs.existsSync(process.env.OPENCODE_BIN)) {
+    return process.env.OPENCODE_BIN;
+  }
   const home = os.homedir();
   const candidates = [
     path.join(home, ".opencode/bin/opencode"),
     path.join(home, ".local/bin/opencode"),
     "/usr/local/bin/opencode",
-    "opencode"
+    "/usr/bin/opencode"
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
+  try {
+    const which = spawnSync("which", ["opencode"], {
+      encoding: "utf8",
+      env: Object.assign({}, process.env, { PATH: extendedPath() })
+    });
+    if (which.status === 0 && which.stdout.trim()) {
+      return which.stdout.trim().split("\n")[0];
+    }
+  } catch (e) {}
   return "opencode";
 }
 const OPENCODE_BIN = findOpencodeBin();
 
 function commandVersion(command, args) {
   try {
-    const result = spawnSync(command, args, { encoding: "utf8", timeout: 2000 });
+    const result = spawnSync(command, args, {
+      encoding: "utf8",
+      timeout: 3000,
+      env: Object.assign({}, process.env, { PATH: extendedPath() })
+    });
     return result.status === 0 ? (result.stdout || "").trim().split("\n")[0] : null;
   } catch {
     return null;
@@ -1220,16 +1246,23 @@ function runOpencode(prompt, conversationId, model, job) {
     if (conversationId) {
       args.push("-s", conversationId);
     }
+    const current = opencodeConfig.readConfig();
+    const activeProvider = current.activeProvider || "opencode";
     if (model && model !== "default" && model !== "auto") {
-      args.push("-m", model);
+      let formattedModel = model;
+      if (!model.includes("/") && activeProvider) {
+        formattedModel = `${activeProvider}/${model}`;
+      }
+      args.push("-m", formattedModel);
     }
     args.push("--format", "json");
+    args.push("--dir", WORKDIR);
     args.push(prompt);
 
     const child = spawn(bin, args, {
       cwd: WORKDIR,
       env: Object.assign({}, process.env, {
-        PATH: (process.env.PATH || "") + ":/usr/bin:/usr/local/bin:/home/ubuntu/.local/bin:/home/ubuntu/.opencode/bin"
+        PATH: extendedPath()
       }),
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -1256,6 +1289,10 @@ function runOpencode(prompt, conversationId, model, job) {
               events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: ev.part.text });
             } else if (ev.type === "reasoning" && ev.part && ev.part.text) {
               events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: "\n> " + ev.part.text + "\n" });
+            } else if (ev.type === "error" && ev.error) {
+              const errMsg = (ev.error.data && ev.error.data.message) ? ev.error.data.message : (ev.error.message || JSON.stringify(ev.error));
+              fullOutput += `\n> ⚠️ **OpenCode Error**: ${errMsg}\n`;
+              events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: `\n> ⚠️ ${errMsg}\n` });
             }
           } catch(e) {
             fullOutput += trimmed + "\n";
@@ -1708,12 +1745,10 @@ async function runChatJob(job, payload) {
       const opencodeBin = findOpencodeBin();
       const opencodeOk = commandVersion(opencodeBin, ["--version"]) || commandVersion(opencodeBin, ["-v"]);
       if (!opencodeOk) {
-        const agyOk = commandVersion(AGY_BIN, ["--version"]);
-        if (agyOk) {
-          effectiveEngine = "antigravity";
-          effectiveModel = "auto";
-          fallbackNotice = "> ⚠️ **Catatan Sistem**: OpenCode CLI belum terpasang di host server. Tugas dialihkan dan diselesaikan otomatis menggunakan Antigravity engine.\n\n";
-        }
+        return {
+          response: "> ❌ **OpenCode CLI Tidak Ditemukan di Host Server**\n\nBiner `opencode` belum terdeteksi. Silakan pastikan OpenCode terpasang (`curl -fsSL https://opencode.ai/install.sh | bash` atau `npm i -g opencode`) dan restart bridge server.",
+          sessionId: conversationId || `opencode_${Date.now()}`
+        };
       }
     }
 
