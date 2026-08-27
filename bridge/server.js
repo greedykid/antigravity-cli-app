@@ -1215,16 +1215,18 @@ function runCodex(prompt, conversationId, model, job) {
 
 function runOpencode(prompt, conversationId, model, job) {
   return new Promise((resolve, reject) => {
+    const bin = findOpencodeBin();
     const args = ["run"];
-    if (model && model !== "default" && model !== "auto") {
-      args.push("--model", model);
-    }
     if (conversationId) {
-      args.push("--session", conversationId);
+      args.push("-s", conversationId);
     }
+    if (model && model !== "default" && model !== "auto") {
+      args.push("-m", model);
+    }
+    args.push("--format", "json");
     args.push(prompt);
 
-    const child = spawn(OPENCODE_BIN, args, {
+    const child = spawn(bin, args, {
       cwd: WORKDIR,
       env: Object.assign({}, process.env, {
         PATH: (process.env.PATH || "") + ":/usr/bin:/usr/local/bin:/home/ubuntu/.local/bin:/home/ubuntu/.opencode/bin"
@@ -1234,17 +1236,39 @@ function runOpencode(prompt, conversationId, model, job) {
 
     let fullOutput = "";
     let error = "";
-    let lastActivity = Date.now();
+    let discoveredSessionId = conversationId || null;
 
     child.stdout.on("data", chunk => {
-      lastActivity = Date.now();
       const text = chunk.toString();
-      fullOutput += text;
-      events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: text });
+      const lines = text.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+          try {
+            const ev = JSON.parse(trimmed);
+            if (ev.sessionID && !discoveredSessionId) {
+              discoveredSessionId = ev.sessionID;
+              if (job && job.id) jobs.update(job.id, { conversationId: discoveredSessionId });
+            }
+            if (ev.type === "text" && ev.part && ev.part.text) {
+              fullOutput += ev.part.text;
+              events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: ev.part.text });
+            } else if (ev.type === "reasoning" && ev.part && ev.part.text) {
+              events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: "\n> " + ev.part.text + "\n" });
+            }
+          } catch(e) {
+            fullOutput += trimmed + "\n";
+            events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: trimmed });
+          }
+        } else {
+          fullOutput += line + "\n";
+          events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: line });
+        }
+      }
     });
 
     child.stderr.on("data", chunk => {
-      lastActivity = Date.now();
       const text = chunk.toString();
       error += text;
       events.broadcast("cli.output", { jobId: job.id, engine: "opencode", chunk: text });
@@ -1258,7 +1282,7 @@ function runOpencode(prompt, conversationId, model, job) {
     child.on("close", code => {
       clearTimeout(timeout);
       const resText = fullOutput.trim() || error.trim() || "Done.";
-      const sid = conversationId || `opencode_${Date.now()}`;
+      const sid = discoveredSessionId || conversationId || `opencode_${Date.now()}`;
 
       // Persist turns into OpenCode session transcript
       try {
@@ -1670,24 +1694,31 @@ async function runChatJob(job, payload) {
     let updatedTurns = [];
 
     let effectiveEngine = engine;
+    let effectiveModel = model;
     let fallbackNotice = "";
 
     if (effectiveEngine === "codex" && !commandVersion(CODEX_BIN, ["--version"])) {
       const agyOk = commandVersion(AGY_BIN, ["--version"]);
       if (agyOk) {
         effectiveEngine = "antigravity";
+        effectiveModel = "auto";
         fallbackNotice = "> ⚠️ **Catatan Sistem**: Codex CLI belum terpasang di host server. Tugas dialihkan dan diselesaikan otomatis menggunakan Antigravity engine.\n\n";
       }
-    } else if (effectiveEngine === "opencode" && !commandVersion(OPENCODE_BIN, ["--version"]) && !commandVersion(OPENCODE_BIN, ["-v"])) {
-      const agyOk = commandVersion(AGY_BIN, ["--version"]);
-      if (agyOk) {
-        effectiveEngine = "antigravity";
-        fallbackNotice = "> ⚠️ **Catatan Sistem**: OpenCode CLI belum terpasang di host server. Tugas dialihkan dan diselesaikan otomatis menggunakan Antigravity engine.\n\n";
+    } else if (effectiveEngine === "opencode") {
+      const opencodeBin = findOpencodeBin();
+      const opencodeOk = commandVersion(opencodeBin, ["--version"]) || commandVersion(opencodeBin, ["-v"]);
+      if (!opencodeOk) {
+        const agyOk = commandVersion(AGY_BIN, ["--version"]);
+        if (agyOk) {
+          effectiveEngine = "antigravity";
+          effectiveModel = "auto";
+          fallbackNotice = "> ⚠️ **Catatan Sistem**: OpenCode CLI belum terpasang di host server. Tugas dialihkan dan diselesaikan otomatis menggunakan Antigravity engine.\n\n";
+        }
       }
     }
 
     if (effectiveEngine === "codex") {
-      const result = await runCodex(prompt, conversationId, model, job);
+      const result = await runCodex(prompt, conversationId, effectiveModel, job);
       responseText = result.response;
       activeConvId = result.sessionId || conversationId;
 
@@ -1706,7 +1737,7 @@ async function runChatJob(job, payload) {
         ];
       }
     } else if (effectiveEngine === "opencode") {
-      const result = await runOpencode(prompt, conversationId, model, job);
+      const result = await runOpencode(prompt, conversationId, effectiveModel, job);
       responseText = result.response;
       activeConvId = result.sessionId || conversationId;
 
@@ -1727,7 +1758,7 @@ async function runChatJob(job, payload) {
     } else {
       const isNewSession = !conversationId;
       const startTime = Date.now();
-      const result = await runAgy(prompt, conversationId, resume, model, job);
+      const result = await runAgy(prompt, conversationId, resume, effectiveModel, job);
       responseText = typeof result === "object" ? result.response : result;
       activeConvId = (typeof result === "object" && result.sessionId) ? result.sessionId : (isNewSession ? findLatestAgyConversationId(startTime - 10000) : conversationId);
 

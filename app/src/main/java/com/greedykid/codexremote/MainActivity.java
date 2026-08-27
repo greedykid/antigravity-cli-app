@@ -3134,9 +3134,13 @@ public class MainActivity extends FragmentActivity {
         settingsConnectorStatusText = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_link, "Konektor", "1 terhubung", () -> showConnectionBottomSheet(), true);
         settingsSandboxSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_security, "Mode Eksekusi",
                 sandboxLabel(prefs.getString("sandbox_mode", "full")), () -> showSandboxPicker(), true);
-        settingsGitPathSubtitle = addSettingsRowItemWithSubtitle(g3, R.drawable.ic_source_branch, "Git repo path",
-                gitPathLabel(), () -> showGitPathBottomSheet(), true);
-        addSettingsRowItem(g3, R.drawable.ic_cloud, "API Codex", null, () -> showCodexApiConfig(), true);
+        if ("opencode".equalsIgnoreCase(currentEngine)) {
+            addSettingsRowItem(g3, R.drawable.ic_cloud, "Provider OpenCode", null, () -> showOpenCodeApiConfig(), true);
+        } else if ("codex".equalsIgnoreCase(currentEngine)) {
+            addSettingsRowItem(g3, R.drawable.ic_cloud, "API Codex", null, () -> showCodexApiConfig(), true);
+        } else {
+            addSettingsRowItem(g3, R.drawable.ic_cloud, "Model Antigravity", null, () -> showStaticModelPicker(), true);
+        }
         addSettingsRowItem(g3, R.drawable.ic_laptop, "Server Tersimpan", null, () -> showServerSwitcher(), true);
         addSettingsRowItem(g3, R.drawable.ic_folder, "Proyek", null, () -> showProjectPicker(), true);
         addSettingsRowItem(g3, R.drawable.ic_build, "Pemeliharaan", null, () -> showMaintenanceSheet(), true);
