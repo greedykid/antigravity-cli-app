@@ -7461,6 +7461,14 @@ public class MainActivity extends FragmentActivity {
         pendingOptimisticUserPrompt = displayText;
         pendingOptimisticUserTime = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date());
 
+        if (activeConversationId == null || activeConversationId.isEmpty() || isGenericTitle(activeSessionTitle)) {
+            String derived = cleanDerivedTitle(text);
+            if (!derived.isEmpty() && !isGenericTitle(derived)) {
+                activeSessionTitle = derived;
+                if (chatTopTitle != null) chatTopTitle.setText(activeSessionTitle);
+            }
+        }
+
         if (liveStreamingBlockView != null) {
             chatMessagesList.removeView(liveStreamingBlockView);
             liveStreamingBlockView = null;
@@ -7576,14 +7584,17 @@ public class MainActivity extends FragmentActivity {
                         JSONObject sessObj = finalRes.optJSONObject("session");
                         if (sessObj != null) {
                             String sTitle = sessObj.optString("title", "");
-                            if (!sTitle.isEmpty()) {
+                            if (!sTitle.isEmpty() && !isGenericTitle(sTitle)) {
                                 activeSessionTitle = sTitle;
                                 chatTopTitle.setText(activeSessionTitle);
                             }
                         }
-                    } else if (activeSessionTitle == null || activeSessionTitle.equals("New session") || activeSessionTitle.isEmpty()) {
-                        activeSessionTitle = promptToSend.length() > 36 ? promptToSend.substring(0, 36) + "..." : promptToSend;
-                        chatTopTitle.setText(activeSessionTitle);
+                    } else if (isGenericTitle(activeSessionTitle)) {
+                        String derived = cleanDerivedTitle(promptToSend);
+                        if (!derived.isEmpty()) {
+                            activeSessionTitle = derived;
+                            chatTopTitle.setText(activeSessionTitle);
+                        }
                     }
                     renderActiveSessionTurns(activeConversationId, finalRes, false);
                     pendingOptimisticUserPrompt = null;
@@ -7757,8 +7768,58 @@ public class MainActivity extends FragmentActivity {
         activeSessionEngine = currentEngine;
         prefs.edit()
                 .putString("last_conversation_id", convId)
+                .putString("last_conversation_title", activeSessionTitle)
                 .putString("last_conversation_engine", currentEngine)
                 .apply();
+
+        if (activeSessionTitle != null && !isGenericTitle(activeSessionTitle)) {
+            final String titleToSave = activeSessionTitle;
+            executor.execute(() -> {
+                try {
+                    JSONObject req = new JSONObject();
+                    req.put("id", convId);
+                    req.put("title", titleToSave);
+                    bridge.post("/api/session/rename", req);
+                } catch (Exception ignored) {}
+            });
+        }
+    }
+
+    private boolean isGenericTitle(String t) {
+        if (t == null) return true;
+        String s = t.trim();
+        return s.isEmpty()
+                || s.equalsIgnoreCase("Session")
+                || s.equalsIgnoreCase("New session")
+                || s.equalsIgnoreCase("New chat")
+                || s.equalsIgnoreCase("Chat")
+                || s.matches("(?i)Session\\s+[a-f0-9\\-]+");
+    }
+
+    private String cleanDerivedTitle(String raw) {
+        if (raw == null) return "";
+        String t = raw.replaceAll("\\[(?:Attached\\s+)?File:[^\\]]+\\]", "").trim();
+        t = t.replaceAll("^[#*`_~\\-\\s]+", "");
+        t = t.replace("\n", " ").replaceAll("\\s+", " ").trim();
+        if (t.isEmpty()) return "";
+        return t.length() > 32 ? t.substring(0, 32) + "..." : t;
+    }
+
+    private String extractFirstUserPromptTitle(JSONObject json) {
+        if (json == null) return "";
+        JSONArray turns = json.optJSONArray("turns");
+        if (turns == null) turns = json.optJSONArray("messages");
+        if (turns != null) {
+            for (int i = 0; i < turns.length(); i++) {
+                JSONObject turn = turns.optJSONObject(i);
+                if (turn != null && "user".equalsIgnoreCase(turn.optString("role", ""))) {
+                    String content = turn.optString("content", "");
+                    String derived = cleanDerivedTitle(content);
+                    if (!derived.isEmpty() && !isGenericTitle(derived)) return derived;
+                }
+            }
+        }
+        return "";
     }
 
     private JSONObject executePost(String endpoint, String token, JSONObject req) throws Exception {
@@ -7856,11 +7917,29 @@ public class MainActivity extends FragmentActivity {
 
             JSONObject session = json.optJSONObject("session");
             if (session != null) {
-                activeSessionTitle = session.optString("title", activeSessionTitle);
+                String sTitle = session.optString("title", "");
+                if (!sTitle.isEmpty() && !isGenericTitle(sTitle)) {
+                    activeSessionTitle = sTitle;
+                } else if (isGenericTitle(activeSessionTitle)) {
+                    String derived = extractFirstUserPromptTitle(json);
+                    if (!derived.isEmpty()) {
+                        activeSessionTitle = derived;
+                    }
+                }
                 if (requestedConvId != null && !requestedConvId.isEmpty()) {
                     prefs.edit().putLong("session_accessed_" + requestedConvId, System.currentTimeMillis()).apply();
                 }
-                chatTopTitle.setText(activeSessionTitle);
+                if (chatTopTitle != null) {
+                    chatTopTitle.setText(activeSessionTitle);
+                }
+            } else if (isGenericTitle(activeSessionTitle)) {
+                String derived = extractFirstUserPromptTitle(json);
+                if (!derived.isEmpty()) {
+                    activeSessionTitle = derived;
+                    if (chatTopTitle != null) {
+                        chatTopTitle.setText(activeSessionTitle);
+                    }
+                }
             }
 
             JSONArray turns = json.optJSONArray("turns");

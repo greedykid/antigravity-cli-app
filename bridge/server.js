@@ -2075,7 +2075,6 @@ const server = http.createServer((req, res) => {
     if (!convId) {
       return send(res, 400, { error: "Missing session id parameter" });
     }
-    touchSessionActivity(convId);
     const msgs = getTranscript(convId, 1000);
     const sData = getSessions();
     const foundSession = (sData.sessions || []).find(s => s.conversationId === convId) || { conversationId: convId, title: "Session" };
@@ -2083,6 +2082,15 @@ const server = http.createServer((req, res) => {
     if (customTitles[convId]) {
       foundSession.title = customTitles[convId];
       foundSession.customTitle = true;
+    } else if (!foundSession.title || foundSession.title === "Session" || foundSession.title === "New session" || foundSession.title.startsWith("Session ")) {
+      const firstUser = (msgs || []).find(m => m.role === "user");
+      if (firstUser && firstUser.content) {
+        const derived = cleanTitle(firstUser.content, "Session " + convId.slice(0, 8)).slice(0, 60);
+        if (derived && derived !== "Session") {
+          foundSession.title = derived;
+          try { saveCustomSessionTitle(convId, derived); } catch (e) {}
+        }
+      }
     }
     return send(res, 200, {
       ok: true,
