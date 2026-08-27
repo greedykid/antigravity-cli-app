@@ -8862,10 +8862,12 @@ public class MainActivity extends FragmentActivity {
         root.addView(portScroll);
 
         // WebView Container
-        android.webkit.WebView webView = new android.webkit.WebView(this);
+        final android.webkit.WebView webView = new android.webkit.WebView(this);
         android.webkit.WebSettings ws = webView.getSettings();
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);
+        ws.setAllowFileAccess(false);
+        ws.setAllowContentAccess(false);
         ws.setLoadWithOverviewMode(true);
         ws.setUseWideViewPort(true);
         webView.setWebViewClient(new android.webkit.WebViewClient());
@@ -8885,6 +8887,14 @@ public class MainActivity extends FragmentActivity {
         LinearLayout.LayoutParams lpWeb = new LinearLayout.LayoutParams(-1, (int) (getResources().getDisplayMetrics().heightPixels * 0.65f));
         lpWeb.setMargins(0, dp(8), 0, 0);
         root.addView(webView, lpWeb);
+
+        dialog.setOnDismissListener(d -> {
+            try {
+                webView.stopLoading();
+                webView.loadUrl("about:blank");
+                webView.destroy();
+            } catch (Exception ignored) {}
+        });
 
         dialog.setContentView(root);
         dialog.show();

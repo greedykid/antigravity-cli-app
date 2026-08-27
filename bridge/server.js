@@ -1708,7 +1708,10 @@ const server = http.createServer((req, res) => {
   // POST /api/files/patch
   if (req.method === "POST" && pathname === "/api/files/patch") {
     let raw = "";
-    req.on("data", chunk => { raw += chunk; });
+    req.on("data", chunk => {
+      raw += chunk;
+      if (raw.length > 4 * 1024 * 1024) req.destroy();
+    });
     req.on("end", () => {
       try {
         const payload = JSON.parse(raw || "{}");
@@ -1717,17 +1720,45 @@ const server = http.createServer((req, res) => {
 
         const tmpFile = path.join(os.tmpdir(), "patch-" + Date.now() + ".diff");
         fs.writeFileSync(tmpFile, patchContent + "\n", "utf8");
-        const { execSync } = require("child_process");
-        let ok = true, msg = "";
+        const { spawnSync } = require("child_process");
+        let ok = false, msg = "";
         try {
-          execSync(`git apply --whitespace=nowarn "${tmpFile}" 2>/dev/null || patch -p1 -f < "${tmpFile}" 2>/dev/null || patch -p0 -f < "${tmpFile}"`, {
+          const resGit = spawnSync("git", ["apply", "--whitespace=nowarn", tmpFile], {
             cwd: WORKDIR,
             timeout: 10000,
-            stdio: "pipe"
+            encoding: "utf8"
           });
-          msg = "Perubahan diff berhasil diterapkan ke workspace.";
-          audit("file.patch", { ok: true });
-          events.broadcast("git.changed", { path: WORKDIR });
+          if (resGit.status === 0) {
+            ok = true;
+            msg = "Perubahan diff berhasil diterapkan ke workspace.";
+          } else {
+            const resPatch1 = spawnSync("patch", ["-p1", "-f", "-i", tmpFile], {
+              cwd: WORKDIR,
+              timeout: 10000,
+              encoding: "utf8"
+            });
+            if (resPatch1.status === 0) {
+              ok = true;
+              msg = "Perubahan patch (p1) berhasil diterapkan.";
+            } else {
+              const resPatch0 = spawnSync("patch", ["-p0", "-f", "-i", tmpFile], {
+                cwd: WORKDIR,
+                timeout: 10000,
+                encoding: "utf8"
+              });
+              if (resPatch0.status === 0) {
+                ok = true;
+                msg = "Perubahan patch (p0) berhasil diterapkan.";
+              } else {
+                ok = false;
+                msg = (resGit.stderr || resPatch1.stderr || resPatch0.stderr || "Gagal menerapkan diff").toString().trim();
+              }
+            }
+          }
+          if (ok) {
+            audit("file.patch", { ok: true });
+            events.broadcast("git.changed", { path: WORKDIR });
+          }
         } catch (e) {
           ok = false;
           msg = e.message || "Gagal menerapkan diff patch.";
