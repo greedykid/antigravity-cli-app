@@ -1686,12 +1686,14 @@ public class MainActivity extends FragmentActivity {
     private String modelPrefKey(String engine) {
         if ("codex".equalsIgnoreCase(engine)) return "model_codex";
         if ("opencode".equalsIgnoreCase(engine)) return "model_opencode";
+        if ("commandcode".equalsIgnoreCase(engine)) return "model_commandcode";
         return "model_antigravity";
     }
 
     private String defaultModelForEngine(String engine) {
         if ("codex".equalsIgnoreCase(engine)) return "gpt-5.6-luna";
         if ("opencode".equalsIgnoreCase(engine)) return "deepseek-coder";
+        if ("commandcode".equalsIgnoreCase(engine)) return "auto";
         return "auto";
     }
 
@@ -3138,6 +3140,8 @@ public class MainActivity extends FragmentActivity {
             addSettingsRowItem(g3, R.drawable.ic_cloud, "Provider OpenCode", null, () -> showOpenCodeApiConfig(), true);
         } else if ("codex".equalsIgnoreCase(currentEngine)) {
             addSettingsRowItem(g3, R.drawable.ic_cloud, "API Codex", null, () -> showCodexApiConfig(), true);
+        } else if ("commandcode".equalsIgnoreCase(currentEngine)) {
+            addSettingsRowItem(g3, R.drawable.ic_cloud, "Model Command Code", null, () -> showCommandCodeModelPicker(), true);
         } else {
             addSettingsRowItem(g3, R.drawable.ic_cloud, "Model Antigravity", null, () -> showStaticModelPicker(), true);
         }
@@ -5858,6 +5862,10 @@ public class MainActivity extends FragmentActivity {
             showOpenCodeModelPicker();
             return;
         }
+        if ("commandcode".equalsIgnoreCase(currentEngine)) {
+            showCommandCodeModelPicker();
+            return;
+        }
         showStaticModelPicker();
     }
 
@@ -6049,6 +6057,70 @@ public class MainActivity extends FragmentActivity {
     }
 
     /**
+     * Command Code reads models from its own provider config, so the list is
+     * not hardcoded here. Offer "auto" plus a free-text field so any model the
+     * CLI understands can be passed straight through with -m.
+     */
+    private void showCommandCodeModelPicker() {
+        final Dialog dialog = createBaseBottomSheet(true);
+        final LinearLayout root = createBottomSheetRoot(dialog, "Pilih Model Command Code", true);
+
+        root.addView(cText("Model dipakai untuk prompt baru (auto = bawaan CLI)",
+                12.5f, Theme.TEXT_MUTED, false, false));
+
+        final EditText input = new EditText(this);
+        input.setHint("Nama model, mis. deepseek/deepseek-v4-flash");
+        input.setText(currentModel != null && !"auto".equalsIgnoreCase(currentModel) ? currentModel : "");
+        input.setTextSize(14f);
+        input.setSingleLine(true);
+        input.setTextColor(Theme.TEXT_MAIN);
+        input.setHintTextColor(Theme.TEXT_LIGHT);
+        input.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 14));
+        input.setPadding(dp(14), dp(11), dp(14), dp(11));
+        LinearLayout.LayoutParams lpInput = new LinearLayout.LayoutParams(-1, -2);
+        lpInput.setMargins(0, dp(12), 0, dp(4));
+        root.addView(input, lpInput);
+
+        TextView useAuto = cText("Pakai Auto", 14f, Theme.ON_ACCENT, true, false);
+        useAuto.setGravity(Gravity.CENTER);
+        useAuto.setPadding(dp(16), dp(13), dp(16), dp(13));
+        useAuto.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
+        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, -2);
+        lpBtn.setMargins(0, dp(8), 0, 0);
+        root.addView(useAuto, lpBtn);
+        useAuto.setOnClickListener(v -> {
+            currentModel = "auto";
+            prefs.edit().putString(modelPrefKey(currentEngine), currentModel).apply();
+            updateRepoTag();
+            dialog.dismiss();
+            startNewSession();
+            Toast.makeText(this, "Model: Auto", Toast.LENGTH_SHORT).show();
+        });
+
+        TextView useTyped = cText("Pakai yang Diketik", 14f, Theme.ON_ACCENT, true, false);
+        useTyped.setGravity(Gravity.CENTER);
+        useTyped.setPadding(dp(16), dp(13), dp(16), dp(13));
+        useTyped.setBackground(cBox(Theme.BLUE, 0, 0, 14));
+        root.addView(useTyped, lpBtn);
+        useTyped.setOnClickListener(v -> {
+            String typed = input.getText().toString().trim();
+            if (typed.isEmpty()) {
+                Toast.makeText(this, "Ketik nama model dulu", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            currentModel = typed;
+            prefs.edit().putString(modelPrefKey(currentEngine), currentModel).apply();
+            updateRepoTag();
+            dialog.dismiss();
+            startNewSession();
+            Toast.makeText(this, "Model: " + displayModel(currentModel), Toast.LENGTH_SHORT).show();
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    /**
      * Codex's model list belongs to whichever provider it is pointed at, so it
      * is fetched from that provider rather than hardcoded. Choosing one writes
      * to config.toml — the CLI reads the model from there, so setting only the
@@ -6217,18 +6289,21 @@ public class MainActivity extends FragmentActivity {
     private String engineLabel(String engine) {
         if ("codex".equalsIgnoreCase(engine)) return "Codex CLI";
         if ("opencode".equalsIgnoreCase(engine)) return "OpenCode CLI";
+        if ("commandcode".equalsIgnoreCase(engine)) return "Command Code CLI";
         return "Antigravity CLI";
     }
 
     private String engineShortLabel(String engine) {
         if ("codex".equalsIgnoreCase(engine)) return "Codex";
         if ("opencode".equalsIgnoreCase(engine)) return "OpenCode";
+        if ("commandcode".equalsIgnoreCase(engine)) return "Cmd";
         return "Agy";
     }
 
     private String engineRepo(String engine) {
         if ("codex".equalsIgnoreCase(engine)) return "openai/codex-cli";
         if ("opencode".equalsIgnoreCase(engine)) return "opencode-ai/cli";
+        if ("commandcode".equalsIgnoreCase(engine)) return "sst/opencode";
         return "google/antigravity-cli";
     }
 
@@ -6310,6 +6385,7 @@ public class MainActivity extends FragmentActivity {
         container.addView(buildEngineCard("antigravity", dialog, enginesObj));
         container.addView(buildEngineCard("codex", dialog, enginesObj));
         container.addView(buildEngineCard("opencode", dialog, enginesObj));
+        container.addView(buildEngineCard("commandcode", dialog, enginesObj));
     }
 
     private LinearLayout buildEngineCard(final String engine, final Dialog dialog, final JSONObject enginesObj) {

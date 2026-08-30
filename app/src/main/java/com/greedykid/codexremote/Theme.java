@@ -22,6 +22,7 @@ public final class Theme {
     public static final String ENGINE_ANTIGRAVITY = "antigravity";
     public static final String ENGINE_CODEX = "codex";
     public static final String ENGINE_OPENCODE = "opencode";
+    public static final String ENGINE_COMMAND_CODE = "commandcode";
 
     private static String engine = ENGINE_ANTIGRAVITY;
 
@@ -69,6 +70,10 @@ public final class Theme {
         return ENGINE_OPENCODE.equalsIgnoreCase(engine);
     }
 
+    public static boolean isCommandCode() {
+        return ENGINE_COMMAND_CODE.equalsIgnoreCase(engine);
+    }
+
     public static String engine() {
         return engine;
     }
@@ -80,6 +85,9 @@ public final class Theme {
         } else if (ENGINE_OPENCODE.equalsIgnoreCase(value)) {
             engine = ENGINE_OPENCODE;
             applyOpenCodePalette();
+        } else if (ENGINE_COMMAND_CODE.equalsIgnoreCase(value)) {
+            engine = ENGINE_COMMAND_CODE;
+            applyCommandCodePalette();
         } else {
             engine = ENGINE_ANTIGRAVITY;
             applyAntigravityPalette();
@@ -167,12 +175,40 @@ public final class Theme {
         BLUE_BG = Color.rgb(20, 36, 62);
     }
 
+    /** Deep blue command-line ground with a sky-blue accent (Command Code). */
+    private static void applyCommandCodePalette() {
+        BG = Color.rgb(15, 18, 24);               // #0F1218
+        SURFACE = Color.rgb(23, 27, 36);          // #171B24
+        SURFACE_MUTED = Color.rgb(32, 37, 48);    // #202530
+        BORDER = Color.rgb(46, 53, 68);           // #2E3544
+        BORDER_DARK = Color.rgb(60, 69, 88);      // #3C4558
+        CODE_BG = Color.rgb(9, 11, 16);           // #090B10
+
+        TEXT_MAIN = Color.rgb(237, 241, 248);     // #EDF1F8
+        TEXT_MUTED = Color.rgb(154, 164, 180);    // #9AA4B4
+        TEXT_LIGHT = Color.rgb(104, 114, 132);    // #687284
+
+        ACCENT = Color.rgb(59, 130, 246);         // #3B82F6
+        ACCENT_SOFT = Color.rgb(20, 38, 66);      // #142642
+        ON_ACCENT = Color.WHITE;
+
+        GREEN = Color.rgb(52, 199, 137);
+        GREEN_BG = Color.rgb(13, 43, 33);
+        AMBER = Color.rgb(233, 165, 61);
+        AMBER_BG = Color.rgb(45, 36, 17);
+        RED = Color.rgb(238, 92, 92);
+        RED_BG = Color.rgb(54, 23, 24);
+        BLUE = Color.rgb(96, 165, 250);
+        BLUE_BG = Color.rgb(23, 44, 84);
+    }
+
     // ---- engine identity ----
 
     /** Short mark used where space is tight. */
     public static String wordmark() {
         if (isCodex()) return "Codex";
         if (isOpenCode()) return "OpenCode";
+        if (isCommandCode()) return "Command Code";
         return "Antigravity";
     }
 
@@ -185,30 +221,35 @@ public final class Theme {
     public static String brandTitle() {
         if (isCodex()) return "Codex Remote";
         if (isOpenCode()) return "OpenCode Remote";
+        if (isCommandCode()) return "Command Code Remote";
         return "Antigravity Code";
     }
 
     public static String engineLabel() {
         if (isCodex()) return "Codex CLI";
         if (isOpenCode()) return "OpenCode CLI";
+        if (isCommandCode()) return "Command Code CLI";
         return "Antigravity CLI";
     }
 
     public static String engineShortLabel() {
         if (isCodex()) return "Codex";
         if (isOpenCode()) return "OpenCode";
+        if (isCommandCode()) return "Cmd";
         return "Agy";
     }
 
     public static String engineRepo() {
         if (isCodex()) return "openai/codex-cli";
         if (isOpenCode()) return "opencode-ai/cli";
+        if (isCommandCode()) return "rizkiarbi/command-code";
         return "google/antigravity-cli";
     }
 
     public static String engineTagline() {
         if (isCodex()) return "Siap membantu. Ketik perintah untuk memulai sesi Codex.";
         if (isOpenCode()) return "Siap membantu. Ketik perintah untuk memulai sesi OpenCode.";
+        if (isCommandCode()) return "Siap membantu. Ketik perintah untuk memulai sesi Command Code.";
         return "Siap membantu. Ketik perintah untuk memulai sesi Antigravity.";
     }
 

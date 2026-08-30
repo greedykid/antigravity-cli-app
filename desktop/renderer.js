@@ -157,7 +157,7 @@ function renderSessionsList(sessions) {
     card.innerHTML = `
       <div class="session-card-title">${escapeHtml(session.title || 'Sesi')}</div>
       <div class="session-card-meta">
-        <span>${session.engine === 'codex' ? 'Codex' : 'Antigravity'}</span>
+        <span>${engineDisplayName(session.engine)}</span>
         <span>${session.updatedAt ? new Date(session.updatedAt).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}) : ''}</span>
       </div>
     `;
@@ -180,6 +180,13 @@ sessionSearchInput.oninput = () => {
   renderSessionsList(filtered);
 };
 
+function engineDisplayName(engine) {
+  if (engine === 'codex') return 'Codex';
+  if (engine === 'opencode') return 'OpenCode';
+  if (engine === 'commandcode') return 'Command Code';
+  return 'Antigravity';
+}
+
 // Open Session Transcript
 async function openSession(conversationId, title, engine) {
   activeConversationId = conversationId;
@@ -187,7 +194,7 @@ async function openSession(conversationId, title, engine) {
   currentEngine = engine || 'antigravity';
   currentSessionTitle.textContent = activeSessionTitle;
   currentSessionTag.textContent = `ID: ${conversationId.slice(0, 8)}...`;
-  currentEngineName.textContent = currentEngine === 'codex' ? 'Codex' : 'Antigravity';
+  currentEngineName.textContent = engineDisplayName(currentEngine);
   
   renderSessionsList(allSessions);
 
@@ -218,7 +225,7 @@ function renderTranscript(turns) {
     msg.innerHTML = `
       <div class="message-header">
         <svg class="icon-xs"><use href="${isUser ? '#icon-user' : '#icon-bot'}"></use></svg>
-        <span>${isUser ? 'Anda' : (currentEngine === 'codex' ? 'Codex' : 'Antigravity')}</span>
+        <span>${isUser ? 'Anda' : engineDisplayName(currentEngine)}</span>
       </div>
       <div class="message-body">${contentHtml}</div>
     `;
@@ -661,6 +668,8 @@ engineSelectorBtn.onclick = async () => {
 
     const agy = engines.antigravity || { available: true, version: '1.0.0' };
     const codex = engines.codex || { available: false, version: null };
+    const opencode = engines.opencode || { available: false, version: null };
+    const commandcode = engines.commandcode || { available: false, version: null };
 
     body.innerHTML = `
       <!-- Antigravity Engine Card -->
@@ -687,6 +696,36 @@ engineSelectorBtn.onclick = async () => {
         ` : ''}
       </div>
 
+      <!-- OpenCode Engine Card -->
+      <div class="engine-choice-card ${currentEngine === 'opencode' ? 'active' : ''}" onclick="${opencode.available ? "selectEngine('opencode')" : ''}">
+        <div class="engine-choice-header">
+          <strong>OpenCode CLI</strong>
+          <span class="${opencode.available ? 'badge-green' : 'badge-amber'}">${opencode.available ? 'Terinstall ● ' + opencode.version : 'Belum Terpasang'}</span>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted);">Open-source multi-provider AI coding engine.</div>
+        ${!opencode.available ? `
+          <button class="btn-install-engine" onclick="installEngine('opencode')">
+            <svg class="icon-xs"><use href="#icon-zap"></use></svg>
+            <span>Pasang OpenCode di Server</span>
+          </button>
+        ` : ''}
+      </div>
+
+      <!-- Command Code Engine Card -->
+      <div class="engine-choice-card ${currentEngine === 'commandcode' ? 'active' : ''}" onclick="${commandcode.available ? "selectEngine('commandcode')" : ''}">
+        <div class="engine-choice-header">
+          <strong>Command Code CLI</strong>
+          <span class="${commandcode.available ? 'badge-green' : 'badge-amber'}">${commandcode.available ? 'Terinstall ● ' + commandcode.version : 'Belum Terpasang'}</span>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted);">Agen coding CLI yang terus belajar gaya penulisan kode Anda (multi-provider).</div>
+        ${!commandcode.available ? `
+          <button class="btn-install-engine" onclick="installEngine('commandcode')">
+            <svg class="icon-xs"><use href="#icon-zap"></use></svg>
+            <span>Pasang Command Code di Server</span>
+          </button>
+        ` : ''}
+      </div>
+
       <!-- Live Install Terminal Output Box -->
       <div id="installLogBox" class="hidden" style="margin-top:14px; background:#0d0d10; border:1px solid var(--border); border-radius:8px; padding:10px; font-family:Consolas,monospace; font-size:11px; max-height:160px; overflow-y:auto; white-space:pre-wrap;"></div>
     `;
@@ -697,7 +736,7 @@ engineSelectorBtn.onclick = async () => {
 
 window.selectEngine = (engine) => {
   currentEngine = engine;
-  currentEngineName.textContent = engine === 'codex' ? 'Codex' : 'Antigravity';
+  currentEngineName.textContent = engineDisplayName(engine);
   closeModal('modalEngine');
 };
 

@@ -351,7 +351,7 @@ case "$1" in
             $0 restart
         else
             echo -e "Current Default Engine: \033[1;35m$ENGINE\033[0m"
-            echo -e "To change engine: codex-remote engine <antigravity|codex>"
+            echo -e "To change engine: codex-remote engine <antigravity|codex|opencode|commandcode>"
         fi
         ;;
     help|--help|-h)
@@ -370,7 +370,7 @@ case "$1" in
         echo "  logs             : Stream live server logs"
         echo "  token [new]      : View or change secret Bearer Token"
         echo "  rotate           : Generate a fresh token (re-pair required)"
-        echo "  engine [name]    : View or change default engine (antigravity / codex)"
+        echo "  engine [name]    : View or change default engine (antigravity / codex / opencode / commandcode)"
         echo ""
         ;;
     *)

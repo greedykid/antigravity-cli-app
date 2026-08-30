@@ -76,6 +76,7 @@ public final class OperationsPanel {
     // Engine & Runtime Views
     private TextView agyEngineText;
     private TextView cdxEngineText;
+    private TextView ccEngineText;
     private TextView bridgeRuntimeText;
     private TextView jobsRunningText;
     private TextView workdirText;
@@ -272,6 +273,10 @@ public final class OperationsPanel {
         cdxEngineText = Theme.text(act, "• Codex CLI: Memuat...", 13f, Theme.TEXT_MAIN, false, false);
         cdxEngineText.setPadding(0, dp(3), 0, dp(3));
         card.addView(cdxEngineText);
+
+        ccEngineText = Theme.text(act, "• Command Code CLI: Memuat...", 13f, Theme.TEXT_MAIN, false, false);
+        ccEngineText.setPadding(0, dp(3), 0, dp(3));
+        card.addView(ccEngineText);
 
         bridgeRuntimeText = Theme.text(act, "• Bridge Gateway: Node.js ...", 13f, Theme.TEXT_MAIN, false, false);
         bridgeRuntimeText.setPadding(0, dp(3), 0, dp(3));
@@ -476,6 +481,13 @@ public final class OperationsPanel {
                 boolean ok = cdx != null && cdx.optBoolean("ok", false);
                 String ver = cdx != null ? cdx.optString("version", "Aktif") : "-";
                 cdxEngineText.setText("• Codex CLI Engine: " + (ok ? "🟢 " + ver : "🔴 Tidak Terdeteksi"));
+            }
+
+            JSONObject cc = engines.optJSONObject("commandcode");
+            if (ccEngineText != null) {
+                boolean ok = cc != null && cc.optBoolean("ok", false);
+                String ver = cc != null ? cc.optString("version", "Aktif") : "-";
+                ccEngineText.setText("• Command Code CLI Engine: " + (ok ? "🟢 " + ver : "🔴 Tidak Terdeteksi"));
             }
         }
 

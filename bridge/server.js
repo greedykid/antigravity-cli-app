@@ -39,16 +39,23 @@ const TOKEN = config.loadToken();
 const WORKDIR = config.workdir();
 const AGY_BIN = process.env.AGY_BIN || path.join(os.homedir(), ".local/bin/agy");
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
+const COMMAND_CODE_BIN = process.env.COMMAND_CODE_BIN || "command-code";
 
 function extendedPath() {
   const home = os.homedir();
+  let nodeBin = "";
+  try {
+    const prefix = execSync("npm prefix -g", { encoding: "utf8", timeout: 3000 }).trim();
+    if (prefix) nodeBin = path.join(prefix, "bin");
+  } catch (e) {}
   return (process.env.PATH || "") + ":" + [
     path.join(home, ".opencode/bin"),
     path.join(home, ".local/bin"),
+    nodeBin,
     "/usr/local/bin",
     "/usr/bin",
     "/bin"
-  ].join(":");
+  ].filter(Boolean).join(":");
 }
 
 function findOpencodeBin() {
@@ -82,7 +89,9 @@ function commandVersion(command, args) {
   try {
     const result = spawnSync(command, args, {
       encoding: "utf8",
-      timeout: 3000,
+      // Command Code's bundle takes several seconds just to print --version,
+      // so keep this generous for every engine.
+      timeout: 12000,
       env: Object.assign({}, process.env, { PATH: extendedPath() })
     });
     return result.status === 0 ? (result.stdout || "").trim().split("\n")[0] : null;
@@ -117,6 +126,7 @@ function operationalHealth() {
   const codex = commandVersion(CODEX_BIN, ["--version"]);
   const agy = commandVersion(AGY_BIN, ["--version"]);
   const opencode = commandVersion(OPENCODE_BIN, ["--version"]) || commandVersion(OPENCODE_BIN, ["-v"]);
+  const commandcode = commandVersion(COMMAND_CODE_BIN, ["--version"]);
   const workdirExists = fs.existsSync(WORKDIR) && fs.statSync(WORKDIR).isDirectory();
   const gitStatus = git.isRepo(WORKDIR) ? "ok" : "not_repository";
   const stats = serverResourceStats();
@@ -125,7 +135,8 @@ function operationalHealth() {
     engines: {
       antigravity: agy ? { ok: true, version: agy } : { ok: false },
       codex: codex ? { ok: true, version: codex } : { ok: false },
-      opencode: opencode ? { ok: true, version: opencode } : { ok: false }
+      opencode: opencode ? { ok: true, version: opencode } : { ok: false },
+      commandcode: commandcode ? { ok: true, version: commandcode } : { ok: false }
     },
     filesystem: { ok: workdirExists, workdir: WORKDIR },
     git: gitStatus,
@@ -139,6 +150,7 @@ function getEnginesStatus() {
   const agy = commandVersion(AGY_BIN, ["--version"]);
   const codex = commandVersion(CODEX_BIN, ["--version"]);
   const opencode = commandVersion(OPENCODE_BIN, ["--version"]) || commandVersion(OPENCODE_BIN, ["-v"]);
+  const commandcode = commandVersion(COMMAND_CODE_BIN, ["--version"]);
   return {
     ok: true,
     engines: {
@@ -167,6 +179,15 @@ function getEnginesStatus() {
         version: opencode || null,
         description: "Open-source multi-provider AI coding engine (DeepSeek, Claude, Ollama local)",
         installCommand: "npm install -g opencode || npm install -g @opencode-ai/cli"
+      },
+      commandcode: {
+        id: "commandcode",
+        name: "Command Code CLI",
+        binary: COMMAND_CODE_BIN,
+        available: Boolean(commandcode),
+        version: commandcode || null,
+        description: "Agen coding CLI yang terus belajar gaya penulisan kode Anda (multi-provider)",
+        installCommand: "npm install -g command-code"
       }
     }
   };
@@ -838,6 +859,147 @@ function getCodexTranscript(sessionId, limit = 1000) {
 }
 
 // -------------------------------------------------------------
+// COMMAND CODE CLI SESSIONS & TRANSCRIPTS
+// -------------------------------------------------------------
+// Command Code stores sessions as JSONL transcripts under
+// ~/.commandcode/projects/<escaped-cwd>/<sessionId>.jsonl. The first record
+// is a {type:"session"} header; the rest are {type:"message"} records whose
+// "message" object carries {role, content:[{type:"text",text}, ...]}.
+function commandCodeSessionsDir() {
+  const home = os.homedir();
+  return path.join(home, ".commandcode/projects");
+}
+
+function listCommandCodeSessionFiles(limit = 200) {
+  const root = commandCodeSessionsDir();
+  if (!fs.existsSync(root)) return [];
+  const files = [];
+  const stack = [root];
+  try {
+    while (stack.length && files.length < 4000) {
+      const dir = stack.pop();
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { continue; }
+      for (const ent of entries) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) stack.push(full);
+        else if (ent.isFile() && ent.name.endsWith(".jsonl") && !ent.name.includes(".checkpoints")) {
+          try {
+            files.push({ full, name: ent.name, mtime: fs.statSync(full).mtimeMs });
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (e) {}
+  files.sort((a, b) => b.mtime - a.mtime);
+  return files.slice(0, limit);
+}
+
+function getCommandCodeSessions() {
+  const map = new Map();
+  for (const file of listCommandCodeSessionFiles()) {
+    const id = file.name.replace(/\.jsonl$/, "");
+    if (!id || map.has(id)) continue;
+    let title = "Command Code " + id.slice(0, 8);
+    let timestamp = file.mtime || Date.now();
+    try {
+      const lines = fs.readFileSync(file.full, "utf8").trim().split("\n").filter(Boolean);
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          const item = JSON.parse(lines[i]);
+          if (item.type === "session") {
+            if (item.timestamp) timestamp = new Date(item.timestamp).getTime() || timestamp;
+            continue;
+          }
+          const msg = item.message || {};
+          if (msg.role === "user" && Array.isArray(msg.content)) {
+            const text = msg.content.map(c => (c && c.type === "text" ? c.text : "")).filter(Boolean).join(" ");
+            const t = cleanTitle(text, "").slice(0, 80);
+            if (t) { title = t; break; }
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+    map.set(id, {
+      conversationId: id,
+      title,
+      timestamp,
+      workspace: WORKDIR,
+      engine: "commandcode",
+      hostname: os.hostname()
+    });
+  }
+  return Array.from(map.values());
+}
+
+function findCommandCodeSessionFile(convId) {
+  if (!convId) return null;
+  const root = commandCodeSessionsDir();
+  if (!fs.existsSync(root)) return null;
+  const direct = path.join(root, convId + ".jsonl");
+  if (fs.existsSync(direct)) return direct;
+  // The id sits under an escaped-cwd subdirectory; scan for a name match.
+  const stack = [root];
+  try {
+    while (stack.length) {
+      const dir = stack.pop();
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { continue; }
+      for (const ent of entries) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+          stack.push(full);
+        } else if (ent.isFile() && ent.name.endsWith(".jsonl") && !ent.name.includes(".checkpoints")
+            && (ent.name.startsWith(convId) || ent.name.includes(convId))) {
+          return full;
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function getCommandCodeTranscript(convId, limit = 1000) {
+  const file = findCommandCodeSessionFile(convId);
+  if (!file || !fs.existsSync(file)) return [];
+
+  const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+  const msgs = [];
+  for (const l of lines) {
+    try {
+      const obj = JSON.parse(l);
+      if (obj.type !== "message") continue;
+      const msg = obj.message || {};
+      const role = msg.role || "";
+      const content = msg.content;
+      if (!Array.isArray(content)) continue;
+
+      for (const c of content) {
+        if (!c || typeof c !== "object") continue;
+        const text = c.text || c.thinking || "";
+        if (typeof text !== "string" || !text.trim()) continue;
+        if (c.type === "thinking") {
+          msgs.push({ role: "thinking", toolTitle: "Thinking", title: "Thinking Process", content: text.trim(), time: obj.timestamp });
+        } else if (c.type === "text") {
+          if (role === "user") {
+            msgs.push({ role: "user", content: text.trim(), time: obj.timestamp });
+          } else if (role === "assistant") {
+            msgs.push({ role: "assistant", content: text.trim(), time: obj.timestamp });
+          } else if (role === "tool") {
+            msgs.push({ role: "tool", toolTitle: "Tool", title: "Tool", content: text.trim(), time: obj.timestamp });
+          }
+        } else if (c.type === "tool") {
+          const name = c.name || c.tool || "tool";
+          const toolText = (c.input && JSON.stringify(c.input)) || text;
+          msgs.push({ role: "tool", toolTitle: name, title: "Tool: " + name, content: toolText.trim(), time: obj.timestamp });
+        }
+      }
+    } catch (e) {}
+  }
+  return msgs.slice(-limit);
+}
+
+// -------------------------------------------------------------
 // SESSIONS & TRANSCRIPT RETRIEVAL
 // -------------------------------------------------------------
 function findLatestAgyConversationId(sinceMs = 0) {
@@ -958,8 +1120,9 @@ function getSessions(engineFilter) {
   const codexSessions = getCodexSessions();
   const agySessions = Array.from(agyMap.values());
   const opencodeSessions = opencodeConfig.getOpencodeSessions(WORKDIR);
+  const commandcodeSessions = getCommandCodeSessions();
 
-  let merged = [...codexSessions, ...agySessions, ...opencodeSessions].sort((a, b) => {
+  let merged = [...codexSessions, ...agySessions, ...opencodeSessions, ...commandcodeSessions].sort((a, b) => {
     return (b.timestamp || 0) - (a.timestamp || 0);
   });
 
@@ -1002,6 +1165,7 @@ function normalizeEngine(value) {
   const v = String(value || "").toLowerCase();
   if (v === "codex") return "codex";
   if (v === "opencode") return "opencode";
+  if (v === "commandcode" || v === "command-code" || v === "cmd") return "commandcode";
   return "antigravity";
 }
 
@@ -1018,6 +1182,12 @@ function getTranscript(convId, limit = 1000) {
   const codexTurns = getCodexTranscript(convId, limit);
   if (codexTurns && codexTurns.length > 0) {
     return codexTurns;
+  }
+
+  // Check Command Code next
+  const commandcodeTurns = getCommandCodeTranscript(convId, limit);
+  if (commandcodeTurns && commandcodeTurns.length > 0) {
+    return commandcodeTurns;
   }
 
   // Antigravity session transcript
@@ -1344,6 +1514,122 @@ function runOpencode(prompt, conversationId, model, job) {
   });
 }
 
+function runCommandCode(prompt, conversationId, model, job) {
+  return new Promise((resolve, reject) => {
+    const args = ["-p", prompt, "--output-format", "json"];
+    // Resume the given session, or continue the last one when the caller
+    // asked for it. Command Code uses -r <id> to resume by session id.
+    if (conversationId) {
+      args.push("-r", conversationId);
+    }
+    if (model && model !== "default" && model !== "auto") {
+      args.push("-m", model);
+    }
+    // Auto-accept so remote prompts don't stall on permission prompts.
+    args.push("--permission-mode", "auto-accept");
+    args.push("--skip-onboarding");
+
+    const child = spawn(COMMAND_CODE_BIN, args, {
+      cwd: WORKDIR,
+      env: Object.assign({}, process.env, {
+        PATH: extendedPath()
+      }),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    let fullOutput = "";
+    let error = "";
+    let discoveredSessionId = conversationId || null;
+    let finalText = "";
+    let runError = null;
+    let lastActivity = Date.now();
+
+    child.stdout.on("data", chunk => {
+      lastActivity = Date.now();
+      const text = chunk.toString();
+      fullOutput += text;
+      for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const obj = JSON.parse(trimmed);
+          if (obj.type === "event" && obj.event) {
+            const ev = obj.event;
+            if (ev.type === "run_start" && ev.sessionId && !discoveredSessionId) {
+              discoveredSessionId = ev.sessionId;
+              if (job && job.id) jobs.update(job.id, { conversationId: discoveredSessionId });
+            }
+            if (ev.type === "text_delta" && typeof ev.delta === "string") {
+              finalText += ev.delta;
+              events.broadcast("cli.output", { jobId: job.id, engine: "commandcode", chunk: ev.delta });
+            } else if (ev.type === "thinking_delta" && typeof ev.delta === "string") {
+              events.broadcast("cli.output", { jobId: job.id, engine: "commandcode", chunk: "\n> " + ev.delta });
+            } else if (ev.type === "run_end" && ev.result) {
+              const r = ev.result;
+              if (r.sessionId && !discoveredSessionId) discoveredSessionId = r.sessionId;
+              if (r.finalText && typeof r.finalText === "string") {
+                finalText = r.finalText;
+              }
+              if (r.stopReason === "error" || r.stopReason === "abort" || r.stopReason === "max_turns") {
+                runError = `Command Code berhenti: ${r.stopReason}`;
+              }
+            }
+          } else if (obj.type === "result" && obj.subtype === "success") {
+            if (obj.sessionId && !discoveredSessionId) discoveredSessionId = obj.sessionId;
+            if (obj.finalText && typeof obj.finalText === "string") {
+              finalText = obj.finalText;
+            }
+          } else if (obj.type === "result" && obj.subtype !== "success") {
+            runError = obj.error || obj.stopReason || "Command Code run gagal";
+          }
+        } catch (e) {
+          // Non-JSON progress line; ignore for the transcript but keep it raw.
+          fullOutput += trimmed + "\n";
+        }
+      }
+    });
+
+    child.stderr.on("data", chunk => {
+      lastActivity = Date.now();
+      const text = chunk.toString();
+      error += text;
+      events.broadcast("cli.output", { jobId: job.id, engine: "commandcode", chunk: text });
+    });
+
+    const timeoutMs = settings.taskTimeoutMs();
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivity > timeoutMs) {
+        clearInterval(timer);
+        child.kill("SIGTERM");
+        reject(new Error(`Command Code CLI timed out after ${Math.round(timeoutMs / 60000)} minutes of inactivity`));
+      }
+    }, 10000);
+
+    child.on("error", err => {
+      clearInterval(timer);
+      reject(err);
+    });
+
+    child.on("close", code => {
+      clearInterval(timer);
+      const sid = discoveredSessionId || conversationId || `commandcode_${Date.now()}`;
+
+      if (runError) {
+        reject(new Error(runError));
+        return;
+      }
+      if (code === 0 || finalText.trim()) {
+        resolve({
+          response: finalText.trim() || "Done.",
+          sessionId: sid
+        });
+        return;
+      }
+      reject(new Error((error || fullOutput || `Command Code exited with code ${code}`).trim()));
+    });
+  });
+}
+
 function runAgyOnce(prompt, conversationId, resume = false, model, job) {
   return new Promise((resolve, reject) => {
     const extraPath = ":/home/ubuntu/.local/bin:/usr/local/bin";
@@ -1484,6 +1770,8 @@ function transcriptSources(convId) {
   ];
   const rollout = findCodexRolloutFile(convId);
   if (rollout) sources.push(rollout);
+  const commandcodeFile = findCommandCodeSessionFile(convId);
+  if (commandcodeFile) sources.push(commandcodeFile);
   return sources;
 }
 
@@ -1750,6 +2038,14 @@ async function runChatJob(job, payload) {
           sessionId: conversationId || `opencode_${Date.now()}`
         };
       }
+    } else if (effectiveEngine === "commandcode") {
+      const commandcodeOk = commandVersion(COMMAND_CODE_BIN, ["--version"]);
+      if (!commandcodeOk) {
+        return {
+          response: "> ❌ **Command Code CLI Tidak Ditemukan di Host Server**\n\nBiner `command-code` belum terdeteksi. Silakan pastikan Command Code terpasang (`npm install -g command-code`) dan restart bridge server.",
+          sessionId: conversationId || `commandcode_${Date.now()}`
+        };
+      }
     }
 
     if (effectiveEngine === "codex") {
@@ -1782,6 +2078,25 @@ async function runChatJob(job, payload) {
         title: prompt.slice(0, 40),
         workspace: WORKDIR,
         engine: "opencode"
+      };
+      updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
+      if (updatedTurns.length === 0) {
+        updatedTurns = [
+          { role: "user", content: prompt, time: new Date().toISOString() },
+          { role: "assistant", content: responseText, time: new Date().toISOString() }
+        ];
+      }
+    } else if (effectiveEngine === "commandcode") {
+      const result = await runCommandCode(prompt, conversationId, effectiveModel, job);
+      responseText = result.response;
+      activeConvId = result.sessionId || conversationId;
+
+      const sData = getSessions();
+      activeSession = sData.sessions.find(s => s.conversationId === activeConvId) || {
+        conversationId: activeConvId,
+        title: prompt.slice(0, 40),
+        workspace: WORKDIR,
+        engine: "commandcode"
       };
       updatedTurns = activeConvId ? getTranscript(activeConvId, 1000) : [];
       if (updatedTurns.length === 0) {
@@ -1896,7 +2211,7 @@ const server = http.createServer((req, res) => {
     return send(res, 200, {
       ok: true,
       hostname: os.hostname(),
-      engines: ["antigravity", "codex"],
+      engines: ["antigravity", "codex", "opencode", "commandcode"],
       features: ["chat", "live_monitor", "session_history", "remote_control", "upload", "multi_upload",
                  "usage_stats", "sse", "files", "git", "search", "sandbox_modes",
                  "jobs", "file_write", "projects", "audit", "session_export", "uploads_cleanup",
@@ -1934,6 +2249,8 @@ const server = http.createServer((req, res) => {
           cmd = "npm install -g opencode || npm install -g @opencode-ai/cli 2>&1";
         } else if (engine === "antigravity") {
           cmd = "npm install -g @google/antigravity-cli || echo 'Antigravity CLI installed' 2>&1";
+        } else if (engine === "commandcode") {
+          cmd = "npm install -g command-code 2>&1";
         } else {
           return send(res, 400, { error: "Unknown engine: " + engine });
         }
@@ -1962,12 +2279,18 @@ const server = http.createServer((req, res) => {
 
         child.on("close", (code) => {
           const updated = getEnginesStatus();
-          const isInstalled = engine === "codex" ? updated.engines.codex.available : updated.engines.antigravity.available;
+          const isInstalled = engine === "codex" ? updated.engines.codex.available
+            : engine === "opencode" ? updated.engines.opencode.available
+            : engine === "commandcode" ? updated.engines.commandcode.available
+            : updated.engines.antigravity.available;
           events.broadcast("engine.installed", {
             jobId: installJobId,
             engine,
             ok: code === 0 || isInstalled,
-            version: engine === "codex" ? updated.engines.codex.version : updated.engines.antigravity.version,
+            version: engine === "codex" ? updated.engines.codex.version
+              : engine === "opencode" ? updated.engines.opencode.version
+              : engine === "commandcode" ? updated.engines.commandcode.version
+              : updated.engines.antigravity.version,
             output: output
           });
           audit("engine.install", { engine, ok: isInstalled, code });
