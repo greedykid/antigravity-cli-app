@@ -1518,6 +1518,8 @@ public class MainActivity extends FragmentActivity {
     private int lastLoadedTurnCount = -1;
     /** Set when opening a session so the first sync fetches the full transcript. */
     private boolean pendingFullLoad = false;
+    /** When sessions change while the user is off the hub, refresh on return. */
+    private boolean pendingHubRefresh = false;
     private boolean lastRenderedWasRunning = false;
 
     // Live Execution Bottom Sheet State (Interactive 2-Level View)
@@ -2345,6 +2347,9 @@ public class MainActivity extends FragmentActivity {
 
         if (screenIndex == 0) {
             stopAutoRefresh();
+            if (pendingHubRefresh) {
+                pendingHubRefresh = false;
+            }
             fetchHubSessions();
         } else if (screenIndex == 1) {
             chatTopTitle.setText(activeSessionTitle);
@@ -10171,6 +10176,21 @@ public class MainActivity extends FragmentActivity {
         boolean isOurs = (activeJobId != null && !activeJobId.isEmpty() && activeJobId.equals(eventJobId))
                 || (activeConversationId != null && !activeConversationId.isEmpty() && activeConversationId.equals(eventConvId))
                 || (isLiveTaskRunning && (eventJobId.isEmpty() || activeJobId == null));
+
+        if ("sessions.changed".equals(name)) {
+            // The running flag on the hub list is server-driven; refresh
+            // whenever a job starts, ends, or associates with a new session.
+            if (!eventConvId.isEmpty() && isLiveTaskRunning
+                    && (activeConversationId == null || activeConversationId.isEmpty())) {
+                adoptConversationId(eventConvId);
+            }
+            if (currentScreen == 0) {
+                fetchHubSessions();
+            } else {
+                pendingHubRefresh = true;
+            }
+            return;
+        }
 
         if ("task.started".equals(name)) {
             if (isOurs) {

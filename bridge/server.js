@@ -1118,6 +1118,15 @@ function cleanTitle(raw, fallback) {
 let sessionsCache = null;
 const SESSIONS_CACHE_TTL_MS = 3000;
 
+// When a job newly associates with a session id, the hub should re-render
+// so the active session shows the running border, and any cached sessions
+// snapshot is invalidated so the next /api/sessions reflects it.
+function noteJobConversationId(convId) {
+  if (!convId) return;
+  sessionsCache = null;
+  events.broadcast("sessions.changed", { reason: "job.association", conversationId: convId });
+}
+
 function getSessions(engineFilter) {
   // A filesystem-wide scan across every engine's session store is expensive;
   // cache it briefly so polling endpoints (transcript refresh) don't re-walk
@@ -1548,7 +1557,10 @@ function runOpencode(prompt, conversationId, model, job) {
             const ev = JSON.parse(trimmed);
             if (ev.sessionID && !discoveredSessionId) {
               discoveredSessionId = ev.sessionID;
-              if (job && job.id) jobs.update(job.id, { conversationId: discoveredSessionId });
+              if (job && job.id) {
+                jobs.update(job.id, { conversationId: discoveredSessionId });
+                noteJobConversationId(discoveredSessionId);
+              }
             }
             if (ev.type === "text" && ev.part && ev.part.text) {
               fullOutput += ev.part.text;
@@ -1653,7 +1665,10 @@ function runCommandCode(prompt, conversationId, model, job) {
             const ev = obj.event;
             if (ev.type === "run_start" && ev.sessionId && !discoveredSessionId) {
               discoveredSessionId = ev.sessionId;
-              if (job && job.id) jobs.update(job.id, { conversationId: discoveredSessionId });
+              if (job && job.id) {
+                jobs.update(job.id, { conversationId: discoveredSessionId });
+                noteJobConversationId(discoveredSessionId);
+              }
             }
             if (ev.type === "text_delta" && typeof ev.delta === "string") {
               finalText += ev.delta;
@@ -1797,6 +1812,7 @@ function runAgyOnce(prompt, conversationId, resume = false, model, job) {
         discoveredConvId = findLatestAgyConversationId(startTime - 3000);
         if (discoveredConvId && job) {
           jobs.update(job.id, { conversationId: discoveredConvId });
+          noteJobConversationId(discoveredConvId);
         }
       }
 
@@ -1832,6 +1848,7 @@ function runAgyOnce(prompt, conversationId, resume = false, model, job) {
       }
       if (discoveredConvId && job) {
         jobs.update(job.id, { conversationId: discoveredConvId });
+        noteJobConversationId(discoveredConvId);
       }
       if (code === 0 || output.trim().length > 0) {
         resolve({
@@ -2141,6 +2158,12 @@ async function runChatJob(job, payload) {
     startedAt: new Date(job.createdAt).toISOString()
   });
 
+  // A new job is on the wire — invalidate the sessions cache so the next
+  // /api/sessions call reflects the running flag, and notify any hub client
+  // to re-render the session list (so the active session gets the live border).
+  sessionsCache = null;
+  events.broadcast("sessions.changed", { reason: "task.started", conversationId });
+
   try {
     let responseText;
     let activeConvId = conversationId;
@@ -2292,6 +2315,8 @@ async function runChatJob(job, payload) {
       summary: (responseText || "").slice(0, 200),
       finishedAt: new Date().toISOString()
     });
+    sessionsCache = null;
+    events.broadcast("sessions.changed", { reason: "task.finished", conversationId: activeConvId });
 
     return result;
   } catch (err) {
@@ -2316,6 +2341,8 @@ async function runChatJob(job, payload) {
       error: message,
       finishedAt: new Date().toISOString()
     });
+    sessionsCache = null;
+    events.broadcast("sessions.changed", { reason: "task.failed", conversationId: job.conversationId || conversationId });
     throw err;
   }
 }
