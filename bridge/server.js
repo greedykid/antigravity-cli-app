@@ -45,8 +45,13 @@ function extendedPath() {
   const home = os.homedir();
   let nodeBin = "";
   try {
-    const prefix = execSync("npm prefix -g", { encoding: "utf8", timeout: 3000 }).trim();
-    if (prefix) nodeBin = path.join(prefix, "bin");
+    // Prefer the running node's own bin dir (works under systemd where npm
+    // is not on PATH); fall back to npm prefix -g.
+    if (process.execPath) nodeBin = path.dirname(process.execPath);
+    if (!nodeBin || !fs.existsSync(path.join(nodeBin, "node"))) {
+      const prefix = execSync("npm prefix -g", { encoding: "utf8", timeout: 3000 }).trim();
+      if (prefix) nodeBin = path.join(prefix, "bin");
+    }
   } catch (e) {}
   return (process.env.PATH || "") + ":" + [
     path.join(home, ".opencode/bin"),
