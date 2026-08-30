@@ -6635,7 +6635,11 @@ public class MainActivity extends FragmentActivity {
 
     private void applyEngineSwitch(String target) {
         final String previous = currentEngine;
-        final String next = "codex".equalsIgnoreCase(target) ? "codex" : ("opencode".equalsIgnoreCase(target) ? "opencode" : "antigravity");
+        final String next;
+        if ("codex".equalsIgnoreCase(target)) next = "codex";
+        else if ("opencode".equalsIgnoreCase(target)) next = "opencode";
+        else if ("commandcode".equalsIgnoreCase(target)) next = "commandcode";
+        else next = "antigravity";
         if (next.equals(previous)) return;
 
         prefs.edit()
