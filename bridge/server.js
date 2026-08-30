@@ -982,7 +982,6 @@ function getCommandCodeTranscript(convId, limit = 1000) {
       for (const c of content) {
         if (!c || typeof c !== "object") continue;
         const text = c.text || c.thinking || "";
-        if (typeof text !== "string" || !text.trim()) continue;
         if (c.type === "thinking") {
           msgs.push({ role: "thinking", toolTitle: "Thinking", title: "Thinking Process", content: text.trim(), time: obj.timestamp });
         } else if (c.type === "text") {
@@ -993,10 +992,62 @@ function getCommandCodeTranscript(convId, limit = 1000) {
           } else if (role === "tool") {
             msgs.push({ role: "tool", toolTitle: "Tool", title: "Tool", content: text.trim(), time: obj.timestamp });
           }
-        } else if (c.type === "tool") {
-          const name = c.name || c.tool || "tool";
-          const toolText = (c.input && JSON.stringify(c.input)) || text;
-          msgs.push({ role: "tool", toolTitle: name, title: "Tool: " + name, content: toolText.trim(), time: obj.timestamp });
+        } else if (c.type === "tool_use") {
+          const name = c.name || "tool";
+          let argsStr = "";
+          try {
+            argsStr = typeof c.input === "object" ? JSON.stringify(c.input, null, 2) : String(c.input || "");
+          } catch (e) { argsStr = String(c.input || ""); }
+          let friendlyTitle = "Tool: " + name;
+          let commandText = "";
+          const input = c.input || {};
+          if (name === "run_command" || name === "bash" || name === "execute_command") {
+            commandText = input.command || input.CommandLine || input.cmd || "";
+            if (commandText) friendlyTitle = "$ " + commandText;
+          } else if (name === "read_file" || name === "view_file") {
+            const fp = input.file_path || input.path || input.AbsolutePath || "";
+            friendlyTitle = "Baca " + (fp ? fp.split("/").pop() : "file");
+          } else if (name === "write_to_file" || name === "edit_file" || name === "replace_file_content") {
+            const fp = input.file_path || input.path || input.TargetFile || "";
+            friendlyTitle = "Tulis " + (fp ? fp.split("/").pop() : "file");
+          }
+          msgs.push({
+            role: "tool",
+            toolName: name,
+            toolTitle: name,
+            title: friendlyTitle,
+            command: commandText,
+            callId: c.id || "",
+            content: ("Command: " + name + "\n\nArguments:\n" + argsStr).trim(),
+            time: obj.timestamp
+          });
+        } else if (c.type === "tool_result") {
+          const raw = c.content;
+          let outText = "";
+          if (Array.isArray(raw)) {
+            outText = raw.map(x => (x && typeof x.text === "string") ? x.text : "").filter(Boolean).join("\n");
+          } else if (typeof raw === "string") {
+            outText = raw;
+          }
+          if (outText.trim()) {
+            msgs.push({
+              role: "tool",
+              toolTitle: "Tool result",
+              title: "Output perintah",
+              command: outText.trim(),
+              content: outText.trim(),
+              callId: c.tool_use_id || "",
+              time: obj.timestamp
+            });
+          }
+        } else if (typeof text === "string" && text.trim()) {
+          if (role === "user") {
+            msgs.push({ role: "user", content: text.trim(), time: obj.timestamp });
+          } else if (role === "assistant") {
+            msgs.push({ role: "assistant", content: text.trim(), time: obj.timestamp });
+          } else if (role === "tool") {
+            msgs.push({ role: "tool", toolTitle: "Tool", title: "Tool", content: text.trim(), time: obj.timestamp });
+          }
         }
       }
     } catch (e) {}
@@ -1569,6 +1620,39 @@ function runCommandCode(prompt, conversationId, model, job) {
               events.broadcast("cli.output", { jobId: job.id, engine: "commandcode", chunk: ev.delta });
             } else if (ev.type === "thinking_delta" && typeof ev.delta === "string") {
               events.broadcast("cli.output", { jobId: job.id, engine: "commandcode", chunk: "\n> " + ev.delta });
+            } else if (ev.type === "tool_queued" && ev.toolName) {
+              const input = ev.input || {};
+              let brief = "";
+              try {
+                if (typeof input === "object") {
+                  if (input.command) brief = " " + String(input.command).slice(0, 120);
+                  else if (input.file_path) brief = " " + path.basename(String(input.file_path));
+                  else if (input.path) brief = " " + path.basename(String(input.path));
+                }
+              } catch (e) {}
+              events.broadcast("cli.output", {
+                jobId: job.id, engine: "commandcode",
+                chunk: "\n\n> 🔧 **" + ev.toolName + "**" + brief + "\n"
+              });
+            } else if (ev.type === "tool_completed" && ev.toolName) {
+              let resultBrief = "";
+              if (Array.isArray(ev.result)) {
+                resultBrief = ev.result.map(x => (x && typeof x.text === "string") ? x.text : "").filter(Boolean).join("\n");
+              } else if (typeof ev.result === "string") {
+                resultBrief = ev.result;
+              }
+              const clipped = resultBrief.trim().slice(0, 400);
+              if (clipped) {
+                events.broadcast("cli.output", {
+                  jobId: job.id, engine: "commandcode",
+                  chunk: "\n> ✅ **" + ev.toolName + "** selesai\n\n```\n" + clipped + "\n```\n"
+                });
+              } else {
+                events.broadcast("cli.output", {
+                  jobId: job.id, engine: "commandcode",
+                  chunk: "\n> ✅ **" + ev.toolName + "** selesai\n"
+                });
+              }
             } else if (ev.type === "run_end" && ev.result) {
               const r = ev.result;
               if (r.sessionId && !discoveredSessionId) discoveredSessionId = r.sessionId;
