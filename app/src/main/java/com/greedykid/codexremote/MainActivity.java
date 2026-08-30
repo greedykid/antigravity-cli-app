@@ -6063,67 +6063,154 @@ public class MainActivity extends FragmentActivity {
     }
 
     /**
-     * Command Code reads models from its own provider config, so the list is
-     * not hardcoded here. Offer "auto" plus a free-text field so any model the
-     * CLI understands can be passed straight through with -m.
+     * Command Code owns its provider catalogue, so the model list is fetched
+     * from the bridge (which asks the CLI itself). Includes "auto" plus a
+     * free-text field so any model can be passed straight through with -m.
      */
     private void showCommandCodeModelPicker() {
         final Dialog dialog = createBaseBottomSheet(true);
         final LinearLayout root = createBottomSheetRoot(dialog, "Pilih Model Command Code", true);
 
-        root.addView(cText("Model dipakai untuk prompt baru (auto = bawaan CLI)",
-                12.5f, Theme.TEXT_MUTED, false, false));
+        final TextView subtitle = cText("Memuat daftar model dari Command Code...",
+                12.5f, Theme.TEXT_MUTED, false, false);
+        root.addView(subtitle);
 
-        final EditText input = new EditText(this);
-        input.setHint("Nama model, mis. deepseek/deepseek-v4-flash");
-        input.setText(currentModel != null && !"auto".equalsIgnoreCase(currentModel) ? currentModel : "");
-        input.setTextSize(14f);
-        input.setSingleLine(true);
-        input.setTextColor(Theme.TEXT_MAIN);
-        input.setHintTextColor(Theme.TEXT_LIGHT);
-        input.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 14));
-        input.setPadding(dp(14), dp(11), dp(14), dp(11));
-        LinearLayout.LayoutParams lpInput = new LinearLayout.LayoutParams(-1, -2);
-        lpInput.setMargins(0, dp(12), 0, dp(4));
-        root.addView(input, lpInput);
+        final EditText search = new EditText(this);
+        search.setHint("Cari model, atau ketik nama model manual");
+        search.setTextSize(14f);
+        search.setSingleLine(true);
+        search.setTextColor(Theme.TEXT_MAIN);
+        search.setHintTextColor(Theme.TEXT_LIGHT);
+        search.setBackground(cBox(Theme.BG, Theme.BORDER, 1, 14));
+        search.setPadding(dp(14), dp(11), dp(14), dp(11));
+        LinearLayout.LayoutParams lpSearch = new LinearLayout.LayoutParams(-1, -2);
+        lpSearch.setMargins(0, dp(12), 0, dp(4));
+        root.addView(search, lpSearch);
+
+        final LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(list);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, dp(340)));
 
         TextView useAuto = cText("Pakai Auto", 14f, Theme.ON_ACCENT, true, false);
         useAuto.setGravity(Gravity.CENTER);
         useAuto.setPadding(dp(16), dp(13), dp(16), dp(13));
         useAuto.setBackground(cBox(Theme.ACCENT, 0, 0, 14));
-        LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(-1, -2);
-        lpBtn.setMargins(0, dp(8), 0, 0);
-        root.addView(useAuto, lpBtn);
-        useAuto.setOnClickListener(v -> {
-            currentModel = "auto";
-            prefs.edit().putString(modelPrefKey(currentEngine), currentModel).apply();
-            updateRepoTag();
-            dialog.dismiss();
-            startNewSession();
-            Toast.makeText(this, "Model: Auto", Toast.LENGTH_SHORT).show();
-        });
+        useAuto.setOnClickListener(v -> applyCommandCodeModel("auto", dialog));
+        LinearLayout.LayoutParams lpAuto = new LinearLayout.LayoutParams(-1, -2);
+        lpAuto.setMargins(0, dp(10), 0, 0);
+        root.addView(useAuto, lpAuto);
 
-        TextView useTyped = cText("Pakai yang Diketik", 14f, Theme.ON_ACCENT, true, false);
+        TextView useTyped = cText("Pakai yang diketik", 14f, Theme.ON_ACCENT, true, false);
         useTyped.setGravity(Gravity.CENTER);
         useTyped.setPadding(dp(16), dp(13), dp(16), dp(13));
         useTyped.setBackground(cBox(Theme.BLUE, 0, 0, 14));
-        root.addView(useTyped, lpBtn);
         useTyped.setOnClickListener(v -> {
-            String typed = input.getText().toString().trim();
+            String typed = search.getText().toString().trim();
             if (typed.isEmpty()) {
                 Toast.makeText(this, "Ketik nama model dulu", Toast.LENGTH_SHORT).show();
                 return;
             }
-            currentModel = typed;
-            prefs.edit().putString(modelPrefKey(currentEngine), currentModel).apply();
-            updateRepoTag();
-            dialog.dismiss();
-            startNewSession();
-            Toast.makeText(this, "Model: " + displayModel(currentModel), Toast.LENGTH_SHORT).show();
+            applyCommandCodeModel(typed, dialog);
+        });
+        LinearLayout.LayoutParams lpUse = new LinearLayout.LayoutParams(-1, -2);
+        lpUse.setMargins(0, dp(8), 0, 0);
+        root.addView(useTyped, lpUse);
+
+        final ArrayList<String> all = new ArrayList<>();
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {
+                renderCommandCodeModelList(list, all, s.toString().trim(), dialog);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        list.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
+        executor.execute(() -> {
+            try {
+                JSONObject json = bridge.get("/api/commandcode/models", 60000);
+                final boolean ok = json.optBoolean("ok", false);
+                final String error = json.optString("error", "");
+                final String note = json.optString("note", "");
+                JSONArray arr = json.optJSONArray("models");
+                final ArrayList<String> fetched = new ArrayList<>();
+                if (arr != null && arr.length() > 0) {
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject m = arr.optJSONObject(i);
+                        String id = m != null ? m.optString("id", "") : arr.optString(i);
+                        if (!id.isEmpty()) fetched.add(id);
+                    }
+                }
+                mainHandler.post(() -> {
+                    all.clear();
+                    all.addAll(fetched);
+                    if (ok) {
+                        subtitle.setText((fetched.isEmpty() ? "Daftar model Command Code" : fetched.size() + " model Command Code")
+                                + (note != null && !note.isEmpty() ? " · " + note : ""));
+                    } else {
+                        subtitle.setText("Daftar model Command Code" + (error.isEmpty() ? "" : " (" + error + ")"));
+                    }
+                    renderCommandCodeModelList(list, all, search.getText().toString().trim(), dialog);
+                });
+            } catch (Exception ex) {
+                mainHandler.post(() -> {
+                    all.clear();
+                    subtitle.setText("Daftar model Command Code");
+                    renderCommandCodeModelList(list, all, search.getText().toString().trim(), dialog);
+                });
+            }
         });
 
         dialog.setContentView(root);
         dialog.show();
+    }
+
+    private void renderCommandCodeModelList(final LinearLayout list, final ArrayList<String> all,
+                                            final String filter, final Dialog dialog) {
+        list.removeAllViews();
+        if (all.isEmpty()) {
+            list.addView(cText("Daftar model kosong. Ketuk \"Pakai yang diketik\" untuk memakai nama model apa pun.",
+                    13f, Theme.TEXT_MUTED, false, false));
+            return;
+        }
+
+        final String needle = filter.toLowerCase(Locale.ROOT);
+        int shown = 0;
+        for (final String model : all) {
+            if (!needle.isEmpty() && !model.toLowerCase(Locale.ROOT).contains(needle)) continue;
+            if (shown >= 60) break;
+            shown++;
+
+            boolean active = model.equalsIgnoreCase(currentModel);
+            TextView option = cText((active ? "✓  " : "     ") + model, 13.5f,
+                    active ? Theme.ACCENT : Theme.TEXT_MAIN, active, false);
+            option.setGravity(Gravity.CENTER_VERTICAL);
+            option.setSingleLine(true);
+            option.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            option.setPadding(dp(14), 0, dp(14), 0);
+            option.setBackground(cBox(Theme.SURFACE_MUTED, active ? Theme.ACCENT : Theme.BORDER, 1, 12));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(44));
+            lp.setMargins(0, dp(6), 0, 0);
+            list.addView(option, lp);
+            option.setOnClickListener(v -> applyCommandCodeModel(model, dialog));
+        }
+
+        if (shown == 0) {
+            list.addView(cText("Tidak ada yang cocok. Ketuk \"Pakai yang diketik\" untuk memakainya apa adanya.",
+                    13f, Theme.TEXT_MUTED, false, false));
+        }
+    }
+
+    private void applyCommandCodeModel(final String model, final Dialog dialog) {
+        currentModel = model;
+        prefs.edit().putString(modelPrefKey(currentEngine), model).apply();
+        updateRepoTag();
+        refreshSettingsValues();
+        dialog.dismiss();
+        startNewSession();
+        Toast.makeText(this, "Model: " + displayModel(currentModel), Toast.LENGTH_SHORT).show();
     }
 
     /**

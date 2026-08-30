@@ -2818,6 +2818,49 @@ const server = http.createServer((req, res) => {
     return send(res, 200, opencodeConfig.read());
   }
 
+  // GET /api/commandcode/models — models known to the Command Code CLI itself.
+  // The CLI owns its provider catalogue, so ask it instead of hardcoding a list
+  // that drifts out of date the moment a provider is added.
+  if (req.method === "GET" && pathname === "/api/commandcode/models") {
+    const ok = commandVersion(COMMAND_CODE_BIN, ["--version"]);
+    if (!ok) {
+      return send(res, 200, { ok: false, error: "Command Code CLI tidak terdeteksi", models: [] });
+    }
+    const child = spawn(COMMAND_CODE_BIN, ["--list-models"], {
+      cwd: WORKDIR,
+      env: Object.assign({}, process.env, { PATH: extendedPath() }),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let out = "";
+    let errOut = "";
+    child.stdout.on("data", d => { out += d.toString(); });
+    child.stderr.on("data", d => { errOut += d.toString(); });
+    child.on("close", code => {
+      // Lines look like: "deepseek/deepseek-v4-flash   fast hybrid-attention reasoning (default)"
+      // and sections like "Open Source" / "Proprietary". Grab the model id from
+      // each line that starts with a provider/model token.
+      const models = [];
+      for (const line of out.split("\n")) {
+        const trimmed = line.trim();
+        const m = trimmed.match(/^([a-zA-Z0-9_.\-\/]+)\s+(.+)$/);
+        if (m && m[1].includes("/")) {
+          models.push({ id: m[1], name: m[1], description: m[2].trim() });
+        }
+      }
+      send(res, 200, {
+        ok: true,
+        provider: "commandcode",
+        activeModel: null,
+        models,
+        note: code === 0 ? null : (errOut.trim() || `command-code --list-models exited with code ${code}`)
+      });
+    });
+    child.on("error", err => {
+      send(res, 200, { ok: false, error: err.message, models: [] });
+    });
+    return;
+  }
+
   // POST /api/opencode/provider        upsert a model provider
   // POST /api/opencode/provider/delete remove one
   // POST /api/opencode/active          switch the active provider/model
