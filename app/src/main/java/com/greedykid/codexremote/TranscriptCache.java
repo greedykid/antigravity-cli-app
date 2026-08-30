@@ -22,10 +22,33 @@ final class TranscriptCache {
 
     void put(String conversationId, JSONObject json) {
         if (conversationId == null || conversationId.isEmpty() || json == null) return;
+        JSONObject prev = memoryCache.get(conversationId);
+        boolean changed = prev == null || !sameContent(prev, json);
         memoryCache.put(conversationId, json);
+        // Polling syncs every few seconds with identical data; skip the disk
+        // write (whole-transcript stringify) unless the transcript actually
+        // changed. Reads fall back to this file when offline.
+        if (!changed) return;
         try (FileOutputStream out = new FileOutputStream(fileFor(conversationId))) {
             out.write(json.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ignored) {}
+    }
+
+    /** Cheap content comparison: turn count + last turn's content hash. */
+    private boolean sameContent(JSONObject a, JSONObject b) {
+        try {
+            if (a.optString("conversationId", "").equals(b.optString("conversationId", "")) == false) return false;
+            org.json.JSONArray ta = a.optJSONArray("turns");
+            org.json.JSONArray tb = b.optJSONArray("turns");
+            if (ta == null || tb == null) return false;
+            if (ta.length() != tb.length()) return false;
+            if (ta.length() == 0) return true;
+            String lastA = ta.optJSONObject(ta.length() - 1).toString();
+            String lastB = tb.optJSONObject(tb.length() - 1).toString();
+            return lastA.equals(lastB);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     JSONObject get(String conversationId) {

@@ -1460,6 +1460,8 @@ public class MainActivity extends FragmentActivity {
     private LinearLayout lockOverlay;
     private EditText promptInput;
     private FrameLayout btnSend;
+    private ImageView sendIconView;
+    private ProgressBar sendProgressBar;
     private ImageView btnAttach;
     private ImageView btnEnginePill;
     private ImageView btnVoice;
@@ -1514,6 +1516,8 @@ public class MainActivity extends FragmentActivity {
     private String lastRenderedSignature = "";
     private String lastLoadedSessionId = null;
     private int lastLoadedTurnCount = -1;
+    /** Set when opening a session so the first sync fetches the full transcript. */
+    private boolean pendingFullLoad = false;
     private boolean lastRenderedWasRunning = false;
 
     // Live Execution Bottom Sheet State (Interactive 2-Level View)
@@ -1627,7 +1631,7 @@ public class MainActivity extends FragmentActivity {
                 mainHandler.post(() -> {
                     activeJobId = jobId;
                     isLiveTaskRunning = true;
-                    btnSend.setTag("busy");
+                    setSendBusy(true);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(false);
                     startAutoRefresh();
@@ -1639,7 +1643,7 @@ public class MainActivity extends FragmentActivity {
                 mainHandler.post(() -> {
                     activeJobId = null;
                     isLiveTaskRunning = false;
-                    btnSend.setTag(null);
+                    setSendBusy(false);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
                     stopAutoRefresh();
@@ -1651,7 +1655,7 @@ public class MainActivity extends FragmentActivity {
                 mainHandler.post(() -> {
                     activeJobId = null;
                     isLiveTaskRunning = false;
-                    btnSend.setTag(null);
+                    setSendBusy(false);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
                 });
@@ -1845,7 +1849,11 @@ public class MainActivity extends FragmentActivity {
             lockOverlay.setVisibility(View.GONE);
         }
 
-        showScreen(0);
+        // Restore the screen the user was on (engine switch persists it in
+        // "last_screen"); otherwise land on the Hub.
+        int restoreScreen = prefs.getInt("last_screen", 0);
+        if (restoreScreen < 0 || restoreScreen > 4) restoreScreen = 0;
+        showScreen(restoreScreen);
     }
 
     // ============================================================
@@ -2936,6 +2944,7 @@ public class MainActivity extends FragmentActivity {
         lastLoadedSessionId = null;
         lastLoadedTurnCount = -1;
         lastRenderedWasRunning = false;
+        pendingFullLoad = true;
 
         if (chatMessagesList != null) chatMessagesList.removeAllViews();
         showEmptyMascotState(false);
@@ -2945,7 +2954,7 @@ public class MainActivity extends FragmentActivity {
         }
         if (promptInput != null) promptInput.setEnabled(true);
         if (btnSend != null) {
-            btnSend.setTag(null);
+            setSendBusy(false);
             btnSend.setEnabled(true);
         }
         mainHandler.postDelayed(this::hideSessionLoading, 4000);
@@ -3048,7 +3057,7 @@ public class MainActivity extends FragmentActivity {
             promptInput.setText("");
         }
         if (btnSend != null) {
-            btnSend.setTag(null);
+            setSendBusy(false);
             btnSend.setEnabled(true);
         }
         showScreen(1);
@@ -5614,9 +5623,13 @@ public class MainActivity extends FragmentActivity {
 
         btnSend = new FrameLayout(this);
         btnSend.setBackground(cBox(Theme.ACCENT, 0, 0, 17));
-        ImageView sendIcon = cIcon(R.drawable.ic_send, 16, Theme.ON_ACCENT);
+        sendIconView = cIcon(R.drawable.ic_send, 16, Theme.ON_ACCENT);
         FrameLayout.LayoutParams lpSendIc = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
-        btnSend.addView(sendIcon, lpSendIc);
+        btnSend.addView(sendIconView, lpSendIc);
+        sendProgressBar = new ProgressBar(this);
+        sendProgressBar.setVisibility(View.GONE);
+        FrameLayout.LayoutParams lpSendPb = new FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER);
+        btnSend.addView(sendProgressBar, lpSendPb);
         btnSend.setOnClickListener(v -> sendClaudePrompt());
         LinearLayout.LayoutParams lpSend = new LinearLayout.LayoutParams(dp(34), dp(34));
         lpSend.setMargins(dp(6), 0, dp(2), 0);
@@ -6735,8 +6748,11 @@ public class MainActivity extends FragmentActivity {
         else next = "antigravity";
         if (next.equals(previous)) return;
 
+        // Remember where the user was so the rebuild lands on the same screen
+        // instead of dumping them on a fresh chat.
         prefs.edit()
                 .putString("engine", next)
+                .putInt("last_screen", currentScreen)
                 // Survives the rebuild so the new screen can explain itself.
                 .putString("pending_engine_notice_from", previous)
                 .remove("last_conversation_id")
@@ -6757,8 +6773,11 @@ public class MainActivity extends FragmentActivity {
         if (from.isEmpty()) return;
         prefs.edit().remove("pending_engine_notice_from").apply();
 
-        startNewSession();
-        renderEngineSwitchNotice(from, currentEngine);
+        // Stay on the screen the user was on — no forced new chat. If they are
+        // on the chat screen, drop a notice card so the switch is visible.
+        if (currentScreen == 1 && chatMessagesList != null) {
+            renderEngineSwitchNotice(from, currentEngine);
+        }
         Toast.makeText(this, "Engine: " + engineLabel(currentEngine)
                 + " · " + displayModel(currentModel), Toast.LENGTH_SHORT).show();
     }
@@ -8001,6 +8020,18 @@ public class MainActivity extends FragmentActivity {
     // ============================================================
     // REAL-TIME LIVE CHAT EXECUTION & MULTI-ATTACHMENT DISPATCH
     // ============================================================
+    private void setSendBusy(boolean busy) {
+        if (sendIconView != null) {
+            sendIconView.setVisibility(busy ? View.GONE : View.VISIBLE);
+        }
+        if (sendProgressBar != null) {
+            sendProgressBar.setVisibility(busy ? View.VISIBLE : View.GONE);
+        }
+        if (btnSend != null) {
+            btnSend.setTag(busy ? "busy" : null);
+        }
+    }
+
     private void sendClaudePrompt() {
         String text = promptInput.getText().toString().trim();
         String endpoint = prefs.getString("url", "").trim();
@@ -8016,7 +8047,7 @@ public class MainActivity extends FragmentActivity {
                         activeJobId = null;
                         isLiveTaskRunning = false;
                         liveStreamingAssistantText = "";
-                        btnSend.setTag(null);
+                        setSendBusy(false);
                         btnSend.setEnabled(true);
                         promptInput.setEnabled(true);
                         hideSessionLoading();
@@ -8041,7 +8072,7 @@ public class MainActivity extends FragmentActivity {
 
         showEmptyMascotState(false);
 
-        btnSend.setTag("busy");
+        setSendBusy(true);
         btnSend.setEnabled(true);
         promptInput.setEnabled(false);
         isLiveTaskRunning = true;
@@ -8154,7 +8185,7 @@ public class MainActivity extends FragmentActivity {
                 mainHandler.post(() -> {
                     activeJobId = null;
                     isLiveTaskRunning = false;
-                    btnSend.setTag(null);
+                    setSendBusy(false);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
 
@@ -8197,7 +8228,7 @@ public class MainActivity extends FragmentActivity {
                     isLiveTaskRunning = false;
                     liveStreamingAssistantText = "";
                     lastFailedPrompt = promptToSend;
-                    btnSend.setTag(null);
+                    setSendBusy(false);
                     btnSend.setEnabled(true);
                     promptInput.setEnabled(true);
                     renderRetryFailedMessageBlock(promptToSend, err);
@@ -8284,6 +8315,11 @@ public class MainActivity extends FragmentActivity {
     }
 
     private void syncLiveExecution() {
+        syncLiveExecution(false);
+    }
+
+    /** @param fullLoad true when opening a session (wants the full transcript) */
+    private void syncLiveExecution(boolean fullLoad) {
         if (!bridge.isPaired()) {
             mainHandler.post(this::hideSessionLoading);
             return;
@@ -8305,8 +8341,11 @@ public class MainActivity extends FragmentActivity {
         executor.execute(() -> {
             try {
                 if (targetConvId != null && !targetConvId.isEmpty()) {
+                    // Polling for live updates only needs the tail; keep the
+                    // payload small. Opening a session fetches everything.
+                    String limit = fullLoad ? "1000" : "200";
                     JSONObject json = bridge.get(
-                            "/api/session/transcript?id=" + BridgeClient.encode(targetConvId), 25000);
+                            "/api/session/transcript?id=" + BridgeClient.encode(targetConvId) + "&limit=" + limit, 25000);
                     transcriptCache.put(targetConvId, json);
                     mainHandler.post(() -> applySyncedTranscript(epoch, targetConvId, json));
                     return;
@@ -8323,7 +8362,7 @@ public class MainActivity extends FragmentActivity {
                 }
 
                 JSONObject json = bridge.get(
-                        "/api/session/transcript?id=" + BridgeClient.encode(discovered), 25000);
+                        "/api/session/transcript?id=" + BridgeClient.encode(discovered) + "&limit=200", 25000);
                 transcriptCache.put(discovered, json);
                 mainHandler.post(() -> {
                     if (epoch != sessionEpoch) return;
@@ -8443,7 +8482,8 @@ public class MainActivity extends FragmentActivity {
     }
 
     private void fetchActiveSessionTurns(final boolean showFeedback) {
-        syncLiveExecution();
+        syncLiveExecution(pendingFullLoad);
+        pendingFullLoad = false;
         if (showFeedback) {
             Toast.makeText(this, "Syncing session...", Toast.LENGTH_SHORT).show();
         }

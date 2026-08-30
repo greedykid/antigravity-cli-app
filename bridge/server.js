@@ -964,9 +964,20 @@ function findCommandCodeSessionFile(convId) {
   return null;
 }
 
+// Per-session transcript cache keyed by (file mtime) so polling every few
+// seconds does not re-read and re-parse a multi-hundred-KB JSONL each time.
+const commandCodeTranscriptCache = new Map(); // convId -> { mtimeMs, turns }
+
 function getCommandCodeTranscript(convId, limit = 1000) {
   const file = findCommandCodeSessionFile(convId);
   if (!file || !fs.existsSync(file)) return [];
+
+  let mtimeMs = 0;
+  try { mtimeMs = fs.statSync(file).mtimeMs; } catch (e) {}
+  const cached = commandCodeTranscriptCache.get(convId);
+  if (cached && cached.mtimeMs === mtimeMs) {
+    return limit >= cached.turns.length ? cached.turns : cached.turns.slice(-limit);
+  }
 
   const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
   const msgs = [];
@@ -1052,7 +1063,14 @@ function getCommandCodeTranscript(convId, limit = 1000) {
       }
     } catch (e) {}
   }
-  return msgs.slice(-limit);
+  const allTurns = msgs;
+  // Keep only a bounded number of sessions in memory to avoid leaking.
+  if (commandCodeTranscriptCache.size > 100) {
+    const oldest = commandCodeTranscriptCache.keys().next().value;
+    if (oldest) commandCodeTranscriptCache.delete(oldest);
+  }
+  commandCodeTranscriptCache.set(convId, { mtimeMs, turns: allTurns });
+  return allTurns.slice(-limit);
 }
 
 // -------------------------------------------------------------
@@ -1097,7 +1115,27 @@ function cleanTitle(raw, fallback) {
   return text || fallback;
 }
 
+let sessionsCache = null;
+const SESSIONS_CACHE_TTL_MS = 3000;
+
 function getSessions(engineFilter) {
+  // A filesystem-wide scan across every engine's session store is expensive;
+  // cache it briefly so polling endpoints (transcript refresh) don't re-walk
+  // the whole tree every few seconds. The filter is applied per call below.
+  const now = Date.now();
+  if (!sessionsCache || (now - sessionsCache.at >= SESSIONS_CACHE_TTL_MS)) {
+    sessionsCache = { at: now, data: getSessionsUncached(null) };
+  }
+  const all = sessionsCache.data.sessions || [];
+  if (!engineFilter) return sessionsCache.data;
+  const wanted = normalizeEngine(engineFilter);
+  return {
+    hostname: sessionsCache.data.hostname,
+    sessions: all.filter(s => normalizeEngine(s.engine) === wanted)
+  };
+}
+
+function getSessionsUncached(engineFilter) {
   const home = os.homedir();
   const file = path.join(home, ".gemini/antigravity-cli/history.jsonl");
   const agyMap = new Map();
@@ -1213,7 +1251,9 @@ function getSessions(engineFilter) {
 
   return {
     hostname: os.hostname(),
-    sessions: merged.slice(0, 50)
+    // When no filter is given keep a wider pool so per-engine filtering on
+    // top of the cache does not lose sessions to the global cap.
+    sessions: merged.slice(0, engineFilter ? 50 : 200)
   };
 }
 
@@ -3211,13 +3251,16 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET /api/session/transcript?id=...
+  // GET /api/session/transcript?id=...&limit=...
   if (req.method === "GET" && pathname === "/api/session/transcript") {
     const convId = parsedUrl.query.id;
     if (!convId) {
       return send(res, 400, { error: "Missing session id parameter" });
     }
-    const msgs = getTranscript(convId, 1000);
+    // Clients that poll for live updates only need the tail; a smaller limit
+    // keeps the payload (and parse time) small. Default stays at 1000.
+    const limit = Math.min(Math.max(Number(parsedUrl.query.limit) || 1000, 20), 1000);
+    const msgs = getTranscript(convId, limit);
     const sData = getSessions();
     const foundSession = (sData.sessions || []).find(s => s.conversationId === convId) || { conversationId: convId, title: "Session" };
     const customTitles = getCustomSessionTitles();
