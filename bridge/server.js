@@ -2170,42 +2170,256 @@ function transcriptToMarkdown(session, turns) {
   return lines.join("\n");
 }
 
+// -------------------------------------------------------------
+// Tiny GFM→HTML converter for the standalone transcript export.
+// -------------------------------------------------------------
+// We avoid pulling marked/markdown-it just for the export: the bridge
+// already has zero runtime deps and this is a well-defined subset. What
+// the converter handles:
+//   - fenced code blocks   (```lang ... ```)
+//   - ATX headings         (# ... ######)
+//   - GFM tables           (| col | col |\n| --- | --- |\n| ... |)
+//   - blockquotes          (> ...)
+//   - bullet / ordered lists
+//   - horizontal rules     (---)
+//   - paragraphs (anything else)
+//   - inline: `code`, **bold**, *italic*, [link](url), bare URLs
+// The output is HTML-safe (every text run is escaped first), and tables
+// include per-column widths computed from the longest cell so the columns
+// line up the way they do in the Android/iOS renderers.
+
+function mdEscape(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function mdInline(text) {
+  // Run inline substitutions in an order that respects nesting. The
+  // escape happens once on the input, then each rule only touches markup
+  // we just emitted.
+  let out = mdEscape(text);
+  // Inline code first so its contents are not re-formatted.
+  out = out.replace(/`([^`\n]+)`/g, (_, body) => `<code>${body}</code>`);
+  // Links: [label](url). The URL is already escaped; only the label needs
+  // its inner markdown (bold/italic) to keep working.
+  out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,
+    (_, label, url) => `<a href="${url}">${label}</a>`);
+  // Bare URLs.
+  out = out.replace(/(^|[^"'=])(https?:\/\/[^\s<]+)/g,
+    (_, lead, url) => `${lead}<a href="${url}">${url}</a>`);
+  // Bold (**...**) before italic so it doesn't swallow the asterisks.
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+  // Italic (*...* / _..._).
+  out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+  out = out.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>");
+  return out;
+}
+
+function mdIsTableSeparator(line) {
+  const stripped = line.replace(/[|:\-\s]/g, "");
+  return !stripped.length && line.indexOf("-") >= 0;
+}
+
+function mdSplitRow(line) {
+  let t = line.replace(/^\s*\|?/, "").replace(/\|\s*$/, "");
+  return t.split("|").map(c => c.trim());
+}
+
+function mdAlignFor(spec) {
+  const left = spec.startsWith(":");
+  const right = spec.endsWith(":");
+  if (left && right) return "center";
+  if (right) return "right";
+  return "left";
+}
+
+function mdRenderTable(lines) {
+  const headers = mdSplitRow(lines[0]);
+  const spec = mdSplitRow(lines[1]);
+  const aligns = headers.map((_, i) => mdAlignFor(spec[i] || "---"));
+  const rows = [];
+  for (let i = 2; i < lines.length; i++) {
+    if (mdIsTableSeparator(lines[i])) continue;
+    const cells = mdSplitRow(lines[i]);
+    while (cells.length < headers.length) cells.push("");
+    rows.push(cells.slice(0, headers.length));
+  }
+
+  // Per-column width: average character length × 7.5 px (rough monospace
+  // approximation that lines up well in the export's body font) with a
+  // sensible floor/cap. The point is to keep columns visually aligned, not
+  // to match the on-device renderer to the pixel.
+  const charW = 7.5;
+  const widths = headers.map((_, c) => {
+    let max = headers[c].length;
+    for (const r of rows) max = Math.max(max, (r[c] || "").length);
+    return Math.max(60, Math.min(360, Math.round(max * charW)));
+  });
+
+  const cell = (content, align, width, isHeader) => {
+    const tag = isHeader ? "th" : "td";
+    const style = `style="text-align:${align};width:${width}px"`;
+    return `<${tag} ${style}>${mdInline(content)}</${tag}>`;
+  };
+
+  const headerRow = `<tr>${headers.map((h, i) => cell(h, aligns[i], widths[i], true)).join("")}</tr>`;
+  const bodyRows = rows.map(r =>
+    `<tr>${r.map((c, i) => cell(c, aligns[i], widths[i], false)).join("")}</tr>`).join("");
+  const colgroup = `<colgroup>${widths.map(w => `<col style="width:${w}px">`).join("")}</colgroup>`;
+  return `<div class="table-wrap"><table>${colgroup}<thead>${headerRow}</thead><tbody>${bodyRows}</tbody></table></div>`;
+}
+
+function mdRenderList(lines, ordered) {
+  const tag = ordered ? "ol" : "ul";
+  const out = [`<${tag}>`];
+  for (const line of lines) {
+    const text = line.replace(/^\s*(?:\d+\.|[*+-])\s+/, "").trim();
+    out.push(`<li>${mdInline(text || "")}</li>`);
+  }
+  out.push(`</${tag}>`);
+  return out.join("\n");
+}
+
+function renderMarkdown(src) {
+  // Split out fenced code first so its contents are not parsed as markdown.
+  const codeBlocks = [];
+  let working = src.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang, body) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre><code class="lang-${mdEscape(lang)}">${mdEscape(body)}</code></pre>`);
+    return `\u0000CODE${idx}\u0000`;
+  });
+
+  const lines = working.split(/\r?\n/);
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed) { i++; continue; }
+
+    // Horizontal rule
+    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(trimmed)) {
+      out.push("<hr>");
+      i++; continue;
+    }
+
+    // Heading
+    const headingMatch = /^(#{1,6})\s+(.*)$/.exec(trimmed);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      out.push(`<h${level}>${mdInline(headingMatch[2])}</h${level}>`);
+      i++; continue;
+    }
+
+    // Fenced code placeholder
+    const codePlaceholder = /^\u0000CODE(\d+)\u0000$/.exec(line);
+    if (codePlaceholder) {
+      out.push(codeBlocks[Number(codePlaceholder[1])]);
+      i++; continue;
+    }
+
+    // Table: a pipe-delimited line followed by a separator row.
+    if (trimmed.indexOf("|") >= 0 && i + 1 < lines.length && mdIsTableSeparator(lines[i + 1].trim())) {
+      const tableLines = [trimmed, lines[i + 1].trim()];
+      i += 2;
+      while (i < lines.length && lines[i].trim().indexOf("|") >= 0) {
+        tableLines.push(lines[i].trim());
+        i++;
+      }
+      out.push(mdRenderTable(tableLines));
+      continue;
+    }
+
+    // Blockquote (consecutive lines starting with ">")
+    if (trimmed.startsWith(">")) {
+      const quoteLines = [];
+      while (i < lines.length && lines[i].trim().startsWith(">")) {
+        quoteLines.push(lines[i].trim().replace(/^>\s?/, ""));
+        i++;
+      }
+      out.push(`<blockquote>${quoteLines.map(l => mdInline(l)).join("<br>")}</blockquote>`);
+      continue;
+    }
+
+    // Bullet / ordered list (consecutive matching lines).
+    if (/^[*+-]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
+      const ordered = /^\d+\.\s+/.test(trimmed);
+      const listLines = [];
+      const re = ordered ? /^\s*\d+\.\s+/ : /^\s*[*+-]\s+/;
+      while (i < lines.length && re.test(lines[i])) {
+        listLines.push(lines[i]);
+        i++;
+      }
+      out.push(mdRenderList(listLines, ordered));
+      continue;
+    }
+
+    // Paragraph: collect consecutive non-empty lines that did not match
+    // any of the block-level rules above.
+    const paraLines = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|>|\s*[*+-]\s|\s*\d+\.\s|-{3,}|\*{3,}|_{3,})/.test(lines[i].trim())
+           && lines[i].trim().indexOf("|") < 0) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    out.push(`<p>${paraLines.map(mdInline).join("<br>")}</p>`);
+  }
+
+  return out.join("\n");
+}
+
 function generateStandaloneHtmlTranscript(session, turns) {
   const escapeHtml = str => String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const title = escapeHtml(session.title || "Sesi Antigravity");
   const engine = escapeHtml(session.engine || "antigravity");
   const dateStr = session.timestamp ? new Date(session.timestamp).toLocaleString("id-ID") : new Date().toLocaleString("id-ID");
 
+  // Decide whether a turn's content is plain text or markdown. A turn is
+  // treated as markdown if it contains any of the structural markers that
+  // only markdown carries (fences, headings, list bullets, links, tables,
+  // blockquote markers). Plain prose still renders correctly because
+  // renderMarkdown falls back to <p>...</p> for paragraphs.
+  const looksLikeMarkdown = s =>
+    /(^|\n)(```|#{1,6}\s|>\s|\*\s|-\s|\d+\.\s|\[[^\]]+\]\([^)]+\)|\|[^\n]+\|)/m.test(s);
+
   let turnsHtml = "";
   for (const turn of turns || []) {
     const rawContent = typeof turn.content === "string" ? turn.content.trim() : "";
     if (!rawContent) continue;
-    const content = escapeHtml(rawContent);
     const role = turn.role || "assistant";
+    const rendered = (role === "assistant" && looksLikeMarkdown(rawContent))
+      ? renderMarkdown(rawContent)
+      : `<pre><code>${escapeHtml(rawContent)}</code></pre>`;
     if (role === "user") {
       turnsHtml += `
       <div class="turn turn-user">
         <div class="turn-header"><span class="avatar">👤</span> <strong>User</strong></div>
-        <div class="turn-body">${content.replace(/\n/g, "<br>")}</div>
+        <div class="turn-body">${escapeHtml(rawContent).replace(/\n/g, "<br>")}</div>
       </div>`;
     } else if (role === "assistant") {
       turnsHtml += `
       <div class="turn turn-assistant">
         <div class="turn-header"><span class="avatar">🤖</span> <strong>Antigravity / Codex AI</strong></div>
-        <div class="turn-body"><pre><code>${content}</code></pre></div>
+        <div class="turn-body markdown">${rendered}</div>
       </div>`;
     } else if (role === "thinking") {
       turnsHtml += `
       <details class="turn turn-thinking">
         <summary>💭 <strong>Thinking Process</strong></summary>
-        <div class="turn-body"><pre><code>${content}</code></pre></div>
+        <div class="turn-body"><pre><code>${escapeHtml(rawContent)}</code></pre></div>
       </details>`;
     } else if (role === "tool") {
       const toolTitle = escapeHtml(turn.title || turn.toolTitle || "Tool Command");
       turnsHtml += `
       <details class="turn turn-tool">
         <summary>🔧 <strong>${toolTitle}</strong></summary>
-        <div class="turn-body"><pre><code>${content}</code></pre></div>
+        <div class="turn-body"><pre><code>${escapeHtml(rawContent)}</code></pre></div>
       </details>`;
     }
   }
@@ -2281,6 +2495,77 @@ function generateStandaloneHtmlTranscript(session, turns) {
     }
     code {
       font-family: inherit;
+    }
+    .markdown > * { margin: 8px 0; }
+    .markdown > *:first-child { margin-top: 0; }
+    .markdown > *:last-child { margin-bottom: 0; }
+    .markdown h1, .markdown h2, .markdown h3,
+    .markdown h4, .markdown h5, .markdown h6 {
+      margin: 14px 0 8px;
+      line-height: 1.3;
+    }
+    .markdown h1 { font-size: 1.4rem; }
+    .markdown h2 { font-size: 1.2rem; }
+    .markdown h3 { font-size: 1.05rem; }
+    .markdown p { margin: 8px 0; }
+    .markdown blockquote {
+      margin: 8px 0;
+      padding: 6px 12px;
+      border-left: 3px solid var(--accent);
+      background: rgba(217, 107, 67, 0.08);
+      color: var(--text-muted);
+    }
+    .markdown ul, .markdown ol { margin: 8px 0 8px 24px; padding: 0; }
+    .markdown li { margin: 4px 0; }
+    .markdown a { color: var(--accent); text-decoration: underline; }
+    .markdown .table-wrap {
+      margin: 10px 0 12px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .markdown table {
+      width: max-content;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 0.88rem;
+    }
+    .markdown thead th {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 0.72rem;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-strong);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .markdown tbody td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      vertical-align: top;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+    .markdown tbody tr:nth-child(even) td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .markdown tbody tr:last-child td { border-bottom: none; }
+    .markdown code {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.85em;
+    }
+    .markdown pre code { background: transparent; padding: 0; border-radius: 0; }
+    .markdown hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 12px 0;
     }
     summary {
       cursor: pointer;

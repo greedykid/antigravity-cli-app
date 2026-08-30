@@ -26,6 +26,7 @@ import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -672,6 +673,12 @@ public class MarkdownRenderer {
 
     // ---------- tables ----------
 
+    // Cap a single column at 220dp so a runaway cell (a path, a long URL
+    // inside the table) does not blow out the row width. The horizontal
+    // scroll view takes over for the rare table wider than that.
+    private static final int TABLE_COL_MAX_PX = 660; // ~220dp at xxxhdpi
+    private static final int TABLE_COL_MIN_PX = 96;  // ~32dp
+
     private void renderMarkdownTable(LinearLayout container, ArrayList<String> tableLines) {
         if (tableLines.size() < 2) return;
 
@@ -694,24 +701,99 @@ public class MarkdownRenderer {
             bodyStart = 2;
         }
 
-        HorizontalScrollView hScroll = new HorizontalScrollView(activity);
-        hScroll.setHorizontalScrollBarEnabled(false);
+        // Collect every cell across header and body so we can size columns
+        // before laying anything out. parseInlineMarkdownLine gives us the
+        // styled spannable we will eventually render — measuring on the
+        // same object keeps the widths consistent with what is painted.
+        String[][] bodyCells = new String[Math.max(0, tableLines.size() - bodyStart)][];
+        int bodyRowCount = 0;
+        for (int r = bodyStart; r < tableLines.size(); r++) {
+            if (isTableSeparator(tableLines.get(r))) continue;
+            String[] row = splitTableRow(tableLines.get(r));
+            String[] padded = new String[colCount];
+            for (int c = 0; c < colCount; c++) padded[c] = c < row.length ? row[c] : "";
+            bodyCells[bodyRowCount++] = padded;
+        }
+
+        // Pass 1 — measure intrinsic width of each cell. We build a hidden
+        // TextView per cell with the same text/style it will render, give
+        // it infinite width, and record the painted width. The max across
+        // all cells in a column becomes that column's width.
+        int[] colWidths = new int[colCount];
+        int headerHeightPx = 0;
+
+        // Measure header (uppercase, 11sp, bold, letter-spacing 0.07).
+        for (int c = 0; c < colCount; c++) {
+            TextView probe = new TextView(activity);
+            probe.setText(headers[c].toUpperCase(Locale.ROOT));
+            probe.setTextSize(11f);
+            probe.setTypeface(Typeface.DEFAULT_BOLD);
+            probe.setLetterSpacing(0.07f);
+            probe.setPadding(dp(14), dp(11), dp(14), dp(11));
+            probe.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            colWidths[c] = Math.max(colWidths[c], probe.getMeasuredWidth());
+            headerHeightPx = Math.max(headerHeightPx, probe.getMeasuredHeight());
+        }
+
+        // Measure body (13sp regular).
+        int rowHeightPx = 0;
+        for (int r = 0; r < bodyRowCount; r++) {
+            for (int c = 0; c < colCount; c++) {
+                TextView probe = new TextView(activity);
+                probe.setText(parseInlineMarkdownLine(bodyCells[r][c]));
+                probe.setTextSize(13f);
+                probe.setLineSpacing(0, 1.2f);
+                probe.setPadding(dp(14), dp(10), dp(14), dp(10));
+                probe.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                colWidths[c] = Math.max(colWidths[c], probe.getMeasuredWidth());
+                rowHeightPx = Math.max(rowHeightPx, probe.getMeasuredHeight());
+            }
+        }
+
+        // Cap each column at the max-width and floor at the min-width so we
+        // never end up with a hairline column or a screen-eating one.
+        for (int c = 0; c < colCount; c++) {
+            colWidths[c] = Math.max(TABLE_COL_MIN_PX, Math.min(TABLE_COL_MAX_PX, colWidths[c]));
+        }
+
+        // The container we are rendering into is wider than the chat bubble
+        // (which is its parent). Use the chat bubble width as the budget
+        // for "fits without scrolling"; anything wider becomes horizontal
+        // scrollable.
+        int availablePx = container.getWidth();
+        if (availablePx <= 0) {
+            // Fall back to a phone-sized estimate before the first layout
+            // pass has happened; the real measurement overrides this on the
+            // next frame once the parent has its final width.
+            availablePx = (int) (320 * activity.getResources().getDisplayMetrics().density);
+        }
+        int totalPx = 0;
+        for (int w : colWidths) totalPx += w;
+        boolean needsScroll = totalPx > availablePx;
 
         LinearLayout tableLayout = new LinearLayout(activity);
         tableLayout.setOrientation(LinearLayout.VERTICAL);
         tableLayout.setBackground(box(Theme.SURFACE, Theme.BORDER, 1, 10));
         tableLayout.setClipToOutline(true);
 
+        // Pass 2 — build the rows with the fixed widths from pass 1. Every
+        // cell in a column is the same width so the columns line up; row
+        // backgrounds stretch to the row's total width via match-parent
+        // width on the row layout.
         LinearLayout headerRow = new LinearLayout(activity);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
         headerRow.setBackgroundColor(Theme.SURFACE_MUTED);
+        headerRow.setMinimumHeight(headerHeightPx);
         for (int c = 0; c < colCount; c++) {
             TextView cell = text(headers[c].toUpperCase(Locale.ROOT), 11f, Theme.TEXT_MUTED, true, false);
             cell.setLetterSpacing(0.07f);
             cell.setGravity(align[c]);
             cell.setPadding(dp(14), dp(11), dp(14), dp(11));
-            cell.setMinWidth(dp(88));
-            headerRow.addView(cell, new LinearLayout.LayoutParams(-2, -2));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(colWidths[c], ViewGroup.LayoutParams.WRAP_CONTENT);
+            cell.setLayoutParams(lp);
+            headerRow.addView(cell);
         }
         tableLayout.addView(headerRow);
 
@@ -720,11 +802,7 @@ public class MarkdownRenderer {
         tableLayout.addView(headRule, new LinearLayout.LayoutParams(-1, dp(1)));
 
         int printed = 0;
-        for (int r = bodyStart; r < tableLines.size(); r++) {
-            String rowLine = tableLines.get(r);
-            if (isTableSeparator(rowLine)) continue;
-
-            String[] cells = splitTableRow(rowLine);
+        for (int r = 0; r < bodyRowCount; r++) {
             if (printed > 0) {
                 View div = new View(activity);
                 div.setBackgroundColor(Theme.BORDER);
@@ -734,10 +812,10 @@ public class MarkdownRenderer {
             LinearLayout dataRow = new LinearLayout(activity);
             dataRow.setOrientation(LinearLayout.HORIZONTAL);
             dataRow.setBackgroundColor(printed % 2 == 0 ? Theme.SURFACE : Theme.BG);
+            dataRow.setMinimumHeight(rowHeightPx);
 
             for (int c = 0; c < colCount; c++) {
-                String val = c < cells.length ? cells[c] : "";
-                SpannableStringBuilder span = parseInlineMarkdownLine(val);
+                SpannableStringBuilder span = parseInlineMarkdownLine(bodyCells[r][c]);
                 TextView cell = new TextView(activity);
                 cell.setText(span);
                 cell.setTextSize(13f);
@@ -745,17 +823,26 @@ public class MarkdownRenderer {
                 cell.setLineSpacing(0, 1.2f);
                 cell.setGravity(align[c]);
                 cell.setPadding(dp(14), dp(10), dp(14), dp(10));
-                cell.setMinWidth(dp(88));
-                dataRow.addView(cell, new LinearLayout.LayoutParams(-2, -2));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(colWidths[c], ViewGroup.LayoutParams.WRAP_CONTENT);
+                cell.setLayoutParams(lp);
+                dataRow.addView(cell);
             }
             tableLayout.addView(dataRow);
             printed++;
         }
 
-        hScroll.addView(tableLayout);
-        LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
-        lpH.setMargins(0, dp(10), 0, dp(12));
-        container.addView(hScroll, lpH);
+        if (needsScroll) {
+            HorizontalScrollView hScroll = new HorizontalScrollView(activity);
+            hScroll.setHorizontalScrollBarEnabled(false);
+            hScroll.addView(tableLayout);
+            LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
+            lpH.setMargins(0, dp(10), 0, dp(12));
+            container.addView(hScroll, lpH);
+        } else {
+            LinearLayout.LayoutParams lpH = new LinearLayout.LayoutParams(-1, -2);
+            lpH.setMargins(0, dp(10), 0, dp(12));
+            container.addView(tableLayout, lpH);
+        }
     }
 
     private boolean isTableSeparator(String row) {
