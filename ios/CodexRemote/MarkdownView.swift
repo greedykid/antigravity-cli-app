@@ -378,10 +378,6 @@ struct MarkdownTableView: View {
     private let columnMaxWidth: CGFloat = 240
     private let columnMinWidth: CGFloat = 56
 
-    private struct Measurement {
-        let width: CGFloat
-    }
-
     var body: some View {
         let columnWidths = computeColumnWidths()
         let totalWidth = columnWidths.reduce(0, +)
@@ -408,22 +404,20 @@ struct MarkdownTableView: View {
     private var availableWidth: CGFloat { max(containerWidth, 160) }
 
     private func tableGrid(columnWidths: [CGFloat]) -> some View {
-        let headerCells = headers.enumerated().map { idx, text -> AnyView in
-            let width = columnWidths[idx]
-            return AnyView(
-                Text(text.uppercased())
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(palette.textMuted)
-                    .multilineTextAlignment(textAlignment(for: idx))
-                    .frame(width: width, alignment: textAlignment(for: idx))
-                    .padding(.horizontal, 10).padding(.vertical, 10)
-            )
-        }
+        VStack(alignment: .leading, spacing: 0) {
+            // Header row
+            HStack(alignment: .center, spacing: 0) {
+                ForEach(Array(headers.enumerated()), id: \.offset) { idx, text in
+                    cellView(text, alignment: textAlignment(for: idx),
+                             width: columnWidths[idx], isHeader: true)
+                }
+            }
+            .background(palette.surfaceMuted)
 
-        let rowViews = rows.enumerated().map { rowIdx, row -> AnyView in
-            let isAlt = rowIdx % 2 == 1
-            let background = isAlt ? palette.surface.opacity(0.5) : Color.clear
-            return AnyView(
+            Rectangle().fill(palette.borderStrong).frame(height: 1)
+
+            // Body rows
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIdx, row in
                 VStack(spacing: 0) {
                     HStack(alignment: .center, spacing: 0) {
                         ForEach(Array(row.enumerated()), id: \.offset) { colIdx, cell in
@@ -431,26 +425,18 @@ struct MarkdownTableView: View {
                                      width: columnWidths[colIdx], isHeader: false)
                         }
                     }
-                    .background(background)
+                    .background(rowIdx % 2 == 1 ? palette.surface.opacity(0.5) : Color.clear)
                     if rowIdx < rows.count - 1 {
                         Rectangle().fill(palette.border).frame(height: 1)
                     }
                 }
-            )
-        }
-
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: 0) {
-                ForEach(Array(headerCells.enumerated()), id: \.offset) { _, cell in cell }
             }
-            .background(palette.surfaceMuted)
-            Rectangle().fill(palette.borderStrong).frame(height: 1)
-            ForEach(Array(rowViews.enumerated()), id: \.offset) { _, row in row }
         }
         .background(
             GeometryReader { proxy in
-                Color.clear.onAppear { containerWidth = proxy.size.width }
-                    .onChange(of: proxy.size.width) { _, newValue in containerWidth = newValue }
+                Color.clear
+                    .onAppear { containerWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { newValue in containerWidth = newValue }
             }
         )
     }
@@ -465,10 +451,10 @@ struct MarkdownTableView: View {
                 Text(raw)
             }
         }
-        .font(.system(size: 13))
-        .foregroundColor(palette.textMain)
+        .font(.system(size: isHeader ? 11 : 13, weight: isHeader ? .bold : .regular))
+        .foregroundColor(isHeader ? palette.textMuted : palette.textMain)
         .multilineTextAlignment(alignment)
-        .frame(width: width, alignment: textFrameAlignment(for: alignment))
+        .frame(width: width, alignment: frameAlignment(for: alignment))
         .padding(.horizontal, 10).padding(.vertical, 10)
     }
 
@@ -480,11 +466,11 @@ struct MarkdownTableView: View {
         }
     }
 
-    private func textFrameAlignment(for alignment: TextAlignment) -> Alignment {
+    private func frameAlignment(for alignment: TextAlignment) -> Alignment {
         switch alignment {
-        case .leading:  return .leading
-        case .center:   return .center
-        case .trailing: return .trailing
+        case .leading:  return Alignment.leading
+        case .center:   return Alignment.center
+        case .trailing: return Alignment.trailing
         }
     }
 
@@ -495,48 +481,31 @@ struct MarkdownTableView: View {
         guard colCount > 0 else { return [] }
         var widths = Array(repeating: columnMinWidth, count: colCount)
 
-        for idx in 0..<colCount {
-            let headerWidth = measureText(headers[idx],
-                                          font: .system(size: 11, weight: .bold),
-                                          horizontalPadding: 20)
-            widths[idx] = max(widths[idx], headerWidth + 20)
+        let headerFont = UIFont.systemFont(ofSize: 11, weight: .bold)
+        for (idx, header) in headers.enumerated() {
+            widths[idx] = max(widths[idx], measureText(header, font: headerFont))
         }
+        let bodyFont = UIFont.systemFont(ofSize: 13)
         for row in rows {
             for idx in 0..<colCount {
                 let raw = idx < row.count ? row[idx] : ""
-                let w = measureText(raw, font: .system(size: 13), horizontalPadding: 20)
-                widths[idx] = max(widths[idx], w + 20)
+                widths[idx] = max(widths[idx], measureText(raw, font: bodyFont))
             }
         }
         return widths.map { min(columnMaxWidth, max(columnMinWidth, $0)) }
     }
 
-    private func measureText(_ text: String, font: Font, horizontalPadding: CGFloat) -> CGFloat {
-        let attributed: AttributedString
-        if let parsed = try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            attributed = parsed
-        } else {
-            attributed = AttributedString(text)
-        }
-        let uiFont: UIFont
-        switch font {
-        case .system(size: 11, weight: .bold):
-            uiFont = .systemFont(ofSize: 11, weight: .bold)
-        case .system(size: 13):
-            uiFont = .systemFont(ofSize: 13)
-        default:
-            uiFont = .systemFont(ofSize: 13)
-        }
+    /// Measures a single cell's intrinsic width with an infinite-width bounding
+    /// box, plus horizontal padding (10pt each side).
+    private func measureText(_ text: String, font: UIFont) -> CGFloat {
+        let infiniteWidth = CGFloat.greatestFiniteMagnitude
         let bounding = (text as NSString).boundingRect(
-            with: CGSize(width: .greatestFiniteMagnitude, height: .greatestFiniteMagnitude),
+            with: CGSize(width: infiniteWidth, height: infiniteWidth),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: uiFont],
+            attributes: [.font: font],
             context: nil
         )
-        _ = attributed // keep compiler from eliding the variable
-        return ceil(bounding.width) + horizontalPadding
+        return ceil(bounding.width) + 20
     }
 }
 
