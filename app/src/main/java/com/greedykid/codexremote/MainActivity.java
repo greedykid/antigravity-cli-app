@@ -2646,13 +2646,15 @@ public class MainActivity extends FragmentActivity {
     /** Keeps only the active engine's sessions, whatever the server returned. */
     private JSONArray filterSessionsForEngine(JSONArray sessions) {
         if (sessions == null) return null;
+        final String activeEngine = currentEngine == null ? "antigravity" : currentEngine.toLowerCase();
         ArrayList<JSONObject> list = new ArrayList<>();
         for (int i = 0; i < sessions.length(); i++) {
             JSONObject s = sessions.optJSONObject(i);
             if (s == null) continue;
-            String engine = s.optString("engine", "antigravity");
-            boolean isCodex = "codex".equalsIgnoreCase(engine);
-            if (isCodex == isCodexEngine()) {
+            String engine = s.optString("engine", "antigravity").toLowerCase();
+            // Normalize aliases the server may send for Command Code.
+            if ("command-code".equals(engine) || "cmd".equals(engine)) engine = "commandcode";
+            if (engine.equals(activeEngine)) {
                 list.add(s);
             }
         }
@@ -2783,7 +2785,11 @@ public class MainActivity extends FragmentActivity {
         String dateStr = sdf.format(new Date(ts));
 
         String engine = s.optString("engine", "antigravity");
-        String subText = ("codex".equalsIgnoreCase(engine) ? "Codex CLI" : "Antigravity CLI") + " • " + currentServerHostname;
+        String engineName = "codex".equalsIgnoreCase(engine) ? "Codex CLI"
+                : "opencode".equalsIgnoreCase(engine) ? "OpenCode CLI"
+                : "commandcode".equalsIgnoreCase(engine) || "command-code".equalsIgnoreCase(engine) ? "Command Code CLI"
+                : "Antigravity CLI";
+        String subText = engineName + " • " + currentServerHostname;
 
         boolean isRunning = (isLiveTaskRunning && convId != null && !convId.isEmpty() && convId.equals(activeConversationId))
                 || s.optBoolean("running", false)
