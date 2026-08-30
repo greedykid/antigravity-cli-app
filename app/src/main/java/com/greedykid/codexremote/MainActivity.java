@@ -8535,13 +8535,21 @@ public class MainActivity extends FragmentActivity {
         sb.append(convId == null ? "" : convId).append('|').append(turns.length()).append('|')
           .append(pendingOptimisticUserPrompt == null ? 0 : pendingOptimisticUserPrompt.length());
 
-        for (int i = Math.max(0, turns.length() - 4); i < turns.length(); i++) {
+        // Hash the last several turns in full so tool_use/tool_result pairs that
+        // change command or output content but keep the same turn count still
+        // trigger a full re-render instead of being short-circuited.
+        for (int i = Math.max(0, turns.length() - 6); i < turns.length(); i++) {
             JSONObject turn = turns.optJSONObject(i);
             if (turn == null) continue;
+            String role = turn.optString("role", "");
             String content = turn.optString("content", "");
-            sb.append('|').append(turn.optString("role", ""))
-              .append(':').append(content.length())
-              .append(':').append(content.hashCode());
+            String title = turn.optString("title", "");
+            String toolTitle = turn.optString("toolTitle", "");
+            String command = turn.optString("command", "");
+            sb.append('|').append(role)
+              .append(':').append(content.length()).append(':').append(content.hashCode())
+              .append(':').append(title).append(':').append(toolTitle)
+              .append(':').append(command.length()).append(':').append(command.hashCode());
         }
         return sb.toString();
     }
@@ -10229,7 +10237,17 @@ public class MainActivity extends FragmentActivity {
                     updateLiveStreamingAssistantView();
                 }
             }
-            scheduleThrottledSync();
+            // A commandcode "turn" event signals a tool_use/tool_result just
+            // landed in the transcript — go straight to the source so the new
+            // tool card paints immediately, no 350ms throttle wait.
+            boolean isUrgentTurn = "commandcode".equalsIgnoreCase(data == null ? "" : data.optString("engine", ""))
+                    && data != null && "turn".equals(data.optJSONObject("event") == null ? "" : data.optJSONObject("event").optString("type", ""));
+            if (isUrgentTurn) {
+                lastLiveSyncTimestamp = System.currentTimeMillis();
+                if (currentScreen == 1) syncLiveExecution(false);
+            } else {
+                scheduleThrottledSync();
+            }
         }
     });
 

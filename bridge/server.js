@@ -1689,6 +1689,13 @@ function runCommandCode(prompt, conversationId, model, job) {
                 jobId: job.id, engine: "commandcode",
                 chunk: "\n\n> 🔧 **" + ev.toolName + "**" + brief + "\n"
               });
+              // A turn about to be appended to the transcript: tell the client
+              // to re-fetch so the new tool card appears in real time.
+              events.broadcast("cli.event", {
+                jobId: job.id, engine: "commandcode",
+                conversationId: discoveredSessionId || conversationId || null,
+                event: { type: "turn", role: "tool", toolName: ev.toolName, phase: "queued" }
+              });
             } else if (ev.type === "tool_completed" && ev.toolName) {
               let resultBrief = "";
               if (Array.isArray(ev.result)) {
@@ -1708,6 +1715,13 @@ function runCommandCode(prompt, conversationId, model, job) {
                   chunk: "\n> ✅ **" + ev.toolName + "** selesai\n"
                 });
               }
+              // The result turn is now in the file; let the client pull it
+              // without waiting for the 5s safety-net poll.
+              events.broadcast("cli.event", {
+                jobId: job.id, engine: "commandcode",
+                conversationId: discoveredSessionId || conversationId || null,
+                event: { type: "turn", role: "tool", toolName: ev.toolName, phase: "completed" }
+              });
             } else if (ev.type === "run_end" && ev.result) {
               const r = ev.result;
               if (r.sessionId && !discoveredSessionId) discoveredSessionId = r.sessionId;
