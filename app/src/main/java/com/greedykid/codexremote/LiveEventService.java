@@ -9,13 +9,16 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -30,6 +33,10 @@ public class LiveEventService extends Service {
     public static final String ACTION_STOP = "com.greedykid.codexremote.STOP_EVENTS";
     /** Re-open the stream against a new server without tearing the service down. */
     public static final String ACTION_RECONNECT = "com.greedykid.codexremote.RECONNECT_EVENTS";
+    /** Open the SSE stream and replay any cli.output/cli.event we missed
+     *  while our POST /api/chat was still in flight. */
+    public static final String ACTION_START_WITH_REPLAY = "com.greedykid.codexremote.START_EVENTS_REPLAY";
+    public static final String EXTRA_REPLAY_JOB_ID = "replayJobId";
 
     private static final String CHANNEL_ONGOING = "codex_remote_ongoing";
     private static final String CHANNEL_ALERTS = "codex_remote_alerts";
@@ -39,6 +46,8 @@ public class LiveEventService extends Service {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private Thread worker;
     private BridgeClient client;
+    private volatile String pendingReplayJobId = null;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -83,6 +92,11 @@ public class LiveEventService extends Service {
             // the whole service here is what used to crash on server switch.
             stopStreaming();
             client = new BridgeClient(getSharedPreferences("connection", Context.MODE_PRIVATE));
+        }
+
+        if (ACTION_START_WITH_REPLAY.equals(action) && intent != null) {
+            String jobId = intent.getStringExtra(EXTRA_REPLAY_JOB_ID);
+            if (jobId != null && !jobId.isEmpty()) pendingReplayJobId = jobId;
         }
 
         startStreaming();
@@ -164,7 +178,9 @@ public class LiveEventService extends Service {
         }
     }
 
-    /** Reconnects with a backoff; the tunnel drops idle connections routinely. */
+    /** Reconnects with a backoff; the tunnel drops idle connections routinely.
+     *  When no data arrives for 45s we probe /api/health instead of tearing the
+     *  stream down so a flapping tunnel does not drop in-flight cli.output. */
     private void streamLoop() {
         int backoffMs = 2000;
         while (running.get()) {
@@ -174,7 +190,14 @@ public class LiveEventService extends Service {
                     Thread.sleep(5000);
                     continue;
                 }
-                connection = client.open("/api/events", "GET", 0);
+                String path = "/api/events";
+                String replay = pendingReplayJobId;
+                if (replay != null && !replay.isEmpty()) {
+                    String encoded = URLEncoder.encode(replay, "UTF-8");
+                    path = "/api/events?since=" + encoded;
+                    pendingReplayJobId = null;
+                }
+                connection = client.open(path, "GET", 0);
                 connection.setRequestProperty("Accept", "text/event-stream");
                 connection.setUseCaches(false);
 
@@ -185,15 +208,43 @@ public class LiveEventService extends Service {
                         new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8));
 
                 String eventName = null;
+                long lastEventAt = System.currentTimeMillis();
+                int consecutiveIdleProbes = 0;
                 String line;
                 while (running.get() && (line = reader.readLine()) != null) {
-                    if (line.startsWith(":")) continue;                 // heartbeat
+                    if (line.startsWith(":")) {
+                        // Heartbeat; treat as liveness signal.
+                        lastEventAt = System.currentTimeMillis();
+                        consecutiveIdleProbes = 0;
+                        continue;
+                    }
                     if (line.startsWith("event:")) {
                         eventName = line.substring(6).trim();
                     } else if (line.startsWith("data:")) {
                         handleEvent(eventName, line.substring(5).trim());
+                        lastEventAt = System.currentTimeMillis();
+                        consecutiveIdleProbes = 0;
                     } else if (line.isEmpty()) {
                         eventName = null;
+                    }
+
+                    // If we've been idle past the threshold and the loop is
+                    // still happily reading, the stream is alive but quiet
+                    // (tunnel flap, long tool call, etc.). Probe health and
+                    // reset the timer instead of tearing the socket down.
+                    long now = System.currentTimeMillis();
+                    if (now - lastEventAt > 45000) {
+                        consecutiveIdleProbes++;
+                        try {
+                            HttpURLConnection probe = client.open("/health", "GET", 5000);
+                            probe.setRequestProperty("Accept", "application/json");
+                            probe.getResponseCode();
+                            probe.disconnect();
+                        } catch (Throwable ignored) {}
+                        lastEventAt = System.currentTimeMillis();
+                        if (consecutiveIdleProbes >= 3) {
+                            throw new Exception("idle-stall");
+                        }
                     }
                 }
                 reader.close();

@@ -18,13 +18,29 @@ struct LiveEvent {
 actor LiveEventStream {
     private var task: Task<Void, Never>?
 
-    func start(client: BridgeClient, onEvent: @escaping (LiveEvent) -> Void) {
+    /// Gap threshold before we treat an idle SSE as "tunnel flapping" and
+    /// probe the bridge health endpoint instead of tearing the socket down.
+    /// 45s = 3x the server's 15s heartbeat.
+    private let gapProbeSeconds: TimeInterval = 45
+    private let maxBackoff: UInt64 = 30
+
+    /// Mutable state shared between the SSE line reader and the gap probe.
+    /// Reference-typed so concurrent tasks see the same memory.
+    private final class GapState {
+        var lastEventAt: Date = Date()
+        var consecutiveIdleProbes: Int = 0
+    }
+
+    func start(client: BridgeClient,
+               onEvent: @escaping (LiveEvent) -> Void,
+               replayJobId: String? = nil) {
         stop()
+        let path = LiveEventStream.ssePath(replayJobId: replayJobId)
         task = Task {
             var backoff: UInt64 = 2
             while !Task.isCancelled {
                 guard client.isPaired,
-                      var req = client.request("/api/events", timeout: 3600) else {
+                      var req = client.request(path, timeout: 3600) else {
                     try? await Task.sleep(nanoseconds: 5_000_000_000)
                     continue
                 }
@@ -38,8 +54,33 @@ actor LiveEventStream {
                     backoff = 2
 
                     var eventName: String?
+                    let state = GapState()
+
+                    // Race the SSE line iterator against a periodic health
+                    // probe. If the iterator yields nothing for 45s we
+                    // ping /api/health instead of tearing the socket down
+                    // (which would drop buffered cli.output chunks).
+                    let probeTask = Task { [gapProbeSeconds] in
+                        while !Task.isCancelled {
+                            try? await Task.sleep(nanoseconds: 5_000_000_000)
+                            if Task.isCancelled { break }
+                            let idle = Date().timeIntervalSince(state.lastEventAt)
+                            if idle > gapProbeSeconds {
+                                state.consecutiveIdleProbes += 1
+                                _ = await client.checkConnection()
+                                state.lastEventAt = Date()
+                                if state.consecutiveIdleProbes >= 3 {
+                                    throw URLError(.networkConnectionLost)
+                                }
+                            }
+                        }
+                    }
+
                     for try await line in bytes.lines {
                         if Task.isCancelled { break }
+                        if line.isEmpty { continue }
+                        state.lastEventAt = Date()
+                        state.consecutiveIdleProbes = 0
                         if line.hasPrefix(":") { continue }          // heartbeat
                         if line.hasPrefix("event:") {
                             eventName = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
@@ -50,17 +91,16 @@ actor LiveEventStream {
                                   let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any]
                             else { continue }
                             onEvent(LiveEvent(name: name, data: object))
-                        } else if line.isEmpty {
-                            eventName = nil
                         }
                     }
+                    probeTask.cancel()
                 } catch {
                     // Tunnels drop idle connections routinely; reconnect quietly.
                 }
 
                 if Task.isCancelled { break }
                 try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
-                backoff = min(backoff * 2, 30)
+                backoff = min(backoff * 2, maxBackoff)
             }
         }
     }
@@ -68,5 +108,11 @@ actor LiveEventStream {
     func stop() {
         task?.cancel()
         task = nil
+    }
+
+    private static func ssePath(replayJobId: String?) -> String {
+        guard let id = replayJobId, !id.isEmpty else { return "/api/events" }
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id
+        return "/api/events?since=\(encoded)"
     }
 }

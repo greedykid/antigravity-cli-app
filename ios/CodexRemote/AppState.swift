@@ -112,9 +112,33 @@ final class AppState: ObservableObject {
 
     func switchEngine(to target: Engine) {
         guard target != engine else { return }
+        let previous = engine
+        let previousJobId = activeJobId
+        let previousConvId = activeConversationId
         engine = target
+        // Kill any in-flight job from the previous engine before we forget
+        // its id, otherwise the orphan subprocess keeps streaming events
+        // for a chat the user can no longer see.
+        Task { await stopPreviousEngineIfAny(jobId: previousJobId,
+                                              conversationId: previousConvId,
+                                              engine: previous) }
         startNewSession()
         Task { await loadSessions() }
+    }
+
+    /// Fire-and-forget kill of an in-flight job tied to the engine we just
+    /// left. The bridge now scopes pkill by jobId + conversationId so this
+    /// cannot take out a different device's run.
+    private func stopPreviousEngineIfAny(jobId: String?,
+                                         conversationId: String?,
+                                         engine: Engine) async {
+        guard jobId != nil || conversationId != nil else { return }
+        var body: [String: Any] = ["action": "stop"]
+        if let jobId { body["jobId"] = jobId }
+        if let conversationId { body["conversationId"] = conversationId }
+        body["engine"] = engine.rawValue
+        _ = try? await client.post("/api/session/control", body: body,
+                                   as: ChatAccepted.self, timeout: 8)
     }
 
     // MARK: - sessions
@@ -221,6 +245,11 @@ final class AppState: ObservableObject {
 
             if let jobId = accepted.jobId {
                 activeJobId = jobId
+                // Ask the SSE stream to replay any cli.event/cli.output that
+                // landed while our POST was still in flight. Without this the
+                // first chunks of the run would be dropped because the server
+                // didn't know to filter by our jobId.
+                await restartLiveEvents(replayJobId: jobId)
                 await waitForJob(jobId, epoch: epoch)
             } else {
                 // Server predates jobs: the reply already carries the result.
@@ -285,11 +314,13 @@ final class AppState: ObservableObject {
 
     // MARK: - live events
 
-    func restartLiveEvents() async {
+    func restartLiveEvents(replayJobId: String? = nil) async {
         let snapshot = client
-        await stream.start(client: snapshot) { [weak self] event in
-            Task { @MainActor in self?.handle(event) }
-        }
+        await stream.start(client: snapshot,
+                           onEvent: { [weak self] event in
+                               Task { @MainActor in self?.handle(event) }
+                           },
+                           replayJobId: replayJobId)
     }
 
     private func handle(_ event: LiveEvent) {
@@ -307,7 +338,17 @@ final class AppState: ObservableObject {
             pendingPrompt = nil
             postNotification(title: event.isOk ? "✅ Tugas Selesai: \(activeSessionTitle)" : "⚠️ Tugas Gagal: \(activeSessionTitle)",
                              body: event.isOk ? "AI telah selesai mengerjakan tugas coding Anda." : (event.errorText ?? "Terjadi kesalahan."))
-            Task { await refreshActiveTranscript() }
+            // The server inserts a 250ms settle delay before broadcasting
+            // task.finished, but the first /api/session/transcript poll can
+            // still race the rollout flush on slow disks. Re-poll once after
+            // 500ms if we still have no turns.
+            Task {
+                await refreshActiveTranscript()
+                if turns.isEmpty {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    await refreshActiveTranscript()
+                }
+            }
         case "cli.event", "cli.output":
             if let conversationId = event.conversationId { adopt(conversationId) }
             if event.name == "cli.output", let chunk = event.data["chunk"] as? String {

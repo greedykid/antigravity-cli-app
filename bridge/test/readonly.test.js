@@ -67,6 +67,26 @@ test("readonly mode blocks chat execution", async () => {
   }
 });
 
+test("readonly mode blocks engine install endpoint", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-readonly-install-home-"));
+  const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-readonly-install-work-"));
+  const port = 18793;
+  const child = startBridge(home, workdir, port);
+  t.after(() => {
+    child.kill("SIGTERM");
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(workdir, { recursive: true, force: true });
+  });
+  await waitUntilReady(port);
+  await request(port, "/api/settings", "POST", "test-token", {
+    sandboxMode: "readonly", notifyOnFinish: false
+  });
+  const result = await request(port, "/api/engine/install", "POST", "test-token",
+    { engine: "codex" });
+  assert.equal(result.status, 403);
+  assert.match(result.body.error, /Hanya Baca/);
+});
+
 test("devices can be registered and revoked", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-devices-home-"));
   const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-devices-work-"));

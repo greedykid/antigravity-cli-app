@@ -30,7 +30,8 @@ function isWriteBlocked(pathname) {
     pathname.startsWith("/api/opencode/") ||
     pathname === "/api/chat" ||
     pathname === "/api/projects" ||
-    pathname === "/api/settings";
+    pathname === "/api/settings" ||
+    pathname === "/api/engine/install";
 }
 
 const PORT = config.port();
@@ -61,6 +62,17 @@ function extendedPath() {
     "/usr/bin",
     "/bin"
   ].filter(Boolean).join(":");
+}
+
+// Strip ANSI CSI escape codes and the carriage returns that ship with progress
+// spinners. The Antigravity CLI spews raw escape sequences to stdout, which
+// paint as garbage on the phone; we sanitise only the chunks we broadcast, the
+// raw accumulator keeps the original text for the final response.
+const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+const BLANK_RUN_RE = /\n{3,}/g;
+function stripAnsi(s) {
+  if (!s) return s;
+  return s.replace(ANSI_RE, "").replace(/\r/g, "").replace(BLANK_RUN_RE, "\n\n");
 }
 
 function findOpencodeBin() {
@@ -372,6 +384,86 @@ function requireApproval(req, res, pathname, payload, next) {
 }
 
 let activeCodexSessionId = null;
+// jobId -> Codex thread id. Replaces the previous single global so two
+// concurrent Codex jobs (different phones, or a fast engine switch) do not
+// clobber each other's session id.
+const activeCodexSessionIds = new Map();
+// jobId -> ChildProcess handle. Lets /api/session/control kill one specific
+// run instead of every CLI process on the host.
+const runningChildren = new Map();
+
+function registerChild(jobId, child) {
+  if (jobId && child) runningChildren.set(jobId, child);
+}
+
+function unregisterChild(jobId) {
+  if (jobId) runningChildren.delete(jobId);
+}
+
+// Targeted process kill. The old /api/session/control action blanket-pkill'd
+// every `agy -p` and `codex exec` on the host, which killed unrelated jobs
+// from other devices or terminal-launched runs. Now we prefer the in-process
+// child handle; if it's gone (server restart, another job grabbed the pids)
+// we fall back to a tightly-anchored pkill, and only as a last resort do a
+// global kill that requires the caller to opt in with confirm="all".
+function killJobProcess(opts) {
+  const jobId = opts && opts.jobId;
+  const conversationId = opts && opts.conversationId;
+  const engine = opts && opts.engine;
+  const confirmAll = opts && opts.confirm === "all";
+
+  const tried = { byHandle: false, scoped: false, blanket: false };
+
+  // Preferred path: the child we spawned is still alive in this process.
+  if (jobId) {
+    const child = runningChildren.get(jobId);
+    if (child && !child.killed) {
+      tried.byHandle = true;
+      try { child.kill("SIGTERM"); } catch (e) {}
+      setTimeout(() => {
+        try {
+          if (child && !child.killed) child.kill("SIGKILL");
+        } catch (e) {}
+      }, 2000);
+      unregisterChild(jobId);
+      return { ok: true, method: "handle", tried };
+    }
+  }
+
+  // Scoped fallback: only kill processes that look like the engine binary
+  // AND carry either the conversation id or the jobId on the command line.
+  // Anchored to "<bin> " so we don't catch arbitrary argv substrings.
+  if ((jobId || conversationId) && engine) {
+    let bin;
+    if (engine === "codex") bin = CODEX_BIN;
+    else if (engine === "opencode") bin = findOpencodeBin();
+    else if (engine === "commandcode") bin = COMMAND_CODE_BIN;
+    else if (engine === "antigravity") bin = AGY_BIN;
+    if (bin) {
+      const binBase = path.basename(bin);
+      const tag = conversationId || jobId;
+      // The command line always starts with the bin path then the args; we
+      // anchor to the bin and require the tag anywhere afterwards.
+      const pattern = `${binBase}.*${tag}`;
+      try {
+        execSync(`pkill -f -- ${JSON.stringify(pattern)} || true`, { stdio: "ignore" });
+        tried.scoped = true;
+        return { ok: true, method: "scoped", tried };
+      } catch (e) {}
+    }
+  }
+
+  // Last resort, requires explicit opt-in.
+  if (confirmAll) {
+    try { execSync("pkill -f \"agy -p\" || true", { stdio: "ignore" }); } catch (e) {}
+    try { execSync("pkill -f \"codex exec\" || true", { stdio: "ignore" }); } catch (e) {}
+    tried.blanket = true;
+    return { ok: true, method: "blanket", tried };
+  }
+
+  return { ok: false, method: "noop", tried, message: "Nothing matched and confirm:\"all\" was not set." };
+}
+
 const SESSION_ACTIVITY_FILE = path.join(os.homedir(), ".gemini/antigravity-cli/session_activity.json");
 const pendingApprovals = new Map();
 
@@ -1076,10 +1168,29 @@ function getCommandCodeTranscript(convId, limit = 1000) {
 // -------------------------------------------------------------
 // SESSIONS & TRANSCRIPT RETRIEVAL
 // -------------------------------------------------------------
-function findLatestAgyConversationId(sinceMs = 0) {
+function findLatestAgyConversationId(sinceMs = 0, jobId = null) {
   const home = os.homedir();
   const brainDir = path.join(home, ".gemini/antigravity-cli/brain");
   if (!fs.existsSync(brainDir)) return null;
+  // When the bridge tagged the prompt with [BRIDGE_JOB=<jobId>], prefer the
+  // brain dir whose transcript contains that marker; this is the only way to
+  // disambiguate two concurrent Agy jobs that started within ~2 seconds of
+  // each other (the old mtime-only check lost races).
+  if (jobId) {
+    const marker = `[BRIDGE_JOB=${jobId}]`;
+    try {
+      const entries = fs.readdirSync(brainDir, { withFileTypes: true });
+      for (const ent of entries) {
+        if (!ent.isDirectory() || ent.name.length < 8) continue;
+        const transcript = path.join(brainDir, ent.name, ".system_generated/logs/transcript.jsonl");
+        if (!fs.existsSync(transcript)) continue;
+        try {
+          const head = fs.readFileSync(transcript, "utf8").slice(0, 64 * 1024);
+          if (head.includes(marker)) return ent.name;
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }
   let newestId = null;
   let newestTime = sinceMs;
   try {
@@ -1117,6 +1228,9 @@ function cleanTitle(raw, fallback) {
 
 let sessionsCache = null;
 const SESSIONS_CACHE_TTL_MS = 3000;
+// command-code --list-models is slow (~10s); cache the parsed list so the
+// phone's model picker opens instantly on repeat visits.
+let commandCodeModelsCache = null;
 
 // When a job newly associates with a session id, the hub should re-render
 // so the active session shows the running border, and any cached sessions
@@ -1245,6 +1359,13 @@ function getSessionsUncached(engineFilter) {
     if (runningConvIds.has(s.conversationId)) {
       s.running = true;
     }
+    // Repair the engine tag from disk when it's missing or unknown: a pre-tag
+    // Codex rollout should not silently appear in the Antigravity list.
+    if (!s.engine || (s.engine !== "antigravity" && s.engine !== "codex"
+        && s.engine !== "opencode" && s.engine !== "commandcode")) {
+      const probed = probeSessionEngine(s.conversationId);
+      if (probed) s.engine = probed;
+    }
   }
 
   merged.sort((a, b) => {
@@ -1266,12 +1387,35 @@ function getSessionsUncached(engineFilter) {
   };
 }
 
-function normalizeEngine(value) {
+function normalizeEngine(value, probedEngine) {
   const v = String(value || "").toLowerCase();
   if (v === "codex") return "codex";
   if (v === "opencode") return "opencode";
   if (v === "commandcode" || v === "command-code" || v === "cmd") return "commandcode";
+  // Pre-tag sessions without an engine field used to silently become
+  // "antigravity"; the caller can now probe the filesystem and pass the
+  // discovered engine so a Codex rollout with a missing tag ends up in the
+  // Codex list instead of leaking into the Antigravity one.
+  if (probedEngine) return probedEngine;
   return "antigravity";
+}
+
+// Cheap filesystem probe — returns the engine name whose transcript source
+// actually exists on disk for this conversation id, or null when nothing
+// matches (the caller should then fall back to its default).
+function probeSessionEngine(convId) {
+  if (!convId) return null;
+  try {
+    if (findCodexRolloutFile(convId)) return "codex";
+  } catch (e) {}
+  try {
+    if (opencodeConfig.getOpencodeTranscript(convId, 1).length > 0) return "opencode";
+  } catch (e) {}
+  try {
+    const commandcodeFile = findCommandCodeSessionFile(convId);
+    if (commandcodeFile) return "commandcode";
+  } catch (e) {}
+  return null;
 }
 
 function getTranscript(convId, limit = 1000) {
@@ -1414,11 +1558,16 @@ function runCodex(prompt, conversationId, model, job) {
       }),
       stdio: ["ignore", "pipe", "pipe"]
     });
+    registerChild(job && job.id, child);
 
     let fullOutput = "";
     let error = "";
     let lastCodexError = "";
     let agentMessage = "";
+    // Codex ULIDs are monotonically increasing per turn. We only accept the
+    // newest agent_message id so a transient mid-run fragment cannot become the
+    // final reply if the process then crashes before flushing the next item.
+    let lastAgentMessageItemId = "";
     let lastActivity = Date.now();
     child.stdout.on("data", chunk => {
       lastActivity = Date.now();
@@ -1429,6 +1578,7 @@ function runCodex(prompt, conversationId, model, job) {
           const event = JSON.parse(line);
           if (event.type === "thread.started" && event.thread_id) {
             activeCodexSessionId = event.thread_id;
+            if (job && job.id) activeCodexSessionIds.set(job.id, event.thread_id);
           }
           // The run can fail while the process still exits 0, so failures are
           // read from the event stream rather than the exit code.
@@ -1440,13 +1590,17 @@ function runCodex(prompt, conversationId, model, job) {
           }
           if (event.type === "item.completed" && event.item
               && event.item.type === "agent_message" && event.item.text) {
-            agentMessage = String(event.item.text);
+            const itemId = String(event.item.id || "");
+            if (!itemId || itemId > lastAgentMessageItemId) {
+              agentMessage = String(event.item.text);
+              lastAgentMessageItemId = itemId;
+            }
           }
 
           events.broadcast("cli.event", {
             jobId: job ? job.id : null,
             engine: "codex",
-            conversationId: activeCodexSessionId,
+            conversationId: (job && job.id && activeCodexSessionIds.get(job.id)) || activeCodexSessionId,
             event
           });
         } catch (e) {}
@@ -1468,12 +1622,14 @@ function runCodex(prompt, conversationId, model, job) {
 
     child.on("error", err => {
       clearInterval(timer);
+      unregisterChild(job && job.id);
       try { if (fs.existsSync(tmpOutputFile)) fs.unlinkSync(tmpOutputFile); } catch(e) {}
       reject(err);
     });
 
     child.on("close", code => {
       clearInterval(timer);
+      unregisterChild(job && job.id);
       let assistantMsg = "";
       try {
         if (fs.existsSync(tmpOutputFile)) {
@@ -1491,7 +1647,8 @@ function runCodex(prompt, conversationId, model, job) {
 
       // With --json the id arrives as a thread.started event, not as text.
       // Falling back to it is what makes resuming a new session possible.
-      let returnedSessionId = conversationId || activeCodexSessionId || null;
+      const sessionForJob = (job && job.id && activeCodexSessionIds.get(job.id)) || null;
+      let returnedSessionId = conversationId || sessionForJob || activeCodexSessionId || null;
       const m = fullOutput.match(/session id:\s*([a-zA-Z0-9_-]+)/i);
       if (m) {
         returnedSessionId = m[1].trim();
@@ -1499,6 +1656,7 @@ function runCodex(prompt, conversationId, model, job) {
 
       if (assistantMsg) {
         activeCodexSessionId = returnedSessionId;
+        if (job && job.id) activeCodexSessionIds.set(job.id, returnedSessionId);
         resolve({ response: assistantMsg, sessionId: returnedSessionId });
       } else if (lastCodexError) {
         // Surface the provider's own words — "402 Payment Required", a missing
@@ -1506,6 +1664,7 @@ function runCodex(prompt, conversationId, model, job) {
         reject(new Error(lastCodexError));
       } else if (code === 0) {
         activeCodexSessionId = returnedSessionId;
+        if (job && job.id) activeCodexSessionIds.set(job.id, returnedSessionId);
         resolve({ response: "Done.", sessionId: returnedSessionId });
       } else {
         reject(new Error((error || fullOutput || `Codex exited with code ${code}`).trim()));
@@ -1541,6 +1700,7 @@ function runOpencode(prompt, conversationId, model, job) {
       }),
       stdio: ["ignore", "pipe", "pipe"]
     });
+    registerChild(job && job.id, child);
 
     let fullOutput = "";
     let error = "";
@@ -1596,6 +1756,7 @@ function runOpencode(prompt, conversationId, model, job) {
 
     child.on("close", code => {
       clearTimeout(timeout);
+      unregisterChild(job && job.id);
       const resText = fullOutput.trim() || error.trim() || "Done.";
       const sid = discoveredSessionId || conversationId || `opencode_${Date.now()}`;
 
@@ -1617,6 +1778,7 @@ function runOpencode(prompt, conversationId, model, job) {
 
     child.on("error", err => {
       clearTimeout(timeout);
+      unregisterChild(job && job.id);
       reject(err);
     });
   });
@@ -1644,6 +1806,7 @@ function runCommandCode(prompt, conversationId, model, job) {
       }),
       stdio: ["ignore", "pipe", "pipe"]
     });
+    registerChild(job && job.id, child);
 
     let fullOutput = "";
     let error = "";
@@ -1765,11 +1928,13 @@ function runCommandCode(prompt, conversationId, model, job) {
 
     child.on("error", err => {
       clearInterval(timer);
+      unregisterChild(job && job.id);
       reject(err);
     });
 
     child.on("close", code => {
       clearInterval(timer);
+      unregisterChild(job && job.id);
       const sid = discoveredSessionId || conversationId || `commandcode_${Date.now()}`;
 
       if (runError) {
@@ -1812,6 +1977,7 @@ function runAgyOnce(prompt, conversationId, resume = false, model, job) {
       env,
       stdio: ["ignore", "pipe", "pipe"]
     });
+    registerChild(job && job.id, child);
     let output = "";
     let error = "";
     let lastActivity = Date.now();
@@ -1823,7 +1989,7 @@ function runAgyOnce(prompt, conversationId, resume = false, model, job) {
       const now = Date.now();
       if (!discoveredConvId && (now - lastScanTime > 2000)) {
         lastScanTime = now;
-        discoveredConvId = findLatestAgyConversationId(startTime - 3000);
+        discoveredConvId = findLatestAgyConversationId(startTime - 3000, job && job.id);
         if (discoveredConvId && job) {
           jobs.update(job.id, { conversationId: discoveredConvId });
           noteJobConversationId(discoveredConvId);
@@ -1834,7 +2000,7 @@ function runAgyOnce(prompt, conversationId, resume = false, model, job) {
         jobId: job ? job.id : null,
         engine: "antigravity",
         conversationId: discoveredConvId || conversationId,
-        chunk: text
+        chunk: stripAnsi(text)
       });
     });
     child.stderr.on("data", chunk => {
@@ -1853,12 +2019,14 @@ function runAgyOnce(prompt, conversationId, resume = false, model, job) {
 
     child.on("error", err => {
       clearInterval(timer);
+      unregisterChild(job && job.id);
       reject(err);
     });
     child.on("close", code => {
       clearInterval(timer);
+      unregisterChild(job && job.id);
       if (!discoveredConvId) {
-        discoveredConvId = findLatestAgyConversationId(startTime - 5000);
+        discoveredConvId = findLatestAgyConversationId(startTime - 5000, job && job.id);
       }
       if (discoveredConvId && job) {
         jobs.update(job.id, { conversationId: discoveredConvId });
@@ -1866,7 +2034,7 @@ function runAgyOnce(prompt, conversationId, resume = false, model, job) {
       }
       if (code === 0 || output.trim().length > 0) {
         resolve({
-          response: output.trim() || "Done.",
+          response: stripAnsi(output).trim() || "Done.",
           sessionId: discoveredConvId
         });
         return;
@@ -2194,23 +2362,27 @@ async function runChatJob(job, payload) {
         effectiveEngine = "antigravity";
         effectiveModel = "auto";
         fallbackNotice = "> ⚠️ **Catatan Sistem**: Codex CLI belum terpasang di host server. Tugas dialihkan dan diselesaikan otomatis menggunakan Antigravity engine.\n\n";
+        // Surface the swap on the phone so the user knows the engine changed
+        // before the first streamed text arrives.
+        try {
+          events.broadcast("cli.output", {
+            jobId: job && job.id,
+            engine: "antigravity",
+            conversationId: conversationId || null,
+            chunk: fallbackNotice
+          });
+        } catch (e) {}
       }
     } else if (effectiveEngine === "opencode") {
       const opencodeBin = findOpencodeBin();
       const opencodeOk = commandVersion(opencodeBin, ["--version"]) || commandVersion(opencodeBin, ["-v"]);
       if (!opencodeOk) {
-        return {
-          response: "> ❌ **OpenCode CLI Tidak Ditemukan di Host Server**\n\nBiner `opencode` belum terdeteksi. Silakan pastikan OpenCode terpasang (`curl -fsSL https://opencode.ai/install.sh | bash` atau `npm i -g opencode`) dan restart bridge server.",
-          sessionId: conversationId || `opencode_${Date.now()}`
-        };
+        throw new Error("OpenCode CLI Tidak Ditemukan di Host Server. Biner `opencode` belum terdeteksi. Silakan pastikan OpenCode terpasang (curl -fsSL https://opencode.ai/install.sh | bash atau npm i -g opencode) dan restart bridge server.");
       }
     } else if (effectiveEngine === "commandcode") {
       const commandcodeOk = commandVersion(COMMAND_CODE_BIN, ["--version"]);
       if (!commandcodeOk) {
-        return {
-          response: "> ❌ **Command Code CLI Tidak Ditemukan di Host Server**\n\nBiner `command-code` belum terdeteksi. Silakan pastikan Command Code terpasang (`npm install -g command-code`) dan restart bridge server.",
-          sessionId: conversationId || `commandcode_${Date.now()}`
-        };
+        throw new Error("Command Code CLI Tidak Ditemukan di Host Server. Biner `command-code` belum terdeteksi. Silakan pastikan Command Code terpasang (npm install -g command-code) dan restart bridge server.");
       }
     }
 
@@ -2274,9 +2446,13 @@ async function runChatJob(job, payload) {
     } else {
       const isNewSession = !conversationId;
       const startTime = Date.now();
-      const result = await runAgy(prompt, conversationId, resume, effectiveModel, job);
+      // Prefix the prompt with a job tag so the on-disk transcript marks this
+      // run unambiguously; findLatestAgyConversationId reads it back to scope
+      // the brain dir to this jobId and dodge concurrent-run races.
+      const agyPrompt = `[BRIDGE_JOB=${job.id}]\n` + prompt;
+      const result = await runAgy(agyPrompt, conversationId, resume, effectiveModel, job);
       responseText = typeof result === "object" ? result.response : result;
-      activeConvId = (typeof result === "object" && result.sessionId) ? result.sessionId : (isNewSession ? findLatestAgyConversationId(startTime - 10000) : conversationId);
+      activeConvId = (typeof result === "object" && result.sessionId) ? result.sessionId : (isNewSession ? findLatestAgyConversationId(startTime - 10000, job.id) : conversationId);
 
       const sData = getSessions();
       if (!activeConvId && isNewSession) {
@@ -2319,6 +2495,12 @@ async function runChatJob(job, payload) {
     });
 
     audit("chat.finished", { jobId: job.id, engine, conversationId: activeConvId });
+
+    // Give the CLI a beat to flush its transcript/rollout to disk before the
+    // client polls /api/session/transcript on top of task.finished. Without
+    // this, the first poll after task.finished returns an empty list and the
+    // rendered chat bubbles disappear until the next throttled sync.
+    await new Promise(resolve => setTimeout(resolve, 250));
 
     events.broadcast("task.finished", {
       ok: true,
@@ -2403,6 +2585,13 @@ const server = http.createServer((req, res) => {
   // POST /api/engine/install
   if (req.method === "POST" && pathname === "/api/engine/install") {
     if (!authorized(req)) return send(res, 401, { error: "Unauthorized" });
+    // Read-only mode must block installing new engines: it shells out to
+    // `npm install -g` which mutates the host. The general isWriteBlocked
+    // gate sits below this handler, so we duplicate the check here.
+    if (settings.load().sandboxMode === "readonly") {
+      auditLog.log("write.blocked", { path: pathname, sandboxMode: "readonly", device: deviceId(req) });
+      return send(res, 403, { error: WRITE_BLOCKED_MESSAGE });
+    }
     let raw = "";
     req.on("data", chunk => {
       raw += chunk;
@@ -2991,9 +3180,20 @@ const server = http.createServer((req, res) => {
   // GET /api/commandcode/models — models known to the Command Code CLI itself.
   // The CLI owns its provider catalogue, so ask it instead of hardcoding a list
   // that drifts out of date the moment a provider is added.
+  //
+  // `command-code --version` takes ~5s and `--list-models` ~10s, so the list is
+  // cached (10 min TTL) and the version check is skipped in favour of a cheap
+  // filesystem lookup — the phone should not wait 15s every time the picker
+  // opens.
   if (req.method === "GET" && pathname === "/api/commandcode/models") {
-    const ok = commandVersion(COMMAND_CODE_BIN, ["--version"]);
-    if (!ok) {
+    const now = Date.now();
+    if (commandCodeModelsCache && (now - commandCodeModelsCache.at < 10 * 60 * 1000)) {
+      return send(res, 200, commandCodeModelsCache.payload);
+    }
+
+    const binOk = fs.existsSync(COMMAND_CODE_BIN)
+      || spawnSync("which", [COMMAND_CODE_BIN], { encoding: "utf8" }).status === 0;
+    if (!binOk) {
       return send(res, 200, { ok: false, error: "Command Code CLI tidak terdeteksi", models: [] });
     }
     const child = spawn(COMMAND_CODE_BIN, ["--list-models"], {
@@ -3017,13 +3217,15 @@ const server = http.createServer((req, res) => {
           models.push({ id: m[1], name: m[1], description: m[2].trim() });
         }
       }
-      send(res, 200, {
+      const payload = {
         ok: true,
         provider: "commandcode",
         activeModel: null,
         models,
         note: code === 0 ? null : (errOut.trim() || `command-code --list-models exited with code ${code}`)
-      });
+      };
+      commandCodeModelsCache = { at: Date.now(), payload };
+      send(res, 200, payload);
     });
     child.on("error", err => {
       send(res, 200, { ok: false, error: err.message, models: [] });
@@ -3367,13 +3569,20 @@ const server = http.createServer((req, res) => {
         const action = payload.action;
         if (action === "stop" || action === "kill") {
           requireApproval(req, res, pathname, payload, () => {
-            try {
-              execSync("pkill -f \"agy -p\" || true");
-              execSync("pkill -f \"codex exec\" || true");
-              return send(res, 200, { ok: true, message: "Process interrupted" });
-            } catch(e) {
-              return send(res, 200, { ok: true, message: "No running process found" });
-            }
+            const result = killJobProcess({
+              jobId: payload.jobId,
+              conversationId: payload.conversationId || payload.session_id,
+              engine: payload.engine,
+              confirm: payload.confirm
+            });
+            audit("session.kill", {
+              jobId: payload.jobId,
+              conversationId: payload.conversationId,
+              engine: payload.engine,
+              method: result.method,
+              tried: result.tried
+            });
+            return send(res, 200, result);
           });
           return;
         }

@@ -6145,10 +6145,12 @@ public class MainActivity extends FragmentActivity {
             @Override public void afterTextChanged(android.text.Editable s) {}
         });
 
-        list.addView(cText("Memuat...", 13f, Theme.TEXT_MUTED, false, false));
+        list.addView(cText("Memuat daftar model...", 13f, Theme.TEXT_MUTED, false, false));
         executor.execute(() -> {
             try {
-                JSONObject json = bridge.get("/api/commandcode/models", 60000);
+                // The bridge caches the CLI's catalogue for 10 minutes, so this
+                // resolves in ~1s after the first call instead of ~15s.
+                JSONObject json = bridge.get("/api/commandcode/models", 20000);
                 final boolean ok = json.optBoolean("ok", false);
                 final String error = json.optString("error", "");
                 final String note = json.optString("note", "");
@@ -6163,6 +6165,8 @@ public class MainActivity extends FragmentActivity {
                 }
                 mainHandler.post(() -> {
                     all.clear();
+                    // "auto" is always valid — the CLI picks its default model.
+                    all.add("auto");
                     all.addAll(fetched);
                     if (ok) {
                         subtitle.setText((fetched.isEmpty() ? "Daftar model Command Code" : fetched.size() + " model Command Code")
@@ -6175,6 +6179,7 @@ public class MainActivity extends FragmentActivity {
             } catch (Exception ex) {
                 mainHandler.post(() -> {
                     all.clear();
+                    all.add("auto");
                     subtitle.setText("Daftar model Command Code");
                     renderCommandCodeModelList(list, all, search.getText().toString().trim(), dialog);
                 });
@@ -6753,6 +6758,13 @@ public class MainActivity extends FragmentActivity {
         else next = "antigravity";
         if (next.equals(previous)) return;
 
+        // Fire-and-forget kill of any active job bound to the engine we're
+        // leaving. The bridge now scopes the kill to this jobId/convId so
+        // another device's run cannot take the hit.
+        final String previousJobId = activeJobId;
+        final String previousConvId = activeConversationId;
+        requestEngineKill(previousJobId, previousConvId, previous);
+
         // Remember where the user was so the rebuild lands on the same screen
         // instead of dumping them on a fresh chat.
         prefs.edit()
@@ -6770,6 +6782,22 @@ public class MainActivity extends FragmentActivity {
         // the activity is what actually repaints all of it.
         Theme.applyEngine(next);
         recreate();
+    }
+
+    private void requestEngineKill(String jobId, String conversationId, String engine) {
+        if ((jobId == null || jobId.isEmpty()) && (conversationId == null || conversationId.isEmpty())) {
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                org.json.JSONObject body = new org.json.JSONObject();
+                body.put("action", "stop");
+                if (jobId != null && !jobId.isEmpty()) body.put("jobId", jobId);
+                if (conversationId != null && !conversationId.isEmpty()) body.put("conversationId", conversationId);
+                if (engine != null && !engine.isEmpty()) body.put("engine", engine);
+                bridge.post("/api/session/control", body, 8000);
+            } catch (Throwable ignored) {}
+        });
     }
 
     /** Shown once after the rebuild that follows an engine switch. */
@@ -8172,7 +8200,13 @@ public class MainActivity extends FragmentActivity {
                 final String jobId = accepted.optString("jobId", "");
                 // Tag the run as ours so live syncing can tell it apart from
                 // anything else happening on the server.
-                if (!jobId.isEmpty()) mainHandler.post(() -> activeJobId = jobId);
+                if (!jobId.isEmpty()) mainHandler.post(() -> {
+                    activeJobId = jobId;
+                    // Ask the SSE service to open the stream with ?since= so
+                    // it replays any cli.event/cli.output the bridge buffered
+                    // between the POST landing and us setting activeJobId.
+                    requestLiveEventReplay(jobId);
+                });
 
                 JSONObject res = jobId.isEmpty()
                         ? accepted                       // server predates jobs: it already ran
@@ -10137,6 +10171,20 @@ public class MainActivity extends FragmentActivity {
         } catch (Throwable ignored) {}
     }
 
+    /** Tells the SSE service to open with ?since=<jobId> so the bridge
+     *  replays any cli.output/cli.event that landed while our POST was in
+     *  flight and the client had not yet set activeJobId. */
+    private void requestLiveEventReplay(String jobId) {
+        if (!bridge.isPaired() || jobId == null || jobId.isEmpty()) return;
+        try {
+            Intent intent = new Intent(this, LiveEventService.class);
+            intent.setAction(LiveEventService.ACTION_START_WITH_REPLAY);
+            intent.putExtra(LiveEventService.EXTRA_REPLAY_JOB_ID, jobId);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
+            else startService(intent);
+        } catch (Throwable ignored) {}
+    }
+
     private void stopLiveEvents() {
         try {
             Intent intent = new Intent(this, LiveEventService.class);
@@ -10217,7 +10265,16 @@ public class MainActivity extends FragmentActivity {
             lastRenderedHistoricalSignature = "";
             liveStreamingBlockView = null;
             liveStepPillView = null;
-            if (currentScreen == 1) syncLiveExecution();
+            // Server gives the rollout 250ms to flush before broadcasting
+            // task.finished; replay one extra sync after 500ms so a slow disk
+            // does not paint an empty transcript on top of the streamed text.
+            lastLiveSyncTimestamp = 0;
+            if (currentScreen == 1) {
+                syncLiveExecution(false);
+                mainHandler.postDelayed(() -> {
+                    if (currentScreen == 1 && !isLiveTaskRunning) syncLiveExecution(false);
+                }, 500);
+            }
             if (!isAppInForeground) {
                 boolean ok = data != null ? data.optBoolean("ok", true) : true;
                 String err = data != null ? data.optString("error", "") : "";
